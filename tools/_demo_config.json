@@ -1,0 +1,269 @@
+{
+    "schedules":  [
+                      {
+                          "id":  "morning",
+                          "enabled":  true,
+                          "name":  "早上 08:00 四張監控截圖",
+                          "time":  "08:00",
+                          "days":  [
+
+                                   ],
+                          "pages":  [
+                                        "page1",
+                                        "page2",
+                                        "page3",
+                                        "page4"
+                                    ],
+                          "target_chat_name":  "",
+                          "title":  "【08:00 早班巡檢】"
+                      },
+                      {
+                          "id":  "afternoon",
+                          "enabled":  true,
+                          "name":  "下午 17:00 Fab Index 單張",
+                          "time":  "17:00",
+                          "days":  [
+                                       "MON",
+                                       "TUE",
+                                       "WED",
+                                       "THU",
+                                       "FRI"
+                                   ],
+                          "pages":  [
+                                        "page4"
+                                    ],
+                          "target_chat_name":  "",
+                          "title":  "【17:00 Fab Index】"
+                      },
+                      {
+                          "id":  "evening",
+                          "enabled":  true,
+                          "name":  "晚上 20:00 三張監控彙整",
+                          "time":  "20:00",
+                          "days":  [
+
+                                   ],
+                          "pages":  [
+                                        "page1",
+                                        "page2",
+                                        "page3"
+                                    ],
+                          "target_chat_name":  "",
+                          "title":  "【20:00 晚班彙整】"
+                      }
+                  ],
+    "auth":  {
+                 "enabled":  true,
+                 "auth_type":  "form_or_dialog",
+                 "login_url":  "",
+                 "username":  "YOUR_USERNAME",
+                 "password":  "YOUR_PASSWORD",
+                 "save_session":  true
+             },
+    "teams":  {
+                  "send_mode":  "desktop_clipboard",
+                  "desktop_window_title":  "Teams",
+                  "target_chat_name":  "https://teams.microsoft.com/l/message/48:notes/1700000000000?context=%7B%22contextType%22%3A%22chat%22%7D",
+                  "auto_switch_chat":  false,
+                  "normal_summary":  "目前E3系統正常",
+                  "abnormal_header":  "⚠️ E3系統監控異常通知（昨日圖示超過警戒線，請相關人員協助查詢）：",
+                  "attach_annotated_image_on_alert":  false,
+                  "auto_press_enter":  true
+              },
+    "pages":  [
+                  {
+                      "id":  "page1",
+                      "enabled":  true,
+                      "name":  "頁面 1：F14E3 / F12AE3 系統監控",
+                      "url":  "http://your-internal-system.corp/zabbix/screens.php?screenid=101",
+                      "target_chat_name":  "",
+                      "mode":  "threshold_check",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  0,
+                                          "y":  0,
+                                          "w":  756,
+                                          "h":  306
+                                      },
+                      "rules":  [
+                                    {
+                                        "id":  "p1_r1",
+                                        "enabled":  true,
+                                        "name":  "F14E3DB1: 03.CPU load (7d)",
+                                        "roi":  {
+                                                    "x":  520,
+                                                    "y":  19,
+                                                    "w":  18,
+                                                    "h":  27
+                                                },
+                                        "threshold_y":  25,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#8e7f84",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [頁面1 - F14E3DB1: 03.CPU load] 昨日數值超過警戒線，請 DBA / 系統工程師協助查詢！"
+                                    },
+                                    {
+                                        "id":  "p1_r2",
+                                        "enabled":  true,
+                                        "name":  "F14E3DB1: 02.Memory Usage (7d)",
+                                        "roi":  {
+                                                    "x":  708,
+                                                    "y":  19,
+                                                    "w":  18,
+                                                    "h":  27
+                                                },
+                                        "threshold_y":  24,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#5859e0",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [頁面1 - F14E3DB1: 02.Memory Usage] 昨日記憶體使用率超過警戒線，請協助查詢確認！"
+                                    },
+                                    {
+                                        "id":  "p1_r3",
+                                        "enabled":  true,
+                                        "name":  "F12AE3AP21: 26.FDC Execution Time (7d)",
+                                        "roi":  {
+                                                    "x":  708,
+                                                    "y":  170,
+                                                    "w":  18,
+                                                    "h":  27
+                                                },
+                                        "threshold_y":  176,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#2ca02c",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [頁面1 - F12AE3AP21: 26.FDC Execution Time] 昨日執行時間超過警戒線，請 AP 負責人協助查詢！"
+                                    }
+                                ]
+                  },
+                  {
+                      "id":  "page2",
+                      "enabled":  true,
+                      "name":  "頁面 2：P56E3 / P58E3 系統監控",
+                      "url":  "http://your-internal-system.corp/zabbix/screens.php?screenid=102",
+                      "target_chat_name":  "",
+                      "mode":  "threshold_check",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  0,
+                                          "y":  0,
+                                          "w":  756,
+                                          "h":  308
+                                      },
+                      "rules":  [
+                                    {
+                                        "id":  "p2_r1",
+                                        "enabled":  true,
+                                        "name":  "P56E3DB2: 03.CPU load (7d)",
+                                        "roi":  {
+                                                    "x":  520,
+                                                    "y":  19,
+                                                    "w":  18,
+                                                    "h":  27
+                                                },
+                                        "threshold_y":  24,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#8e7f84",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [頁面2 - P56E3DB2: 03.CPU load] 昨日 CPU Load 超過警戒線，請相關人員協助查詢！"
+                                    },
+                                    {
+                                        "id":  "p2_r2",
+                                        "enabled":  true,
+                                        "name":  "P58E3AP06: 26.FDC Execution Time (7d)",
+                                        "roi":  {
+                                                    "x":  708,
+                                                    "y":  170,
+                                                    "w":  18,
+                                                    "h":  27
+                                                },
+                                        "threshold_y":  175,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#3845d6",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [頁面2 - P58E3AP06: 26.FDC Execution Time] 昨日執行時間出現尖峰超過警戒線，請協助查詢！"
+                                    }
+                                ]
+                  },
+                  {
+                      "id":  "page3",
+                      "enabled":  true,
+                      "name":  "頁面 3：F12AE3 CMS / Network 監控",
+                      "url":  "http://your-internal-system.corp/zabbix/screens.php?screenid=103",
+                      "target_chat_name":  "",
+                      "mode":  "threshold_check",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  0,
+                                          "y":  0,
+                                          "w":  735,
+                                          "h":  307
+                                      },
+                      "rules":  [
+                                    {
+                                        "id":  "p3_r1",
+                                        "enabled":  true,
+                                        "name":  "F12AE3CMS02: 01.CPU Utilization (7d)",
+                                        "roi":  {
+                                                    "x":  225,
+                                                    "y":  119,
+                                                    "w":  26,
+                                                    "h":  39
+                                                },
+                                        "threshold_y":  127,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#2e34c6",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [頁面3 - F12AE3CMS02: 01.CPU Utilization] 昨日 CPU 使用率超過警戒線，請 CMS 負責人協助查詢！"
+                                    }
+                                ]
+                  },
+                  {
+                      "id":  "page4",
+                      "enabled":  true,
+                      "name":  "頁面 4：Fab Index 產線報表",
+                      "url":  "http://your-internal-system.corp/fabindex/main.aspx",
+                      "target_chat_name":  "",
+                      "mode":  "capture_only",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  0,
+                                          "y":  0,
+                                          "w":  631,
+                                          "h":  307
+                                      },
+                      "rules":  [
+
+                                ]
+                  },
+                  {
+                      "id":  "page5",
+                      "enabled":  true,
+                      "name":  "頁面 5：監控首頁（框選示範）",
+                      "url":  "http://your-internal-system.corp/dashboard",
+                      "target_chat_name":  "",
+                      "mode":  "capture_only",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  826,
+                                          "y":  80,
+                                          "w":  776,
+                                          "h":  328
+                                      },
+                      "rules":  [
+
+                                ]
+                  }
+              ]
+}

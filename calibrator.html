@@ -1,0 +1,2440 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E3 彈性化監控截圖 & 警戒線視覺化設定工具 (企業免外掛版)</title>
+  <script src="sample_data.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-alt: #263349;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --teams-bg: #1f1f1f;
+      --teams-card: #292929;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft JhengHei", "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: #0b1120;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .badge {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    button, .btn-label {
+      background: var(--panel-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    button:hover, .btn-label:hover {
+      border-color: var(--accent);
+      background: #2d3e5a;
+    }
+    button.primary {
+      background: var(--accent-hover);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+    button.primary:hover {
+      background: #0369a1;
+    }
+    button.active-mode {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: var(--danger);
+      color: #fca5a5;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: 365px 1fr 380px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .sidebar, .right-panel {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 14px;
+      gap: 12px;
+    }
+    .right-panel {
+      border-right: none;
+      border-left: 1px solid var(--border);
+    }
+    .section-box {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .page-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .page-tab {
+      padding: 7px 9px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+      cursor: pointer;
+      text-align: left;
+      font-size: 12px;
+      line-height: 1.35;
+      position: relative;
+    }
+    .page-tab.active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.16);
+      color: #fff;
+      font-weight: 700;
+    }
+    .page-tab.disabled-page {
+      opacity: 0.45;
+    }
+    .sched-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      margin-bottom: 8px;
+      background: var(--panel-alt);
+    }
+    .sched-card.disabled-sched {
+      opacity: 0.5;
+    }
+    .sched-pages {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+      font-size: 11.5px;
+      margin-bottom: 6px;
+    }
+    .sched-pages label {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+    }
+    .field {
+      margin-bottom: 8px;
+    }
+    .field label {
+      display: block;
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .field input[type="text"],
+    .field input[type="number"],
+    .field input[type="password"],
+    .field input[type="time"],
+    .field select,
+    .field textarea {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 5px;
+      font-size: 12.5px;
+      font-family: inherit;
+    }
+    .field textarea {
+      resize: vertical;
+      min-height: 50px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+    }
+    .rule-card {
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+      border-radius: 7px;
+      padding: 8px 10px;
+      margin-bottom: 7px;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .rule-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+      background: #243856;
+    }
+    .rule-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .status-pill {
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 99px;
+      font-weight: 700;
+    }
+    .status-ok {
+      background: rgba(34, 197, 94, 0.18);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+    .status-alert {
+      background: rgba(239, 68, 68, 0.22);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.5);
+    }
+    .center-stage {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background: #090d16;
+      overflow: hidden;
+    }
+    .canvas-toolbar {
+      padding: 8px 14px;
+      background: #131c2e;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .canvas-scroll {
+      flex: 1;
+      overflow: auto;
+      padding: 18px;
+      display: flex;
+      align-items: flex-start;
+    }
+    .canvas-wrapper {
+      /* 用 margin auto 置中：圖比畫面寬時改為靠左，左側不會被切掉、可捲動看到 */
+      margin: 0 auto;
+      flex-shrink: 0;
+      position: relative;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      border: 1px solid #334155;
+      background: #fff;
+      line-height: 0;
+    }
+    canvas#mainCanvas {
+      cursor: crosshair;
+      image-rendering: pixelated;
+    }
+    .loupe-box {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 3;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #0b1120;
+      border: 1px solid var(--border);
+      padding: 8px;
+      border-radius: 6px;
+    }
+    canvas#loupeCanvas {
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      image-rendering: pixelated;
+      background: #000;
+      flex-shrink: 0;
+    }
+    .teams-preview {
+      background: var(--teams-bg);
+      border: 1px solid #3b3b3b;
+      border-radius: 8px;
+      padding: 12px;
+      color: #e0e0e0;
+      margin-bottom: 12px;
+    }
+    .teams-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #333;
+      font-size: 12px;
+    }
+    .teams-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #5b5fc7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      color: #fff;
+    }
+    .teams-imgs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .teams-imgs img {
+      width: 100%;
+      border-radius: 4px;
+      border: 1px solid #444;
+    }
+    .teams-text {
+      background: var(--teams-card);
+      border-left: 3px solid #5b5fc7;
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-size: 12.5px;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .teams-text.has-alert {
+      border-left-color: var(--danger);
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .side-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      position: sticky;
+      top: -14px;
+      margin: -14px -14px 0;
+      padding: 10px 14px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      z-index: 2;
+    }
+    .side-tabs button {
+      justify-content: center;
+      padding: 6px 4px;
+      font-size: 12px;
+    }
+    .side-tabs button.active {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }
+    .sidebar > .section-box[data-tab] {
+      display: none;
+    }
+    .sidebar[data-active-tab="pages"] > .section-box[data-tab="pages"],
+    .sidebar[data-active-tab="send"] > .section-box[data-tab="send"],
+    .sidebar[data-active-tab="global"] > .section-box[data-tab="global"] {
+      display: block;
+    }
+    details.advanced {
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+      font-size: 12px;
+    }
+    details.advanced summary {
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .effective-target {
+      margin-top: 8px;
+      font-size: 11.5px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+    .effective-target strong {
+      color: #93c5fd;
+    }
+    .effective-target.warn strong {
+      color: #fbbf24;
+    }
+    .sched-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 12.5px;
+    }
+    .sched-row .sched-time {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #e9d5ff;
+    }
+    .sched-row .sched-meta {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .sched-body {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    button.zoom-btn.active-mode {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .preview-select {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 5px;
+      font-size: 12.5px;
+      font-family: inherit;
+      margin-bottom: 10px;
+    }
+    .test-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .save-chip {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+      white-space: nowrap;
+    }
+    .save-chip.saving {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.12);
+      color: #7dd3fc;
+    }
+    .save-chip.error {
+      border-color: rgba(239, 68, 68, 0.5);
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+    }
+    .rule-hint {
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .sync-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .test-actions button {
+      justify-content: center;
+      font-size: 12px;
+      padding: 6px 4px;
+    }
+    .chk-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text);
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>📊 E3 監控截圖設定工具</span>
+      <span class="badge">免外掛版</span>
+    </div>
+    <div class="top-actions">
+      <span id="saveStatusText" style="font-size:12px;color:#4ade80;margin-right:6px;"></span>
+      <span id="autoSaveStatus" class="save-chip" title="所有修改都會自動存到 config.json">✅ 已自動儲存</span>
+      <a class="btn-label" href="/USER_MANUAL.html" target="_blank" rel="noopener" style="text-decoration:none;">📖 使用手冊</a>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- 左側設定面板 -->
+    <div class="sidebar" data-active-tab="pages">
+      <div class="side-tabs" id="sideTabs">
+        <button data-tab="pages" class="active">📄 頁面與警戒線</button>
+        <button data-tab="send">📅 排程與發送</button>
+        <button data-tab="global">⚙️ 全域設定</button>
+      </div>
+
+      <!-- ===== 分頁：頁面與警戒線 ===== -->
+      <div class="section-box" data-tab="pages">
+        <div class="section-title">
+          <span>擷取頁面</span>
+          <div style="display:flex;gap:4px;">
+            <button id="addPageBtn" style="padding:2px 8px;font-size:11.5px;">➕ 新增</button>
+            <button id="deletePageBtn" style="padding:2px 8px;font-size:11.5px;color:#f87171;">🗑️ 刪除</button>
+          </div>
+        </div>
+        <div class="page-tabs" id="pageTabs"></div>
+      </div>
+
+      <div class="section-box" data-tab="pages">
+        <div class="section-title">
+          <span>此頁面設定</span>
+          <label class="btn-label" style="padding:2px 8px;font-size:11px;" title="從電腦選一張截圖作為此頁的校正圖">
+            🖼️ 載入截圖
+            <input type="file" id="changePageImgInput" accept="image/*" style="display:none" />
+          </label>
+        </div>
+        <label class="chk-row">
+          <input type="checkbox" id="pageEnabledChk" checked />
+          <strong>啟用此頁面</strong>
+        </label>
+        <div class="field">
+          <label>頁面名稱</label>
+          <input type="text" id="pageNameInput" />
+        </div>
+        <div class="field">
+          <label>網址（按 Enter 或「抓圖」更新中間畫面）</label>
+          <div style="display:flex;gap:5px;">
+            <input type="text" id="pageUrlInput" style="flex:1;" />
+            <button id="fetchUrlImgBtn" class="primary" style="padding:4px 10px;font-size:12px;white-space:nowrap;" title="立即連線抓取此網址的真實畫面並更新中間截圖">
+              📸 抓圖
+            </button>
+          </div>
+        </div>
+        <div class="effective-target" id="cropSummary" style="margin-top:0;margin-bottom:8px;"></div>
+        <details class="advanced">
+          <summary>進階：擷取範圍數值、載入等待秒數</summary>
+          <div class="field" style="margin-top:8px;">
+            <label>擷取範圍 (X, Y, 寬, 高)</label>
+            <div class="grid-4">
+              <input type="number" id="cropX" placeholder="X" />
+              <input type="number" id="cropY" placeholder="Y" />
+              <input type="number" id="cropW" placeholder="W" />
+              <input type="number" id="cropH" placeholder="H" />
+            </div>
+          </div>
+          <div class="field">
+            <label>載入等待秒數（圖表載入慢就調大）</label>
+            <input type="number" id="pageWaitInput" min="1" max="60" />
+          </div>
+        </details>
+        <div class="effective-target" id="pageEffectiveTarget"></div>
+      </div>
+
+      <!-- 警戒線清單與編輯區 -->
+      <div class="section-box" id="rulesSection" data-tab="pages">
+        <div class="section-title">
+          <span>警戒線（昨日區間）</span>
+        </div>
+        <div class="rule-hint" id="ruleHint">
+          在中間圖上用 <b>📏 警戒線</b> 模式：<b>拖曳</b>框出圖表最右邊「昨日」那一段 → 新增一條；
+          <b>拖曳紅線</b>調整高度；拖曳框內可移動。沒有任何警戒線＝只截圖。
+        </div>
+        <div id="rulesList"></div>
+
+        <div id="ruleEditor" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
+          <label class="chk-row">
+            <input type="checkbox" id="ruleEnabledChk" checked />
+            <strong>啟用此警戒線</strong>
+          </label>
+          <div class="field">
+            <label>圖表名稱</label>
+            <input type="text" id="ruleNameInput" />
+          </div>
+          <div class="field">
+            <label>超標時的訊息（可 @人員）</label>
+            <textarea id="ruleAlertMsgInput"></textarea>
+          </div>
+          <details class="advanced" style="margin-bottom:8px;">
+            <summary>進階：精確座標、曲線顏色</summary>
+            <div class="field" style="margin-top:8px;">
+              <label>昨日區間框 (X, Y, 寬, 高)</label>
+              <div class="grid-4">
+                <input type="number" id="roiX" />
+                <input type="number" id="roiY" />
+                <input type="number" id="roiW" />
+                <input type="number" id="roiH" />
+              </div>
+            </div>
+            <div class="field">
+              <label style="display:flex;justify-content:space-between;">
+                <span>🔴 警戒線高度（數值越小線越高）</span>
+                <strong id="thresholdYLabel" style="color:#f87171;">Y = 25</strong>
+              </label>
+              <input type="range" id="thresholdYSlider" min="1" max="300" style="padding:0;" />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label>曲線偵測</label>
+                <select id="colorModeSelect">
+                  <option value="auto">自動偵測</option>
+                  <option value="custom">指定顏色</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>曲線顏色 / 容許誤差</label>
+                <div style="display:flex;gap:4px;">
+                  <input type="color" id="targetColorPicker" style="width:42px;padding:2px;height:29px;" />
+                  <input type="number" id="colorToleranceInput" min="10" max="120" title="RGB容許距離" />
+                </div>
+              </div>
+            </div>
+            <button id="pickColorBtn" style="padding:2px 8px;font-size:11.5px;" title="下一次點擊圖上的曲線即取用該顏色">💧 從圖上取色</button>
+          </details>
+          <div style="display:flex;justify-content:space-between;gap:6px;">
+            <button id="deleteRuleBtn" style="color:#f87171;border-color:#7f1d1d;">🗑️ 刪除此警戒線</button>
+            <span id="ruleLiveMetrics" style="font-size:11.5px;color:var(--muted);align-self:center;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 分頁：排程與發送 ===== -->
+      <div class="section-box" data-tab="send" style="border-color:#38bdf8;">
+        <div class="section-title"><span>預設發送對象</span></div>
+        <div class="field">
+          <label>Teams 對話的「🔗 複製連結」網址（排程沒指定時使用）</label>
+          <input type="text" id="defaultChatInput" placeholder="https://teams.microsoft.com/l/message/..." />
+          <button id="sendToSelfBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" title="不用複製連結，直接把發送對象設成自己跟自己的個人對話">📨 先傳給自己測試</button>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>發送方式</label>
+          <select id="sendModeSelect">
+            <option value="desktop_clipboard">桌面版 Teams（剪貼簿貼圖，預設）</option>
+            <option value="edge_teams_web">網頁版 Teams（Edge 內貼圖，不佔剪貼簿）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-box" data-tab="send" style="border-color:#a855f7;">
+        <div class="section-title">
+          <span>排程時段</span>
+          <button id="addScheduleBtn" style="padding:2px 8px;font-size:11.5px;">➕ 新增</button>
+        </div>
+        <div id="scheduleList"></div>
+        <div class="sync-row">
+          <span id="scheduleSyncStatus">⏳ 讀取 Windows 排程狀態...</span>
+          <button id="registerSchedulesBtn" style="padding:2px 8px;font-size:11.5px;" title="重新把排程寫入 Windows 工作排程器">🔄 重新套用</button>
+        </div>
+        <pre id="registerReport" style="display:none;white-space:pre-wrap;font-size:11px;margin:8px 0 0;color:var(--muted);"></pre>
+      </div>
+
+      <div class="section-box" data-tab="send">
+        <div class="section-title"><span>訊息文字</span></div>
+        <div class="field">
+          <label>全部正常時</label>
+          <input type="text" id="normalSummaryInput" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>有異常時的開頭</label>
+          <input type="text" id="abnormalHeaderInput" />
+        </div>
+      </div>
+
+      <!-- ===== 分頁：全域設定 ===== -->
+      <div class="section-box" data-tab="global">
+        <div class="section-title"><span>監控網站登入</span></div>
+        <button id="loginSetupBtn" class="primary" style="width:100%;justify-content:center;margin-bottom:6px;" title="開啟專用 Edge，手動登入各監控網站一次">🔐 登入監控網站</button>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">會開啟一個 Edge 視窗，裡面是所有啟用頁面的網址。逐一登入（可勾「記住我」）後<b>直接關閉該視窗</b>即可。第一次使用、登入過期或抓圖抓到登入畫面時使用。</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:4px;">或填入帳密，讓程式在出現登入畫面時自動填入（選填）：</div>
+        <div class="grid-2">
+          <div class="field">
+            <label>帳號</label>
+            <input type="text" id="authUserInput" />
+          </div>
+          <div class="field">
+            <label>密碼</label>
+            <input type="password" id="authPassInput" />
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);">頁面出現密碼框時才會自動填入；已用「🔐 登入監控網站」登入過可留空。</div>
+      </div>
+
+      <div class="section-box" data-tab="global">
+        <div class="section-title"><span>Teams 發送安全</span></div>
+        <label class="chk-row">
+          <input type="checkbox" id="autoPressEnterChk" checked />
+          <span>正式排程貼上後自動按 Enter 送出</span>
+        </label>
+        <label class="chk-row" style="margin-bottom:0;">
+          <input type="checkbox" id="autoSwitchChatChk" />
+          <span>沒有連結時，以名稱搜尋切換對話（可能傳錯，不建議）</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 中間視覺化畫布區 -->
+    <div class="center-stage">
+      <div class="canvas-toolbar">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <button id="modeCropBtn" title="顯示整頁畫面，拖曳框出要截圖傳送的範圍">✂️ 擷取範圍</button>
+          <button id="modeRuleBtn" class="active-mode" title="拖曳新增警戒線框、拖曳紅線調整高度">📏 警戒線</button>
+          <span style="width:1px;height:20px;background:var(--border);margin:0 2px;"></span>
+          <button class="zoom-btn" data-zoom="fit" title="縮放到符合畫面寬度">符合寬度</button>
+          <button class="zoom-btn" data-zoom="1">100%</button>
+          <button class="zoom-btn" data-zoom="2">200%</button>
+          <button class="zoom-btn" data-zoom="3">300%</button>
+        </div>
+        <div class="loupe-box">
+          <canvas id="loupeCanvas" width="54" height="54" title="6x 像素放大鏡"></canvas>
+          <div style="font-size:11px;line-height:1.4;min-width:96px;">
+            <div id="cursorCoordText" style="color:var(--accent);">X: -, Y: -</div>
+            <div id="cursorRgbText" style="color:var(--muted);">RGB: -</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="canvas-scroll">
+        <div class="canvas-wrapper">
+          <canvas id="mainCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右側即時檢測結果與依 Teams 群組分流的預覽 -->
+    <div class="right-panel">
+      <div class="section-box">
+        <div class="section-title" style="margin-bottom:6px;"><span>👁 預覽哪個排程</span></div>
+        <select id="previewScheduleSelect" class="preview-select"></select>
+        <div class="test-actions">
+          <button id="testPreviewBtn" title="用範例圖貼到 Teams，但不按 Enter，由您確認後自己送出">🧪 測試貼上（不送出）</button>
+          <button id="testSendNowBtn" style="color:#fca5a5;border-color:#7f1d1d;" title="用範例圖直接送出到 Teams">🚀 正式送出…</button>
+        </div>
+        <div class="section-title" style="margin-bottom:6px;">
+          <span>⚡ 警戒線判定</span>
+          <span id="overallBadge" class="status-pill status-ok">全部正常</span>
+        </div>
+        <div id="allPagesStatusSummary" style="font-size:12px;line-height:1.6;"></div>
+      </div>
+
+      <div class="section-box" style="flex:1;display:flex;flex-direction:column;">
+        <div class="section-title">
+          <span>💬 Teams 訊息預覽</span>
+        </div>
+        <div id="teamsGroupsContainer"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_CONFIG = {
+      schedules: [
+        { id: "morning", enabled: true, name: "早上 08:00 巡檢", time: "08:00", days: [], pages: ["page1", "page2", "page3", "page4"], target_chat_name: "", title: "" }
+      ],
+      auth: {
+        enabled: true,
+        auth_type: "form_or_dialog",
+        login_url: "",
+        username: "YOUR_USERNAME",
+        password: "YOUR_PASSWORD",
+        save_session: true
+      },
+      teams: {
+        send_mode: "desktop_clipboard",
+        desktop_window_title: "Teams",
+        target_chat_name: "",
+        auto_switch_chat: false,
+        normal_summary: "目前E3系統正常",
+        abnormal_header: "⚠️ E3系統監控異常通知（昨日圖示超過警戒線，請相關人員協助查詢）：",
+        attach_annotated_image_on_alert: false,
+        auto_press_enter: true
+      },
+      pages: [
+        {
+          id: "page1",
+          enabled: true,
+          name: "頁面 1：F14E3 / F12AE3 監控 (16宮格)",
+          url: "http://your-internal-system.corp/zabbix/screens.php?screenid=101",
+          target_chat_name: "",
+          mode: "threshold_check",
+          wait_seconds: 5,
+          crop_region: { enabled: true, x: 0, y: 0, w: 756, h: 306 },
+          rules: [
+            {
+              id: "p1_r1",
+              enabled: true,
+              name: "F14E3DB1: 03.CPU load (7d)",
+              roi: { x: 520, y: 19, w: 18, h: 27 },
+              threshold_y: 25,
+              color_mode: "auto",
+              target_color: "#8e7f84",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面1 - F14E3DB1: 03.CPU load] 昨日數值超過警戒線，請 DBA / 系統工程師協助查詢！"
+            },
+            {
+              id: "p1_r2",
+              enabled: true,
+              name: "F14E3DB1: 02.Memory Usage (7d)",
+              roi: { x: 708, y: 19, w: 18, h: 27 },
+              threshold_y: 24,
+              color_mode: "auto",
+              target_color: "#5859e0",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面1 - F14E3DB1: 02.Memory Usage] 昨日記憶體使用率超過警戒線，請協助查詢確認！"
+            },
+            {
+              id: "p1_r3",
+              enabled: true,
+              name: "F12AE3AP21: 26.FDC Execution Time (7d)",
+              roi: { x: 708, y: 170, w: 18, h: 27 },
+              threshold_y: 176,
+              color_mode: "auto",
+              target_color: "#2ca02c",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面1 - F12AE3AP21: 26.FDC Execution Time] 昨日執行時間超過警戒線，請 AP 負責人協助查詢！"
+            }
+          ]
+        },
+        {
+          id: "page2",
+          enabled: true,
+          name: "頁面 2：P56E3 / P58E3 監控 (16宮格)",
+          url: "http://your-internal-system.corp/zabbix/screens.php?screenid=102",
+          target_chat_name: "",
+          mode: "threshold_check",
+          wait_seconds: 5,
+          crop_region: { enabled: true, x: 0, y: 0, w: 756, h: 308 },
+          rules: [
+            {
+              id: "p2_r1",
+              enabled: true,
+              name: "P56E3DB2: 03.CPU load (7d)",
+              roi: { x: 520, y: 19, w: 18, h: 27 },
+              threshold_y: 24,
+              color_mode: "auto",
+              target_color: "#8e7f84",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面2 - P56E3DB2: 03.CPU load] 昨日 CPU Load 超過警戒線，請相關人員協助查詢！"
+            },
+            {
+              id: "p2_r2",
+              enabled: true,
+              name: "P58E3AP06: 26.FDC Execution Time (7d)",
+              roi: { x: 708, y: 170, w: 18, h: 27 },
+              threshold_y: 175,
+              color_mode: "auto",
+              target_color: "#3845d6",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面2 - P58E3AP06: 26.FDC Execution Time] 昨日執行時間出現尖峰超過警戒線，請協助查詢！"
+            }
+          ]
+        },
+        {
+          id: "page3",
+          enabled: true,
+          name: "頁面 3：F12AE3 CMS / Network (6宮格)",
+          url: "http://your-internal-system.corp/zabbix/screens.php?screenid=103",
+          target_chat_name: "",
+          mode: "threshold_check",
+          wait_seconds: 5,
+          crop_region: { enabled: true, x: 0, y: 0, w: 735, h: 307 },
+          rules: [
+            {
+              id: "p3_r1",
+              enabled: true,
+              name: "F12AE3CMS02: 01.CPU Utilization (7d)",
+              roi: { x: 225, y: 119, w: 26, h: 39 },
+              threshold_y: 127,
+              color_mode: "auto",
+              target_color: "#2e34c6",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面3 - F12AE3CMS02: 01.CPU Utilization] 昨日 CPU 使用率超過警戒線，請 CMS 負責人協助查詢！"
+            },
+            {
+              id: "p3_r2",
+              enabled: true,
+              name: "F12AE3CMS01: 01.CPU Utilization (7d)",
+              roi: { x: 702, y: 119, w: 26, h: 39 },
+              threshold_y: 125,
+              color_mode: "auto",
+              target_color: "#2e34c6",
+              color_tolerance: 48,
+              min_pixels: 2,
+              alert_message: "⚠️ [頁面3 - F12AE3CMS01: 01.CPU Utilization] 昨日 CPU 使用率超過警戒線，請 CMS 負責人協助查詢！"
+            }
+          ]
+        },
+        {
+          id: "page4",
+          enabled: true,
+          name: "頁面 4：Fab Index 產線報表 (純截圖)",
+          url: "http://your-internal-system.corp/fabindex/main.aspx",
+          target_chat_name: "",
+          mode: "capture_only",
+          wait_seconds: 5,
+          crop_region: { enabled: true, x: 0, y: 0, w: 631, h: 307 },
+          rules: []
+        }
+      ]
+    };
+
+    let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    let currentPageIdx = 0;
+    let selectedRuleIdx = 0;
+    let currentTool = "rule";   // "crop" = ✂️ 擷取範圍、"rule" = 📏 警戒線、"pick_color" = 💧 取色 (點一次後回到 rule)
+    let ruleDrag = null;        // 📏 模式拖曳狀態：{ kind: "new" | "line" | "move", ... }
+    let zoomMode = "fit";
+    let zoomLevel = 1.5;
+    let pageImages = {};
+    let pageImageCanvases = {};
+    let fullImages = {};
+    let isCropDragging = false;
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+
+    const mainCanvas = document.getElementById("mainCanvas");
+    const ctx = mainCanvas.getContext("2d");
+    const loupeCanvas = document.getElementById("loupeCanvas");
+    const loupeCtx = loupeCanvas.getContext("2d");
+
+    function hexToRgb(hex) {
+      const clean = (hex || "#000000").replace("#", "");
+      const num = parseInt(clean, 16);
+      return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+    }
+
+    function rgbToHex(r, g, b) {
+      return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+    }
+
+    function isCurvePixel(r, g, b, rule) {
+      const maxC = Math.max(r, g, b);
+      const minC = Math.min(r, g, b);
+      const saturation = maxC - minC;
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      if (rule.color_mode === "custom") {
+        const target = hexToRgb(rule.target_color || "#2e34c6");
+        const dist = Math.sqrt(
+          Math.pow(r - target.r, 2) +
+          Math.pow(g - target.g, 2) +
+          Math.pow(b - target.b, 2)
+        );
+        return dist <= (rule.color_tolerance || 48);
+      }
+
+      if (lum > 206 && saturation < 28) return false;
+      if (r > 200 && (r - g) > 15 && g > 160 && b > 160) return false;
+      return lum < 192 || saturation >= 30;
+    }
+
+    function evaluateRule(pageId, rule) {
+      if (rule.enabled === false) return { exceeded: false, count: 0, hitPoints: [] };
+      const offCanvas = pageImageCanvases[pageId];
+      if (!offCanvas || offCanvas.isPlaceholder) return { exceeded: false, count: 0, hitPoints: [] };
+      const offCtx = offCanvas.getContext("2d");
+      const rx = Math.max(0, Math.round(rule.roi.x));
+      const ry = Math.max(0, Math.round(rule.roi.y));
+      // 警戒線框落在圖外 (例如縮小擷取範圍後)：圖外像素會讀成黑色而誤判超標，改標示「超出範圍」(與引擎一致：略過不判定)
+      if (rx >= offCanvas.width || ry >= offCanvas.height) {
+        return { exceeded: false, outOfRange: true, count: 0, hitPoints: [] };
+      }
+      const rw = Math.max(1, Math.min(offCanvas.width - rx, Math.round(rule.roi.w)));
+      const rh = Math.max(1, Math.min(offCanvas.height - ry, Math.round(rule.roi.h)));
+      const threshY = Math.round(rule.threshold_y);
+
+      const imgData = offCtx.getImageData(rx, ry, rw, rh).data;
+      const hitPoints = [];
+
+      for (let dy = 0; dy < rh; dy++) {
+        const absY = ry + dy;
+        if (absY > threshY) continue;
+        for (let dx = 0; dx < rw; dx++) {
+          const idx = (dy * rw + dx) * 4;
+          if (isCurvePixel(imgData[idx], imgData[idx + 1], imgData[idx + 2], rule)) {
+            hitPoints.push({ x: rx + dx, y: absY });
+          }
+        }
+      }
+
+      const minPx = rule.min_pixels || 2;
+      return {
+        exceeded: hitPoints.length >= minPx,
+        count: hitPoints.length,
+        hitPoints
+      };
+    }
+
+    // 每頁兩張圖：
+    //   fullImages[id]         整頁原圖 (📸 抓圖 / 🖼️ 載入截圖，存成 sample_images\<id>_full.png)
+    //   pageImageCanvases[id]  依 crop_region 裁切後的圖 = 正式排程會送出的圖，警戒線座標以它為準 (存成 <id>.png)
+    function imageToCanvas(img) {
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      c.getContext("2d").drawImage(img, 0, 0);
+      return c;
+    }
+
+    function setCroppedCanvas(pageId, canvas) {
+      pageImageCanvases[pageId] = canvas;
+      pageImages[pageId] = canvas;
+    }
+
+    function clampCrop(page, full) {
+      const c = page.crop_region || (page.crop_region = { enabled: true, x: 0, y: 0, w: full.width, h: full.height });
+      c.enabled = true;
+      c.x = Math.max(0, Math.min(full.width - 1, Math.round(c.x || 0)));
+      c.y = Math.max(0, Math.min(full.height - 1, Math.round(c.y || 0)));
+      c.w = Math.max(1, Math.min(full.width - c.x, Math.round(c.w || full.width)));
+      c.h = Math.max(1, Math.min(full.height - c.y, Math.round(c.h || full.height)));
+    }
+
+    // 擷取範圍不在整頁圖內 (例如新頁面或網頁版面變了) 時，改成整頁
+    function fitCropToFull(page, full) {
+      const c = page.crop_region;
+      if (!c || !(c.w > 0) || !(c.h > 0) || c.x + c.w > full.width || c.y + c.h > full.height) {
+        page.crop_region = { enabled: true, x: 0, y: 0, w: full.width, h: full.height };
+      }
+    }
+
+    function rebuildCropped(page, persist) {
+      const full = fullImages[page.id];
+      if (!full) return;
+      clampCrop(page, full);
+      const c = page.crop_region;
+      const off = document.createElement("canvas");
+      off.width = c.w;
+      off.height = c.h;
+      off.getContext("2d").drawImage(full, c.x, c.y, c.w, c.h, 0, 0, c.w, c.h);
+      setCroppedCanvas(page.id, off);
+      if (persist) scheduleSampleSave(page.id, "crop");
+    }
+
+    const sampleSaveTimers = {};
+    function scheduleSampleSave(pageId, kind) {
+      const key = `${pageId}:${kind}`;
+      clearTimeout(sampleSaveTimers[key]);
+      sampleSaveTimers[key] = setTimeout(async () => {
+        const canvas = kind === "full" ? fullImages[pageId] : pageImageCanvases[pageId];
+        if (!canvas) return;
+        try {
+          const resp = await fetch("http://127.0.0.1:8765/api/save-sample", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pageId, kind, dataUrl: canvas.toDataURL("image/png") })
+          });
+          if (!resp.ok) throw new Error(resp.status);
+        } catch (e) {
+          showSaveToast("❌ 截圖沒有存到 sample_images（本機服務沒有回應）", true);
+          showServiceBanner("⚠️ 本機服務沒有回應，截圖與設定都沒有存檔。請雙擊 open_calibrator.bat 重新開啟後再操作一次。");
+        }
+      }, 600);
+    }
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    async function ensurePageImage(pageObj, callback) {
+      if (pageImages[pageObj.id]) {
+        if (callback) callback();
+        return;
+      }
+      const sources = window.SAMPLE_IMAGES || {};
+      const viaServer = location.protocol.startsWith("http");
+      // 1. 有整頁原圖時以它為準，依目前擷取範圍重新裁切 (確保 <id>.png 與設定一致)
+      if (viaServer) {
+        try {
+          const full = await loadImage(`/sample_images/${pageObj.id}_full.png?t=${Date.now()}`);
+          fullImages[pageObj.id] = imageToCanvas(full);
+          rebuildCropped(pageObj, true);
+          if (callback) callback();
+          return;
+        } catch (e) {}
+      }
+      // 2. 沒有整頁原圖 (舊資料)：直接用裁切後的範例圖 (只用同一頁的圖，不拿別頁代替)
+      const candidates = viaServer
+        ? [`/sample_images/${pageObj.id}.png?t=${Date.now()}`, sources[pageObj.id]]
+        : [sources[pageObj.id]];
+      for (const src of candidates.filter(Boolean)) {
+        try {
+          setCroppedCanvas(pageObj.id, imageToCanvas(await loadImage(src)));
+          break;
+        } catch (e) {}
+      }
+      // 3. 完全沒有圖 (新頁面還沒抓圖)：顯示提示圖，避免在別頁的圖上畫警戒線
+      if (!pageImageCanvases[pageObj.id]) setCroppedCanvas(pageObj.id, makePlaceholderCanvas());
+      if (callback) callback();
+    }
+
+    function makePlaceholderCanvas() {
+      const c = document.createElement("canvas");
+      c.width = 960;
+      c.height = 400;
+      c.isPlaceholder = true;
+      const g = c.getContext("2d");
+      g.fillStyle = "#1e293b";
+      g.fillRect(0, 0, c.width, c.height);
+      g.strokeStyle = "#475569";
+      g.setLineDash([10, 6]);
+      g.lineWidth = 3;
+      g.strokeRect(12, 12, c.width - 24, c.height - 24);
+      g.fillStyle = "#e2e8f0";
+      g.font = "bold 30px 'Microsoft JhengHei', sans-serif";
+      g.textAlign = "center";
+      g.fillText("這一頁還沒有畫面", c.width / 2, 170);
+      g.font = "22px 'Microsoft JhengHei', sans-serif";
+      g.fillStyle = "#94a3b8";
+      g.fillText("請在左側「網址」填入網址後按 📸 抓圖", c.width / 2, 225);
+      return c;
+    }
+
+    function loadSampleImages() {
+      let loaded = 0;
+      config.pages.forEach(p => {
+        ensurePageImage(p, () => {
+          loaded++;
+          if (loaded === config.pages.length) renderAll();
+        });
+      });
+    }
+
+    function renderPageTabs() {
+      const container = document.getElementById("pageTabs");
+      container.innerHTML = "";
+      config.pages.forEach((p, i) => {
+        const div = document.createElement("div");
+        const isEnabled = p.enabled !== false;
+        div.className = "page-tab" + (i === currentPageIdx ? " active" : "") + (!isEnabled ? " disabled-page" : "");
+        const activeRulesCount = (p.rules || []).filter(r => r.enabled !== false).length;
+        const modeTag = !isEnabled
+          ? "⏸️ 已停用"
+          : activeRulesCount === 0
+          ? "📸 只截圖"
+          : `警戒線 (${activeRulesCount})`;
+        div.innerHTML = `<div style="font-weight:700;">#${i + 1} ${p.name.slice(0, 10)}</div><div style="color:var(--muted);font-size:11px;">${modeTag}</div>`;
+        div.onclick = () => {
+          currentPageIdx = i;
+          selectedRuleIdx = 0;
+          ensurePageImage(p, () => {
+            // ✂️ 工具只在有整頁畫面時可用；切到還沒抓圖的頁面時自動改回 📏 警戒線
+            if (currentTool === "crop" && !fullImages[p.id]) setToolMode("rule");
+            renderAll();
+          });
+        };
+        container.appendChild(div);
+      });
+    }
+
+    function renderCropFields() {
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+      const c = page.crop_region || {};
+      document.getElementById("cropX").value = c.x;
+      document.getElementById("cropY").value = c.y;
+      document.getElementById("cropW").value = c.w;
+      document.getElementById("cropH").value = c.h;
+      const el = document.getElementById("cropSummary");
+      el.innerHTML = "";
+      const strong = document.createElement("strong");
+      if (fullImages[page.id]) {
+        strong.textContent = `${c.w} × ${c.h}（從 ${c.x}, ${c.y} 開始）`;
+        el.className = "effective-target";
+        el.append("擷取範圍：", strong, "　用畫布上方 ✂️ 擷取範圍 在整頁圖上框選");
+      } else {
+        strong.textContent = "按「📸 抓圖」取得整頁畫面後，用 ✂️ 擷取範圍框選";
+        el.className = "effective-target warn";
+        el.append("擷取範圍：", strong);
+      }
+    }
+
+    function renderSidebarInputs() {
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+      document.getElementById("pageEnabledChk").checked = page.enabled !== false;
+      document.getElementById("pageNameInput").value = page.name || "";
+      document.getElementById("pageUrlInput").value = page.url || "";
+      document.getElementById("pageWaitInput").value = page.wait_seconds || 5;
+
+      renderCropFields();
+
+      document.getElementById("sendModeSelect").value = config.teams.send_mode || "desktop_clipboard";
+      document.getElementById("autoSwitchChatChk").checked = !!config.teams.auto_switch_chat;
+      document.getElementById("autoPressEnterChk").checked = config.teams.auto_press_enter !== false;
+      document.getElementById("defaultChatInput").value = isTargetSet(config.teams.target_chat_name) ? config.teams.target_chat_name : "";
+      document.getElementById("normalSummaryInput").value = config.teams.normal_summary || "目前E3系統正常";
+      document.getElementById("abnormalHeaderInput").value = config.teams.abnormal_header || "";
+      document.getElementById("authUserInput").value = config.auth.username || "";
+      document.getElementById("authPassInput").value = config.auth.password || "";
+
+      const rulesList = document.getElementById("rulesList");
+      rulesList.innerHTML = "";
+      (page.rules || []).forEach((r, idx) => {
+        const res = evaluateRule(page.id, r);
+        const card = document.createElement("div");
+        card.className = "rule-card" + (idx === selectedRuleIdx ? " selected" : "");
+        const isRuleOn = r.enabled !== false;
+        const badgeClass = !isRuleOn ? "" : res.exceeded || res.outOfRange ? "status-alert" : "status-ok";
+        const badgeText = !isRuleOn ? "⏸️ 停用" : res.outOfRange ? "⚠️ 超出圖片範圍" : res.exceeded ? `🚨 超標 (${res.count} px)` : "✅ 正常";
+        card.innerHTML = `
+          <div class="rule-header">
+            <span>${r.name}</span>
+            <span class="status-pill ${badgeClass}">${badgeText}</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);">
+            昨日框: (${r.roi.x}, ${r.roi.y}, ${r.roi.w}x${r.roi.h}) | 警戒線 Y=${r.threshold_y}
+          </div>
+        `;
+        card.onclick = () => {
+          selectedRuleIdx = idx;
+          renderAll();
+        };
+        rulesList.appendChild(card);
+      });
+
+      const editor = document.getElementById("ruleEditor");
+      const rule = (page.rules || [])[selectedRuleIdx];
+      if (rule) {
+        editor.style.display = "block";
+        document.getElementById("ruleEnabledChk").checked = rule.enabled !== false;
+        document.getElementById("ruleNameInput").value = rule.name;
+        document.getElementById("roiX").value = rule.roi.x;
+        document.getElementById("roiY").value = rule.roi.y;
+        document.getElementById("roiW").value = rule.roi.w;
+        document.getElementById("roiH").value = rule.roi.h;
+
+        const slider = document.getElementById("thresholdYSlider");
+        slider.min = rule.roi.y;
+        slider.max = rule.roi.y + rule.roi.h;
+        slider.value = rule.threshold_y;
+        document.getElementById("thresholdYLabel").textContent = `Y = ${rule.threshold_y} px`;
+
+        document.getElementById("colorModeSelect").value = rule.color_mode || "auto";
+        document.getElementById("targetColorPicker").value = rule.target_color || "#2e34c6";
+        document.getElementById("colorToleranceInput").value = rule.color_tolerance || 48;
+        document.getElementById("ruleAlertMsgInput").value = rule.alert_message || "";
+
+        const evalRes = evaluateRule(page.id, rule);
+        document.getElementById("ruleLiveMetrics").textContent =
+          evalRes.outOfRange
+            ? "⚠️ 框在圖片範圍外，請刪除後在圖上重新拖曳"
+            : evalRes.exceeded
+            ? `🚨 偵測到 ${evalRes.count} 個像素越線！`
+            : `✅ 未越線 (${evalRes.count} px)`;
+      } else {
+        editor.style.display = "none";
+      }
+    }
+
+    // ✂️ 擷取範圍工具時顯示整頁原圖 + 擷取框；其他工具顯示裁切後的圖 (警戒線座標以裁切後的圖為準)
+    function isCropView(page) {
+      return currentTool === "crop" && !!fullImages[page.id];
+    }
+
+    function renderCanvas() {
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+      const cropView = isCropView(page);
+      const img = cropView ? fullImages[page.id] : pageImages[page.id];
+      if (!img) return;
+
+      // 「符合寬度」：依中間區域寬度自動縮放，筆電小螢幕也不用左右捲動
+      if (zoomMode === "fit") {
+        const avail = document.querySelector(".canvas-scroll").clientWidth - 40;
+        // 下限不可設太高：1920px 的整頁圖在筆電上需要縮到 0.5 倍以下才放得下
+        zoomLevel = Math.max(0.1, Math.min(3, avail / img.width));
+      } else {
+        zoomLevel = parseFloat(zoomMode);
+      }
+      document.querySelectorAll(".zoom-btn").forEach(b => b.classList.toggle("active-mode", b.dataset.zoom === zoomMode));
+
+      mainCanvas.width = img.width;
+      mainCanvas.height = img.height;
+      mainCanvas.style.width = `${Math.round(img.width * zoomLevel)}px`;
+      mainCanvas.style.height = `${Math.round(img.height * zoomLevel)}px`;
+
+      ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+      ctx.drawImage(img, 0, 0);
+
+      if (cropView) {
+        const c = page.crop_region;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+        ctx.fillRect(0, 0, img.width, c.y);
+        ctx.fillRect(0, c.y + c.h, img.width, img.height - c.y - c.h);
+        ctx.fillRect(0, c.y, c.x, c.h);
+        ctx.fillRect(c.x + c.w, c.y, img.width - c.x - c.w, c.h);
+        ctx.setLineDash([8, 4]);
+        ctx.lineWidth = Math.max(2, 2 / zoomLevel);
+        ctx.strokeStyle = "#38bdf8";
+        ctx.strokeRect(c.x, c.y, c.w, c.h);
+        ctx.setLineDash([]);
+        const label = `擷取範圍 ${c.w} × ${c.h}`;
+        ctx.font = `bold ${Math.round(13 / zoomLevel)}px sans-serif`;
+        const tw = ctx.measureText(label).width + 10 / zoomLevel;
+        const th = 18 / zoomLevel;
+        const ly = c.y >= th ? c.y - th : c.y;
+        ctx.fillStyle = "#0284c7";
+        ctx.fillRect(c.x, ly, tw, th);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(label, c.x + 5 / zoomLevel, ly + th - 5 / zoomLevel);
+        return;
+      }
+
+      {
+        (page.rules || []).forEach((r, idx) => {
+          if (r.enabled === false) return;
+          const isSelected = idx === selectedRuleIdx;
+          const res = evaluateRule(page.id, r);
+
+          const dangerHeight = Math.max(0, r.threshold_y - r.roi.y);
+          ctx.fillStyle = res.exceeded
+            ? "rgba(239, 68, 68, 0.28)"
+            : "rgba(56, 189, 248, 0.15)";
+          ctx.fillRect(r.roi.x, r.roi.y, r.roi.w, dangerHeight);
+
+          ctx.lineWidth = isSelected ? 2 : 1.2;
+          ctx.strokeStyle = res.exceeded ? "#ef4444" : isSelected ? "#38bdf8" : "#22c55e";
+          ctx.strokeRect(r.roi.x, r.roi.y, r.roi.w, r.roi.h);
+
+          ctx.beginPath();
+          ctx.moveTo(r.roi.x - 6, r.threshold_y);
+          ctx.lineTo(r.roi.x + r.roi.w + 6, r.threshold_y);
+          ctx.lineWidth = isSelected ? 2 : 1.5;
+          ctx.strokeStyle = "#ff1e1e";
+          ctx.stroke();
+          if (isSelected) {
+            // 紅線兩端的拖曳把手：提示可直接拖曳調整高度
+            const hs = Math.max(3, 4 / zoomLevel);
+            ctx.fillStyle = "#ff1e1e";
+            ctx.fillRect(r.roi.x - 6 - hs, r.threshold_y - hs, hs * 2, hs * 2);
+            ctx.fillRect(r.roi.x + r.roi.w + 6 - hs, r.threshold_y - hs, hs * 2, hs * 2);
+          }
+
+          if (res.exceeded) {
+            ctx.fillStyle = "#fde047";
+            res.hitPoints.forEach(pt => ctx.fillRect(pt.x, pt.y, 1, 1));
+          }
+
+          ctx.font = "bold 10px sans-serif";
+          const tagText = `${idx + 1}.${res.exceeded ? "🚨超標" : "✅正常"}`;
+          const tw = ctx.measureText(tagText).width + 6;
+          ctx.fillStyle = res.exceeded ? "#dc2626" : "#0284c7";
+          ctx.fillRect(r.roi.x - 2, Math.max(0, r.roi.y - 13), tw, 12);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(tagText, r.roi.x + 1, Math.max(9, r.roi.y - 3));
+        });
+      }
+    }
+
+    // 頁面有啟用中的警戒線 = 判定；沒有 = 只截圖 (不再需要手動選「處理模式」)
+    function hasActiveRules(p) {
+      return (p.rules || []).some(r => r.enabled !== false);
+    }
+
+    // 存檔前把 mode 同步成與警戒線一致，讓引擎與舊版設定都看得懂
+    function normalizePageModes() {
+      config.pages.forEach(p => { p.mode = hasActiveRules(p) ? "threshold_check" : "capture_only"; });
+    }
+
+    // ===== 發送對象與排程共用工具 =====
+    const PLACEHOLDER_TARGET = /請將.*連結|貼在這裡|預設Teams群組/;
+    // Teams「自己跟自己的對話」固定對話 ID；引擎會轉成 msteams:/l/chat/48:notes/0 開啟
+    const SELF_CHAT_ID = "48:notes";
+    const SELF_CHAT_LINK = `https://teams.microsoft.com/l/message/${SELF_CHAT_ID}/0`;
+    const ALL_PAGES_KEY = "__all__";
+    let previewScheduleId = null;   // null = 第一個啟用的排程；ALL_PAGES_KEY = 全部啟用頁面
+    let expandedScheduleIdx = -1;
+
+    function isTargetSet(t) {
+      return !!(t && t.trim() && !PLACEHOLDER_TARGET.test(t));
+    }
+
+    function describeTarget(t) {
+      if (!isTargetSet(t)) return "⚠️ 尚未設定";
+      const s = t.trim();
+      const m = s.match(/\/l\/(?:message|chat)\/([^/?]+)/);
+      if (m && decodeURIComponent(m[1]) === SELF_CHAT_ID) return "👤 自己（個人對話）";
+      if (m) return `🔗 Teams 對話連結 (…${decodeURIComponent(m[1]).slice(-12)})`;
+      if (s.includes("@") && !s.startsWith("http")) return `👤 ${s}`;
+      return s;
+    }
+
+    // 發送對象優先順序：排程 > 頁面 > 預設 (與 e3_monitor_native.ps1 相同)
+    function resolveTarget(page, sched) {
+      if (sched && isTargetSet(sched.target_chat_name)) return { target: sched.target_chat_name.trim(), source: "排程指定" };
+      if (page && isTargetSet(page.target_chat_name)) return { target: page.target_chat_name.trim(), source: "頁面指定" };
+      return { target: (config.teams.target_chat_name || "").trim(), source: "預設對象" };
+    }
+
+    function daysText(s) {
+      const days = s.days || [];
+      if (!days.length) return "每天";
+      return "週" + WEEK_DAYS.filter(d => days.includes(d[0])).map(d => d[1]).join("");
+    }
+
+    function getPreviewSchedule() {
+      ensureSchedules();
+      if (previewScheduleId === ALL_PAGES_KEY) return null;
+      let s = config.schedules.find(x => x.id === previewScheduleId);
+      if (!s) s = config.schedules.find(x => x.enabled !== false) || config.schedules[0] || null;
+      previewScheduleId = s ? s.id : ALL_PAGES_KEY;
+      return s;
+    }
+
+    // 與引擎相同：依排程 pages 順序，略過不存在或停用的頁面；sched 為 null 時 = 全部啟用頁面
+    function pagesForSchedule(sched) {
+      if (!sched) return config.pages.filter(p => p.enabled !== false);
+      return (sched.pages || [])
+        .map(id => config.pages.find(p => p.id === id))
+        .filter(p => p && p.enabled !== false);
+    }
+
+    function renderPreviewSelect() {
+      const sel = document.getElementById("previewScheduleSelect");
+      const current = getPreviewSchedule();
+      sel.innerHTML = "";
+      config.schedules.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = `${s.time || "--:--"} ${s.name || s.id}${s.enabled === false ? "（停用）" : ""}`;
+        sel.appendChild(opt);
+      });
+      const optAll = document.createElement("option");
+      optAll.value = ALL_PAGES_KEY;
+      optAll.textContent = "全部啟用頁面";
+      sel.appendChild(optAll);
+      sel.value = current ? current.id : ALL_PAGES_KEY;
+    }
+
+    // 頁面表單下方顯示「實際會送到哪」，並列出會改送他處的排程
+    function renderPageEffectiveTarget() {
+      const el = document.getElementById("pageEffectiveTarget");
+      const page = config.pages[currentPageIdx];
+      if (!el || !page) return;
+      const { target, source } = resolveTarget(page, null);
+      el.className = "effective-target" + (isTargetSet(target) ? "" : " warn");
+      el.innerHTML = "";
+      const line = document.createElement("div");
+      line.append("實際發送對象：");
+      const strong = document.createElement("strong");
+      strong.textContent = describeTarget(target);
+      line.append(strong, `（${source}）`);
+      el.appendChild(line);
+      if (!isTargetSet(target)) {
+        const hint = document.createElement("div");
+        hint.textContent = "請到「📅 排程與發送」貼上預設的 Teams 連結。";
+        el.appendChild(hint);
+      }
+      (config.schedules || [])
+        .filter(s => s.enabled !== false && (s.pages || []).includes(page.id) && isTargetSet(s.target_chat_name))
+        .forEach(s => {
+          const o = document.createElement("div");
+          o.textContent = `↳ ${s.time} ${s.name || s.id}：改送到 ${describeTarget(s.target_chat_name)}`;
+          el.appendChild(o);
+        });
+    }
+
+    function renderTeamsPreview() {
+      renderPageEffectiveTarget();
+      renderPreviewSelect();
+      const sched = getPreviewSchedule();
+      const pages = pagesForSchedule(sched);
+      const summaryEl = document.getElementById("allPagesStatusSummary");
+      const overallBadge = document.getElementById("overallBadge");
+      const container = document.getElementById("teamsGroupsContainer");
+
+      let totalAlerts = 0;
+      const groups = new Map();
+      summaryEl.innerHTML = "";
+
+      pages.forEach(p => {
+        const { target, source } = resolveTarget(p, sched);
+        if (!groups.has(target)) groups.set(target, { source, pages: [], alerts: [] });
+        const grp = groups.get(target);
+        grp.pages.push(p);
+
+        const line = document.createElement("div");
+        const pageNo = config.pages.indexOf(p) + 1;
+        if (!hasActiveRules(p)) {
+          line.textContent = `📸 #${pageNo} ${p.name}：只截圖`;
+        } else {
+          const active = (p.rules || []).filter(r => r.enabled !== false);
+          const hits = active.filter(r => evaluateRule(p.id, r).exceeded);
+          const outside = active.filter(r => evaluateRule(p.id, r).outOfRange);
+          hits.forEach(r => grp.alerts.push(r.alert_message));
+          totalAlerts += hits.length;
+          line.textContent = hits.length ? `🚨 #${pageNo} ${p.name}：${hits.length} 項超標` : `✅ #${pageNo} ${p.name}：正常`;
+          if (outside.length) line.textContent += `（⚠️ ${outside.length} 條警戒線超出圖片範圍，請重新框選）`;
+          if (hits.length || outside.length) line.style.color = hits.length ? "#f87171" : "#fbbf24";
+        }
+        summaryEl.appendChild(line);
+      });
+
+      if (!pages.length) summaryEl.textContent = "此排程沒有可傳送的頁面（請到「排程與發送」勾選頁面）。";
+      overallBadge.className = "status-pill " + (totalAlerts ? "status-alert" : "status-ok");
+      overallBadge.textContent = totalAlerts ? `${totalAlerts} 項超標` : "全部正常";
+
+      container.innerHTML = "";
+      groups.forEach((grp, target) => {
+        let msgText = grp.alerts.length === 0
+          ? (config.teams.normal_summary || "目前E3系統正常")
+          : (config.teams.abnormal_header || "⚠️ 系統異常通知：") + "\n" + grp.alerts.join("\n");
+        if (sched && sched.title) msgText = sched.title + "\n" + msgText;
+
+        const box = document.createElement("div");
+        box.className = "teams-preview";
+        box.innerHTML = `
+          <div class="teams-header">
+            <div class="teams-avatar">T</div>
+            <div style="min-width:0;">
+              <div class="tp-target" style="font-weight:700;word-break:break-all;"></div>
+              <div class="tp-meta" style="font-size:11px;color:#9ca3af;"></div>
+            </div>
+          </div>
+          <div class="teams-imgs"></div>
+          <div class="teams-text ${grp.alerts.length > 0 ? "has-alert" : ""}"></div>
+        `;
+        const targetEl = box.querySelector(".tp-target");
+        targetEl.textContent = `發送到：${describeTarget(target)}`;
+        targetEl.style.color = isTargetSet(target) ? "#93c5fd" : "#fbbf24";
+        const when = sched ? `${daysText(sched)} ${sched.time}` : "手動執行";
+        const batches = Math.ceil(grp.pages.length / 4);
+        box.querySelector(".tp-meta").textContent =
+          `${grp.source} · ${grp.pages.length} 張圖片${batches > 1 ? `（分 ${batches} 則送出）` : ""} · ${when}`;
+        const imgsDiv = box.querySelector(".teams-imgs");
+        grp.pages.forEach(p => {
+          const img = pageImages[p.id];
+          if (img && img.isPlaceholder) {
+            const note = document.createElement("div");
+            note.style.cssText = "font-size:11.5px;color:#fbbf24;";
+            note.textContent = `⚠️ ${p.name}：還沒抓圖，測試與排程前請先 📸 抓圖`;
+            imgsDiv.appendChild(note);
+          } else if (img) {
+            const thumb = document.createElement("img");
+            thumb.src = img.src || img.toDataURL("image/png");
+            imgsDiv.appendChild(thumb);
+          }
+        });
+        box.querySelector(".teams-text").textContent = msgText;
+        container.appendChild(box);
+      });
+    }
+
+    document.getElementById("previewScheduleSelect").onchange = e => {
+      previewScheduleId = e.target.value;
+      renderTeamsPreview();
+    };
+
+    // 舊版設定只有 schedule_time 時，轉成一個包含所有頁面的排程
+    function ensureSchedules() {
+      if (Array.isArray(config.schedules)) return;
+      config.schedules = [{
+        id: "daily",
+        enabled: true,
+        name: "每日巡檢",
+        time: config.schedule_time || "07:30",
+        days: [],
+        pages: config.pages.map(p => p.id),
+        target_chat_name: "",
+        title: ""
+      }];
+      delete config.schedule_time;
+    }
+
+    const WEEK_DAYS = [["MON", "一"], ["TUE", "二"], ["WED", "三"], ["THU", "四"], ["FRI", "五"], ["SAT", "六"], ["SUN", "日"]];
+
+    // 排程卡片：預設收合成一行摘要，點開才編輯 (同時只展開一張)
+    function renderSchedules() {
+      ensureSchedules();
+      const list = document.getElementById("scheduleList");
+      list.innerHTML = "";
+      config.schedules.forEach((s, si) => {
+        const card = document.createElement("div");
+        card.className = "sched-card" + (s.enabled === false ? " disabled-sched" : "");
+        const expanded = si === expandedScheduleIdx;
+        card.innerHTML = `
+          <div class="sched-row">
+            <input type="checkbox" data-k="enabled" title="啟用 / 停用此排程" />
+            <span class="sched-time" data-k="rowTime"></span>
+            <span data-k="rowName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            <span class="sched-meta" data-k="rowMeta"></span>
+            <span style="color:var(--muted);">${expanded ? "▾" : "▸"}</span>
+          </div>
+          ${expanded ? `
+          <div class="sched-body">
+            <div class="grid-2">
+              <div class="field"><label>時間</label><input type="time" data-k="time" /></div>
+              <div class="field"><label>名稱</label><input type="text" data-k="name" /></div>
+            </div>
+            <div class="field"><label>星期（全不勾 = 每天）</label><div class="sched-pages" data-k="days"></div></div>
+            <div class="field"><label>要傳的頁面（順序同頁面清單）</label><div class="sched-pages" data-k="pages"></div></div>
+            <div class="field"><label>訊息開頭（選填）</label><input type="text" data-k="title" placeholder="例如【08:00 早班巡檢】" /></div>
+            <div class="field"><label>改送到其他對象（選填）</label><input type="text" data-k="target_chat_name" placeholder="留空 = 頁面或預設對象" /></div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;" data-k="taskInfo"></div>
+            <div style="display:flex;justify-content:space-between;gap:6px;">
+              <button data-k="delete" style="color:#f87171;border-color:#7f1d1d;padding:2px 8px;font-size:11.5px;">🗑️ 刪除</button>
+              <button data-k="preview" style="padding:2px 8px;font-size:11.5px;">👁 在右側預覽</button>
+            </div>
+          </div>` : ""}
+        `;
+        const q = k => card.querySelector(`[data-k="${k}"]`);
+        q("rowTime").textContent = s.time || "--:--";
+        q("rowName").textContent = s.name || s.id;
+        const task = scheduleTaskInfo[s.id];
+        q("rowMeta").textContent = `${pagesForSchedule(s).length} 張 · ${daysText(s)}` +
+          (s.enabled === false ? "" : task ? (task.next ? ` · 下次 ${task.next}` : "") : " · ⚠️ 未寫入");
+        q("enabled").checked = s.enabled !== false;
+        q("enabled").onclick = e => e.stopPropagation();
+        q("enabled").onchange = e => { s.enabled = e.target.checked; renderSchedules(); renderTeamsPreview(); };
+        card.querySelector(".sched-row").onclick = () => {
+          expandedScheduleIdx = expanded ? -1 : si;
+          if (!expanded) previewScheduleId = s.id;
+          renderSchedules();
+          renderTeamsPreview();
+        };
+        if (expanded) {
+          ["time", "name", "title", "target_chat_name"].forEach(k => {
+            q(k).value = s[k] || "";
+            q(k).onchange = e => {
+              s[k] = e.target.value;
+              renderSchedules();
+              renderTeamsPreview();
+            };
+          });
+          q("taskInfo").textContent = `Windows 任務：E3_Monitor_${s.id}`;
+
+          WEEK_DAYS.forEach(([code, label]) => {
+            const lb = document.createElement("label");
+            const chk = document.createElement("input");
+            chk.type = "checkbox";
+            chk.checked = (s.days || []).includes(code);
+            chk.onchange = () => {
+              const set = new Set(s.days || []);
+              chk.checked ? set.add(code) : set.delete(code);
+              s.days = WEEK_DAYS.map(d => d[0]).filter(d => set.has(d));
+              renderSchedules();
+              renderTeamsPreview();
+            };
+            lb.append(chk, label);
+            q("days").appendChild(lb);
+          });
+
+          config.pages.forEach((p, pi) => {
+            const lb = document.createElement("label");
+            const chk = document.createElement("input");
+            chk.type = "checkbox";
+            chk.checked = (s.pages || []).includes(p.id);
+            chk.onchange = () => {
+              const set = new Set(s.pages || []);
+              chk.checked ? set.add(p.id) : set.delete(p.id);
+              s.pages = config.pages.map(x => x.id).filter(id => set.has(id));
+              renderSchedules();
+              renderTeamsPreview();
+            };
+            lb.title = p.name;
+            lb.append(chk, `#${pi + 1} ${p.name.slice(0, 8)}${p.enabled === false ? " (停用)" : ""}`);
+            q("pages").appendChild(lb);
+          });
+
+          q("delete").onclick = () => {
+            if (!confirm(`確定刪除排程「${s.name || s.id}」？\n（會同時從 Windows 工作排程器移除）`)) return;
+            config.schedules.splice(si, 1);
+            expandedScheduleIdx = -1;
+            renderSchedules();
+            renderTeamsPreview();
+          };
+          q("preview").onclick = () => {
+            previewScheduleId = s.id;
+            renderTeamsPreview();
+          };
+        }
+        list.appendChild(card);
+      });
+    }
+
+    document.getElementById("addScheduleBtn").onclick = () => {
+      ensureSchedules();
+      // id 自動產生 (作為 Windows 任務名稱 E3_Monitor_<id>)，使用者不需要填
+      let n = config.schedules.length + 1;
+      while (config.schedules.some(s => s.id === `sched${n}`)) n++;
+      config.schedules.push({
+        id: `sched${n}`,
+        enabled: true,
+        name: `排程 ${n}`,
+        time: "08:00",
+        days: [],
+        pages: config.pages.filter(p => p.enabled !== false).map(p => p.id),
+        target_chat_name: "",
+        title: ""
+      });
+      expandedScheduleIdx = config.schedules.length - 1;
+      previewScheduleId = `sched${n}`;
+      renderSchedules();
+      renderTeamsPreview();
+    };
+
+    // ===== 自動儲存 & 自動套用排程 =====
+    // 每秒比對設定有沒有變：有變就寫入 config.json；排程 (時間 / 星期 / 啟用 / 新增刪除) 有變就自動同步 Windows 工作排程
+    let autoSaveEnabled = false;   // 設定確定是從 config.json 讀進來後才開啟，避免用瀏覽器暫存的舊設定覆蓋
+    let lastSavedJson = "";
+    let lastAppliedSchedulesJson = "";
+    let saveInFlight = false;
+
+    function setAutoSaveStatus(kind, text) {
+      const chip = document.getElementById("autoSaveStatus");
+      chip.className = "save-chip" + (kind === "ok" ? "" : " " + kind);
+      chip.textContent = text;
+    }
+
+    // 只比對會影響 Windows 排程的欄位 (名稱、標題、發送對象改了不需要重新註冊)
+    function scheduleSignature() {
+      return JSON.stringify((config.schedules || []).map(s => [s.id, s.enabled !== false, s.time, (s.days || []).join(",")]));
+    }
+
+    async function autoSaveTick() {
+      if (!autoSaveEnabled || saveInFlight || isDragging || isCropDragging || ruleDrag) return;
+      normalizePageModes();
+      const json = JSON.stringify(config, null, 2);
+      const schedSig = scheduleSignature();
+      if (json === lastSavedJson && schedSig === lastAppliedSchedulesJson) return;
+      saveInFlight = true;
+      try {
+        if (schedSig !== lastAppliedSchedulesJson) {
+          // 排程有變：register-schedules 會一併儲存 config.json
+          await applySchedules();
+        } else {
+          setAutoSaveStatus("saving", "💾 儲存中…");
+          const ok = await saveConfigDirectly("", "", true);
+          if (ok) setAutoSaveStatus("ok", `✅ 已自動儲存 ${new Date().toLocaleTimeString("zh-TW", { hour12: false })}`);
+        }
+      } finally {
+        saveInFlight = false;
+      }
+    }
+    setInterval(autoSaveTick, 1000);
+
+    async function applySchedules() {
+      ensureSchedules();
+      normalizePageModes();
+      const jsonStr = JSON.stringify(config, null, 2);
+      const sig = scheduleSignature();
+      const reportEl = document.getElementById("registerReport");
+      setAutoSaveStatus("saving", "📅 同步 Windows 排程中…");
+      document.getElementById("scheduleSyncStatus").textContent = "⏳ 正在同步 Windows 工作排程...";
+      try { localStorage.setItem("e3_monitor_config_v1", jsonStr); } catch (e) {}
+      try {
+        const resp = await fetch("http://127.0.0.1:8765/api/register-schedules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: jsonStr
+        });
+        const data = await resp.json();
+        lastSavedJson = jsonStr;
+        lastAppliedSchedulesJson = sig;
+        reportEl.style.display = data.ok ? "none" : "block";
+        reportEl.style.color = "#f87171";
+        reportEl.textContent = data.report;
+        setAutoSaveStatus(data.ok ? "ok" : "error", data.ok ? `✅ 已自動儲存並同步排程 ${new Date().toLocaleTimeString("zh-TW", { hour12: false })}` : "⚠️ 排程同步失敗");
+      } catch (err) {
+        setAutoSaveStatus("error", "❌ 儲存失敗");
+        showServiceBanner("⚠️ 本機服務沒有回應，剛才的修改只暫存在瀏覽器，config.json 與 Windows 排程都沒有更新。請雙擊 open_calibrator.bat 重新開啟。");
+      }
+      await refreshScheduleStatus();
+    }
+
+    document.getElementById("registerSchedulesBtn").onclick = async () => {
+      if (saveInFlight) return;
+      saveInFlight = true;
+      try { await applySchedules(); } finally { saveInFlight = false; }
+    };
+
+    // 讀取 Windows 工作排程器目前的任務，顯示每個排程的「下次執行時間」
+    let scheduleTaskInfo = {};
+    async function refreshScheduleStatus() {
+      const el = document.getElementById("scheduleSyncStatus");
+      try {
+        const resp = await fetch("http://127.0.0.1:8765/api/schedule-status", { cache: "no-store" });
+        const data = await resp.json();
+        scheduleTaskInfo = {};
+        (data.tasks || []).forEach(t => { scheduleTaskInfo[t.id] = t; });
+        const enabled = (config.schedules || []).filter(s => s.enabled !== false);
+        const missing = enabled.filter(s => !scheduleTaskInfo[s.id]);
+        el.textContent = !enabled.length
+          ? "目前沒有啟用的排程"
+          : missing.length
+          ? `⚠️ ${missing.length} 個排程尚未寫入 Windows，請按「🔄 重新套用」`
+          : `✅ Windows 排程已同步（${enabled.length} 個）`;
+        el.style.color = missing.length ? "#fbbf24" : "";
+      } catch (e) {
+        el.textContent = "無法讀取 Windows 排程狀態";
+      }
+      renderSchedules();
+    }
+
+    document.getElementById("loginSetupBtn").onclick = async () => {
+      try {
+        const resp = await fetch("http://127.0.0.1:8765/api/login-setup", { method: "POST" });
+        if (!resp.ok) throw new Error(resp.status);
+        showSaveToast("🔐 已開啟登入用的 Edge 視窗，登入各網站後關閉它即可");
+      } catch (e) {
+        showSaveToast("❌ 無法開啟：本機服務沒有回應", true);
+      }
+    };
+
+    document.getElementById("sendToSelfBtn").onclick = () => {
+      config.teams.target_chat_name = SELF_CHAT_LINK;
+      document.getElementById("defaultChatInput").value = SELF_CHAT_LINK;
+      renderTeamsPreview();
+      showSaveToast("✅ 預設發送對象已設為「自己（個人對話）」，可直接按右側 🧪 測試貼上");
+    };
+
+    function renderAll() {
+      renderPageTabs();
+      renderSidebarInputs();
+      renderCanvas();
+      renderTeamsPreview();
+      renderSchedules();
+    }
+
+    function getCanvasCoords(e) {
+      const rect = mainCanvas.getBoundingClientRect();
+      const x = Math.max(0, Math.min(mainCanvas.width - 1, Math.floor((e.clientX - rect.left) / zoomLevel)));
+      const y = Math.max(0, Math.min(mainCanvas.height - 1, Math.floor((e.clientY - rect.top) / zoomLevel)));
+      return { x, y };
+    }
+
+    function updateLoupe(x, y) {
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+      const off = isCropView(page) ? fullImages[page.id] : pageImageCanvases[page.id];
+      if (!off) return;
+      const p = off.getContext("2d").getImageData(x, y, 1, 1).data;
+      document.getElementById("cursorCoordText").textContent = `X: ${x}, Y: ${y}`;
+      document.getElementById("cursorRgbText").textContent = `RGB: (${p[0]}, ${p[1]}, ${p[2]})`;
+
+      loupeCtx.imageSmoothingEnabled = false;
+      loupeCtx.clearRect(0, 0, 54, 54);
+      loupeCtx.drawImage(mainCanvas, x - 4, y - 4, 9, 9, 0, 0, 54, 54);
+      loupeCtx.strokeStyle = "#38bdf8";
+      loupeCtx.lineWidth = 1;
+      loupeCtx.strokeRect(24, 24, 6, 6);
+    }
+
+    // ===== 畫布滑鼠操作：✂️ 擷取範圍 / 📏 警戒線 兩種模式 =====
+    // 📏 模式：在空白處拖曳 = 新增一條警戒線；拖曳選取中的紅線 = 調整高度；拖曳框內 = 移動框
+    function hitTestRules(page, pt) {
+      const tol = Math.max(3, 6 / zoomLevel);   // 紅線可點範圍 (畫面上約 6px)
+      const rules = page.rules || [];
+      const sel = rules[selectedRuleIdx];
+      if (sel && sel.enabled !== false &&
+          Math.abs(pt.y - sel.threshold_y) <= tol &&
+          pt.x >= sel.roi.x - 6 - tol && pt.x <= sel.roi.x + sel.roi.w + 6 + tol) {
+        return { kind: "line", idx: selectedRuleIdx };
+      }
+      for (let i = rules.length - 1; i >= 0; i--) {
+        const r = rules[i];
+        if (r.enabled === false) continue;
+        if (pt.x >= r.roi.x && pt.x <= r.roi.x + r.roi.w && pt.y >= r.roi.y && pt.y <= r.roi.y + r.roi.h) {
+          return { kind: "box", idx: i };
+        }
+      }
+      return null;
+    }
+
+    function addRule(page, roi) {
+      const n = (page.rules || []).length + 1;
+      page.rules = page.rules || [];
+      page.rules.push({
+        id: `${page.id}_r${Date.now()}`,
+        enabled: true,
+        name: `監控小圖 #${n}`,
+        roi,
+        threshold_y: Math.round(roi.y + roi.h * 0.35),
+        color_mode: "auto",
+        target_color: "#2e34c6",
+        color_tolerance: 48,
+        min_pixels: 2,
+        alert_message: `⚠️ [${page.name} - 監控小圖 #${n}] 昨日圖示超過警戒線，請相關人員協助查詢！`
+      });
+      selectedRuleIdx = page.rules.length - 1;
+    }
+
+    mainCanvas.addEventListener("mousedown", e => {
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+      const pt = getCanvasCoords(e);
+      if (currentTool === "crop") {
+        if (!isCropView(page)) return;
+        isCropDragging = true;
+        dragStart = pt;
+        return;
+      }
+      const img = pageImageCanvases[page.id];
+      if (!img || img.isPlaceholder) return;
+
+      if (currentTool === "pick_color") {
+        const rule = (page.rules || [])[selectedRuleIdx];
+        if (rule) {
+          const p = img.getContext("2d").getImageData(pt.x, pt.y, 1, 1).data;
+          rule.color_mode = "custom";
+          rule.target_color = rgbToHex(p[0], p[1], p[2]);
+        }
+        setToolMode("rule");
+        renderAll();
+        return;
+      }
+
+      const hit = hitTestRules(page, pt);
+      if (hit && hit.kind === "line") {
+        ruleDrag = { kind: "line" };
+      } else if (hit && hit.kind === "box") {
+        selectedRuleIdx = hit.idx;
+        const r = page.rules[hit.idx];
+        ruleDrag = { kind: "move", dx: pt.x - r.roi.x, dy: pt.y - r.roi.y, lineOffset: r.threshold_y - r.roi.y };
+        renderAll();
+      } else {
+        ruleDrag = { kind: "new", start: pt, created: false };
+      }
+    });
+
+    mainCanvas.addEventListener("mousemove", e => {
+      const pt = getCanvasCoords(e);
+      updateLoupe(pt.x, pt.y);
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+
+      if (isCropDragging) {
+        page.crop_region = {
+          enabled: true,
+          x: Math.min(dragStart.x, pt.x),
+          y: Math.min(dragStart.y, pt.y),
+          w: Math.max(10, Math.abs(pt.x - dragStart.x)),
+          h: Math.max(10, Math.abs(pt.y - dragStart.y))
+        };
+        clampCrop(page, fullImages[page.id]);
+        renderCanvas();
+        renderCropFields();
+        return;
+      }
+
+      if (!ruleDrag) {
+        // 游標提示：紅線上 = 上下拖曳、框內 = 移動、其他 = 十字 (框選新警戒線)
+        const hit = currentTool === "rule" ? hitTestRules(page, pt) : null;
+        mainCanvas.style.cursor = !hit ? "crosshair" : hit.kind === "line" ? "ns-resize" : "move";
+        return;
+      }
+
+      const r = page.rules[selectedRuleIdx];
+      if (ruleDrag.kind === "new") {
+        const w = Math.abs(pt.x - ruleDrag.start.x);
+        const h = Math.abs(pt.y - ruleDrag.start.y);
+        if (!ruleDrag.created) {
+          if (w < 4 && h < 4) return;   // 只是點一下，不新增
+          addRule(page, { x: ruleDrag.start.x, y: ruleDrag.start.y, w: 4, h: 6 });
+          ruleDrag.created = true;
+        }
+        const nr = page.rules[selectedRuleIdx];
+        nr.roi = { x: Math.min(ruleDrag.start.x, pt.x), y: Math.min(ruleDrag.start.y, pt.y), w: Math.max(4, w), h: Math.max(6, h) };
+        nr.threshold_y = Math.round(nr.roi.y + nr.roi.h * 0.35);
+      } else if (ruleDrag.kind === "line" && r) {
+        r.threshold_y = Math.max(r.roi.y, Math.min(r.roi.y + r.roi.h, pt.y));
+      } else if (ruleDrag.kind === "move" && r) {
+        const img = pageImageCanvases[page.id];
+        r.roi.x = Math.max(0, Math.min(img.width - r.roi.w, pt.x - ruleDrag.dx));
+        r.roi.y = Math.max(0, Math.min(img.height - r.roi.h, pt.y - ruleDrag.dy));
+        r.threshold_y = r.roi.y + ruleDrag.lineOffset;
+      }
+      renderCanvas();
+    });
+
+    window.addEventListener("mouseup", () => {
+      isDragging = false;
+      if (ruleDrag) {
+        ruleDrag = null;
+        renderAll();
+      }
+      if (isCropDragging) {
+        isCropDragging = false;
+        // 擷取範圍改變 → 重新裁切並寫回 sample_images\<id>.png；警戒線框若超出新範圍會在畫面上看得到，需重新框選
+        rebuildCropped(config.pages[currentPageIdx], true);
+        renderAll();
+      }
+    });
+
+    function setToolMode(mode) {
+      const page = config.pages[currentPageIdx];
+      if (mode === "crop" && page && !fullImages[page.id]) {
+        showSaveToast("此頁還沒有整頁畫面，請先在「網址」旁按 📸 抓圖", true);
+        return;
+      }
+      currentTool = mode;
+      document.getElementById("modeCropBtn").classList.toggle("active-mode", mode === "crop");
+      document.getElementById("modeRuleBtn").classList.toggle("active-mode", mode === "rule" || mode === "pick_color");
+      mainCanvas.style.cursor = mode === "pick_color" ? "copy" : "crosshair";
+    }
+    document.getElementById("modeCropBtn").onclick = () => {
+      setToolMode("crop");
+      renderCanvas();
+    };
+    document.getElementById("modeRuleBtn").onclick = () => {
+      setToolMode("rule");
+      renderCanvas();
+    };
+    document.getElementById("pickColorBtn").onclick = () => {
+      if (currentTool === "crop") setToolMode("rule");
+      setToolMode("pick_color");
+      renderCanvas();
+      showSaveToast("💧 請在圖上點一下曲線，取用它的顏色");
+    };
+
+    document.querySelectorAll(".zoom-btn").forEach(btn => {
+      btn.onclick = () => {
+        zoomMode = btn.dataset.zoom;
+        renderCanvas();
+      };
+    });
+    window.addEventListener("resize", () => {
+      if (zoomMode === "fit") renderCanvas();
+    });
+
+    // 新增與刪除頁面
+    document.getElementById("addPageBtn").onclick = () => {
+      const nextNum = config.pages.length + 1;
+      const newPage = {
+        id: `page_${Date.now()}`,
+        enabled: true,
+        name: `自訂頁面 ${nextNum}`,
+        url: "http://your-internal-system.corp/new-page",
+        target_chat_name: "",
+        mode: "threshold_check",
+        wait_seconds: 5,
+        // 預設整頁 (引擎固定可視範圍 1920x1080)；📸 抓圖後再用 ✂️ 擷取範圍 框選
+        crop_region: { enabled: true, x: 0, y: 0, w: 1920, h: 1080 },
+        rules: []
+      };
+      config.pages.push(newPage);
+      currentPageIdx = config.pages.length - 1;
+      selectedRuleIdx = 0;
+      ensurePageImage(newPage, () => renderAll());
+    };
+
+    document.getElementById("deletePageBtn").onclick = () => {
+      if (config.pages.length <= 1) {
+        alert("至少需保留 1 個頁面（若不需使用可取消勾選『啟用此頁面』）。");
+        return;
+      }
+      const removed = config.pages[currentPageIdx];
+      if (!confirm(`確定刪除頁面「${removed.name}」與它的 ${(removed.rules || []).length} 條警戒線？\n（刪除後會自動儲存，並從所有排程中移除）`)) return;
+      const removedId = removed.id;
+      config.pages.splice(currentPageIdx, 1);
+      (config.schedules || []).forEach(s => {
+        s.pages = (s.pages || []).filter(id => id !== removedId);
+      });
+      currentPageIdx = Math.max(0, currentPageIdx - 1);
+      selectedRuleIdx = 0;
+      renderAll();
+    };
+
+    document.getElementById("pageEnabledChk").onchange = e => {
+      config.pages[currentPageIdx].enabled = e.target.checked;
+      renderAll();
+    };
+    document.getElementById("pageNameInput").oninput = e => {
+      config.pages[currentPageIdx].name = e.target.value;
+      renderPageTabs();
+    };
+    async function fetchLiveUrlScreenshot() {
+      const page = config.pages[currentPageIdx];
+      if (!page || !page.url || !page.url.startsWith("http")) {
+        alert("請先輸入以 http:// 或 https:// 開頭的正確網址！");
+        return;
+      }
+      if (page.url.includes("your-internal-system.corp")) {
+        return;
+      }
+      const btn = document.getElementById("fetchUrlImgBtn");
+      if (btn.disabled) return;  // Enter 與 change 事件會同時觸發，避免重複開 Edge
+      const origText = btn.textContent;
+      btn.textContent = "⏳ 抓圖中...";
+      btn.disabled = true;
+      showSaveToast("⏳ 正在用已登入的專用 Edge 開啟網頁並截圖（約 10~20 秒）...");
+
+      try {
+        const resp = await fetch("http://127.0.0.1:8765/api/capture-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: page.url, pageId: page.id })
+        });
+        const data = await resp.json();
+        if (data && data.ok && data.dataUrl) {
+          const img = new Image();
+          img.onload = () => {
+            // 伺服器已存好 <id>_full.png；保留原本的擷取範圍 (超出新畫面才改成整頁)，再重新裁切
+            fullImages[page.id] = imageToCanvas(img);
+            fitCropToFull(page, img);
+            rebuildCropped(page, true);
+            renderAll();
+            saveConfigDirectly("");
+            showSaveToast("✅ 已更新整頁畫面，可用 ✂️ 擷取範圍 框選要傳送的區域");
+          };
+          img.src = data.dataUrl;
+        } else {
+          showSaveToast("❌ 抓取網址失敗：" + (data.error || "請確認網址可連線"), true);
+        }
+      } catch (err) {
+        showSaveToast("⚠️ 請透過 open_calibrator.bat 開啟以支援即時抓取網址畫面", true);
+      } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("pageUrlInput").oninput = e => {
+      config.pages[currentPageIdx].url = e.target.value;
+    };
+    document.getElementById("pageUrlInput").onchange = () => {
+      fetchLiveUrlScreenshot();
+    };
+    document.getElementById("pageUrlInput").onkeydown = e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        fetchLiveUrlScreenshot();
+      }
+    };
+    document.getElementById("fetchUrlImgBtn").onclick = () => {
+      fetchLiveUrlScreenshot();
+    };
+    document.getElementById("pageWaitInput").oninput = e => {
+      config.pages[currentPageIdx].wait_seconds = parseInt(e.target.value) || 5;
+    };
+    ["cropX", "cropY", "cropW", "cropH"].forEach(id => {
+      document.getElementById(id).oninput = () => {
+        const p = config.pages[currentPageIdx];
+        p.crop_region.x = parseInt(document.getElementById("cropX").value) || 0;
+        p.crop_region.y = parseInt(document.getElementById("cropY").value) || 0;
+        p.crop_region.w = parseInt(document.getElementById("cropW").value) || 100;
+        p.crop_region.h = parseInt(document.getElementById("cropH").value) || 100;
+        rebuildCropped(p, true);
+        renderCanvas();
+        renderTeamsPreview();
+      };
+    });
+
+    document.getElementById("ruleEnabledChk").onchange = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (r) { r.enabled = e.target.checked; renderAll(); }
+    };
+    document.getElementById("ruleNameInput").oninput = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (r) { r.name = e.target.value; renderSidebarInputs(); }
+    };
+    ["roiX", "roiY", "roiW", "roiH"].forEach(id => {
+      document.getElementById(id).oninput = () => {
+        const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+        if (!r) return;
+        r.roi.x = parseInt(document.getElementById("roiX").value) || 0;
+        r.roi.y = parseInt(document.getElementById("roiY").value) || 0;
+        r.roi.w = Math.max(1, parseInt(document.getElementById("roiW").value) || 10);
+        r.roi.h = Math.max(1, parseInt(document.getElementById("roiH").value) || 10);
+        renderAll();
+      };
+    });
+    document.getElementById("thresholdYSlider").oninput = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (!r) return;
+      r.threshold_y = parseInt(e.target.value);
+      renderAll();
+    };
+    document.getElementById("colorModeSelect").onchange = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (!r) return;
+      r.color_mode = e.target.value;
+      renderAll();
+    };
+    document.getElementById("targetColorPicker").oninput = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (!r) return;
+      r.target_color = e.target.value;
+      r.color_mode = "custom";
+      renderAll();
+    };
+    document.getElementById("colorToleranceInput").oninput = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (!r) return;
+      r.color_tolerance = parseInt(e.target.value) || 48;
+      renderAll();
+    };
+    document.getElementById("ruleAlertMsgInput").oninput = e => {
+      const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
+      if (!r) return;
+      r.alert_message = e.target.value;
+      renderTeamsPreview();
+    };
+    document.getElementById("deleteRuleBtn").onclick = () => {
+      const page = config.pages[currentPageIdx];
+      if (!page.rules.length) return;
+      page.rules.splice(selectedRuleIdx, 1);
+      selectedRuleIdx = Math.max(0, selectedRuleIdx - 1);
+      renderAll();
+    };
+
+    document.getElementById("sendModeSelect").onchange = e => {
+      config.teams.send_mode = e.target.value;
+    };
+    document.getElementById("autoSwitchChatChk").onchange = e => {
+      config.teams.auto_switch_chat = e.target.checked;
+    };
+    document.getElementById("autoPressEnterChk").onchange = e => {
+      config.teams.auto_press_enter = e.target.checked;
+    };
+    document.getElementById("defaultChatInput").oninput = e => {
+      config.teams.target_chat_name = e.target.value;
+      renderTeamsPreview();
+    };
+    document.getElementById("normalSummaryInput").oninput = e => {
+      config.teams.normal_summary = e.target.value;
+      renderTeamsPreview();
+    };
+    document.getElementById("abnormalHeaderInput").oninput = e => {
+      config.teams.abnormal_header = e.target.value;
+      renderTeamsPreview();
+    };
+    document.getElementById("authUserInput").oninput = e => {
+      config.auth.username = e.target.value;
+    };
+    document.getElementById("authPassInput").oninput = e => {
+      config.auth.password = e.target.value;
+    };
+
+    document.getElementById("changePageImgInput").onchange = e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        // 載入的圖視為「整頁畫面」(例如網頁截圖)，之後一樣用 ✂️ 擷取範圍框選
+        const page = config.pages[currentPageIdx];
+        const img = new Image();
+        img.onload = () => {
+          fullImages[page.id] = imageToCanvas(img);
+          fitCropToFull(page, img);
+          rebuildCropped(page, true);
+          scheduleSampleSave(page.id, "full");
+          renderAll();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+
+    function showSaveToast(msg, isError = false) {
+      const el = document.getElementById("saveStatusText");
+      el.style.color = isError ? "#f87171" : "#4ade80";
+      el.textContent = msg;
+      setTimeout(() => {
+        if (el.textContent === msg) el.textContent = "";
+      }, 4000);
+    }
+
+    // testMode: "" = 只儲存；"preview" = 測試貼上不送出；"send" = 正式送出
+    // silent = 自動儲存 (不跳提示，只更新右上角狀態)
+    async function saveConfigDirectly(testMode = "", scheduleId = "", silent = false) {
+      const triggerTest = !!testMode;
+      normalizePageModes();
+      const jsonStr = JSON.stringify(config, null, 2);
+      // 1. 永遠同步保存一份到瀏覽器記憶，重整網頁也不會消失
+      try { localStorage.setItem("e3_monitor_config_v1", jsonStr); } catch (e) {}
+
+      // 2. 優先透過本機背景服務 (http://127.0.0.1:8765) 直接寫入 c:\TEST\config.json (免彈窗、免下載)
+      const params = new URLSearchParams();
+      if (scheduleId) params.set("schedule", scheduleId);
+      if (testMode === "send") params.set("send", "1");
+      const endpoint = triggerTest
+        ? "http://127.0.0.1:8765/api/test-teams?" + params.toString()
+        : "http://127.0.0.1:8765/api/save";
+      try {
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: jsonStr
+        });
+        if (resp.ok) {
+          lastSavedJson = jsonStr;
+          if (!silent) {
+            showSaveToast(
+              testMode === "send"
+                ? "✅ 已儲存並開始正式送出，請勿操作滑鼠鍵盤"
+                : testMode === "preview"
+                ? "✅ 已儲存，正在貼上到 Teams（不會送出），請勿操作滑鼠鍵盤"
+                : "✅ 已儲存至 config.json"
+            );
+          }
+          return true;
+        }
+      } catch (err) {}
+
+      // 本機服務沒有回應：明確告知 config.json 沒有更新 (瀏覽器暫存只是備份，排程讀不到)
+      setAutoSaveStatus("error", "❌ 儲存失敗");
+      showSaveToast("❌ 儲存失敗：本機服務沒有回應，config.json 沒有更新", true);
+      showServiceBanner("⚠️ 本機服務沒有回應，剛才的修改只暫存在瀏覽器，config.json 沒有更新。請雙擊 open_calibrator.bat 重新開啟，修改會在重新開啟後自動儲存。");
+      return false;
+    }
+
+    // 測試都以右側「預覽哪個排程」為準；預設只貼上不送出，正式送出需再次確認
+    function previewScheduleArg() {
+      const s = getPreviewSchedule();
+      return s ? s.id : "";
+    }
+    document.getElementById("testPreviewBtn").onclick = () => saveConfigDirectly("preview", previewScheduleArg());
+    document.getElementById("testSendNowBtn").onclick = () => {
+      const s = getPreviewSchedule();
+      const pages = pagesForSchedule(s);
+      const targets = [...new Set(pages.map(p => describeTarget(resolveTarget(p, s).target)))];
+      if (!pages.length) {
+        alert("此排程沒有可傳送的頁面。");
+        return;
+      }
+      if (targets.some(t => t.startsWith("⚠️"))) {
+        alert("尚未設定發送對象，請先到「排程與發送」貼上 Teams 連結。");
+        return;
+      }
+      const msg = `確定要用範例圖【正式送出】嗎？\n\n排程：${s ? `${s.time} ${s.name}` : "全部啟用頁面"}\n圖片：${pages.length} 張\n發送到：\n${targets.join("\n")}\n\n送出後無法收回。`;
+      if (confirm(msg)) saveConfigDirectly("send", previewScheduleArg());
+    };
+
+    // 左側三個分頁 (記住上次停留的分頁)
+    function setSideTab(tab) {
+      document.querySelector(".sidebar").dataset.activeTab = tab;
+      document.querySelectorAll("#sideTabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+      try { localStorage.setItem("e3_calibrator_tab", tab); } catch (e) {}
+    }
+    document.querySelectorAll("#sideTabs button").forEach(b => {
+      b.onclick = () => setSideTab(b.dataset.tab);
+    });
+    try {
+      const savedTab = localStorage.getItem("e3_calibrator_tab");
+      if (["pages", "send", "global"].includes(savedTab)) setSideTab(savedTab);
+    } catch (e) {}
+
+    // 直接雙擊 calibrator.html (file://) 開啟時：圖片只能用內建舊範例、抓圖後的裁切圖也存不回去，
+    // 所以本機服務有開就自動轉到 http://127.0.0.1:8765/calibrator.html，沒開就顯示警告
+    function showServiceBanner(msg) {
+      let bar = document.getElementById("serviceBanner");
+      if (!bar) {
+        bar = document.createElement("div");
+        bar.id = "serviceBanner";
+        bar.style.cssText = "background:#7f1d1d;color:#fee2e2;padding:8px 18px;font-size:13px;font-weight:600;flex-shrink:0;";
+        document.body.insertBefore(bar, document.querySelector(".workspace"));
+      }
+      bar.textContent = msg;
+    }
+
+    async function initApp() {
+      if (location.protocol === "file:") {
+        try {
+          // no-cors：本機服務不允許其他來源讀取，這裡只確認服務有沒有開 (有回應就不會丟例外)
+          await fetch("http://127.0.0.1:8765/calibrator.html", { mode: "no-cors", cache: "no-store" });
+          location.replace("http://127.0.0.1:8765/calibrator.html");
+          return;
+        } catch (e) {}
+        showServiceBanner("⚠️ 本機服務沒有啟動：畫面上是內建範例圖，抓圖與儲存都無法寫入 config.json。請關閉此頁，雙擊 open_calibrator.bat 開啟設定工具。");
+      }
+      // 啟動時自動從本機 config.json 或瀏覽器記憶讀取最新設定
+      let fromServer = false;
+      try {
+        const resp = await fetch("http://127.0.0.1:8765/api/config");
+        if (resp.ok) {
+          config = await resp.json();
+          fromServer = true;
+        }
+      } catch (e) {
+        try {
+          const cached = localStorage.getItem("e3_monitor_config_v1");
+          if (cached) config = JSON.parse(cached);
+        } catch (err) {}
+      }
+      ensureSchedules();
+      normalizePageModes();
+      lastSavedJson = JSON.stringify(config, null, 2);
+      lastAppliedSchedulesJson = scheduleSignature();
+      if (fromServer) {
+        autoSaveEnabled = true;
+        refreshScheduleStatus();
+      } else {
+        setAutoSaveStatus("error", "⚠️ 無法自動儲存");
+      }
+      loadSampleImages();
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
