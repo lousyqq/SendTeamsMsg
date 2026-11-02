@@ -1,0 +1,30 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261102225314
+Username: SARIEL\yu-tinglin
+RunAs User: SARIEL\yu-tinglin
+Configuration Name: 
+Machine: SARIEL (Microsoft Windows NT 10.0.22631.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\SendTeamsMsg\e3_monitor_native.ps1 -ConfigPath C:\Users\YU-TIN~1\AppData\Local\Temp\claude\C--SendTeamsMsg\6e71b353-3e1e-4ba3-a623-c0eb990db07a\scratchpad\cfg_edgetab.json -TestSample -DryRun -Schedule morning
+Process ID: 36140
+PSVersion: 5.1.22621.4391
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.22621.4391
+BuildVersion: 10.0.22621.4391
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+============================================================
+🚀 啟動 E3 彈性化監控截圖 & 警戒線檢查 (Windows 零外掛原生版)
+📅 排程: [morning] 早上 08:00 巡檢
+============================================================
+📌 本次要擷取的頁面數量: 1 頁
+🧪 [範例測試模式] 使用 sample_images 資料夾中的截圖進行驗證...
+⚠️ [page1] 測試 還沒有範例圖 (sample_images\page1.png)，請先在設定工具按 📸 抓圖；本次略過此頁
+⚠️ [page1] 沒有擷取到截圖，已略過
+**********************
+Windows PowerShell transcript end
+End time: 20261102225315
+**********************

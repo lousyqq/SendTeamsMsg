@@ -61,10 +61,8 @@
                  "save_session":  true
              },
     "teams":  {
-                  "send_mode":  "desktop_clipboard",
-                  "desktop_window_title":  "Teams",
-                  "target_chat_name":  "https://teams.microsoft.com/l/message/48:notes/1700000000000?context=%7B%22contextType%22%3A%22chat%22%7D",
-                  "auto_switch_chat":  false,
+                  "prefer_window":  "",
+                  "target_chat_name":  "E3 監控通報群組",
                   "normal_summary":  "目前E3系統正常",
                   "abnormal_header":  "⚠️ E3系統監控異常通知（昨日圖示超過警戒線，請相關人員協助查詢）：",
                   "attach_annotated_image_on_alert":  false,

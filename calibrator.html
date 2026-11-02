@@ -485,6 +485,20 @@
       line-height: 1.6;
       margin-bottom: 8px;
     }
+    .detect-report {
+      margin: 6px 0 0;
+      padding: 6px 8px;
+      max-height: 260px;
+      overflow: auto;
+      background: #0b1220;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #cbd5e1;
+    }
     .sync-row {
       display: flex;
       align-items: center;
@@ -660,16 +674,21 @@
       <div class="section-box" data-tab="send" style="border-color:#38bdf8;">
         <div class="section-title"><span>預設發送對象</span></div>
         <div class="field">
-          <label>Teams 對話的「🔗 複製連結」網址（排程沒指定時使用）</label>
-          <input type="text" id="defaultChatInput" placeholder="https://teams.microsoft.com/l/message/..." />
-          <button id="sendToSelfBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" title="不用複製連結，直接把發送對象設成自己跟自己的個人對話">📨 先傳給自己測試</button>
+          <label>Teams 對話名稱（與聊天清單上顯示的一模一樣；排程沒指定時使用）</label>
+          <input type="text" id="defaultChatInput" placeholder="例如：E3 乖乖_2026APM" />
+          <button id="sendToSelfBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" title="把發送對象設成自己跟自己的個人對話">📨 先傳給自己測試</button>
         </div>
         <div class="field" style="margin-bottom:0;">
-          <label>發送方式</label>
-          <select id="sendModeSelect">
-            <option value="desktop_clipboard">桌面版 Teams（剪貼簿貼圖，預設）</option>
-            <option value="edge_teams_web">網頁版 Teams（Edge 內貼圖，不佔剪貼簿）</option>
+          <label>使用哪個 Teams</label>
+          <select id="teamsWindowSelect">
+            <option value="">自動（PWA → 桌面版 → Edge 分頁）</option>
+            <option value="pwa">只用 Teams 應用程式 (PWA)</option>
+            <option value="edge-tab">只用 Edge 分頁（teams.cloud.microsoft）</option>
+            <option value="desktop">只用桌面版 Teams</option>
           </select>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">程式會用您<b>已經開著、已經登入</b>的 Teams，不需另外登入。發送前請先開好 Teams；同時開著好幾種時，選「只用…」指定。</div>
+          <button id="detectTeamsBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" title="列出開著的 Teams、發送時會用哪一個、能否找到發送對象；不會切換或貼上">🔍 偵測 Teams 視窗</button>
+          <pre id="detectTeamsResult" class="detect-report" hidden></pre>
         </div>
       </div>
 
@@ -714,18 +733,14 @@
             <input type="password" id="authPassInput" />
           </div>
         </div>
-        <div style="font-size:11px;color:var(--muted);">頁面出現密碼框時才會自動填入；已用「🔐 登入監控網站」登入過可留空。</div>
+        <div style="font-size:11px;color:var(--muted);">頁面出現密碼框，或只有 Login / 登入 按鈕（例如 Zabbix「You are not logged in」）時，會自動點選並填入；已用「🔐 登入監控網站」登入過可留空。</div>
       </div>
 
       <div class="section-box" data-tab="global">
         <div class="section-title"><span>Teams 發送安全</span></div>
-        <label class="chk-row">
+        <label class="chk-row" style="margin-bottom:0;">
           <input type="checkbox" id="autoPressEnterChk" checked />
           <span>正式排程貼上後自動按 Enter 送出</span>
-        </label>
-        <label class="chk-row" style="margin-bottom:0;">
-          <input type="checkbox" id="autoSwitchChatChk" />
-          <span>沒有連結時，以名稱搜尋切換對話（可能傳錯，不建議）</span>
         </label>
       </div>
     </div>
@@ -797,10 +812,8 @@
         save_session: true
       },
       teams: {
-        send_mode: "desktop_clipboard",
-        desktop_window_title: "Teams",
+        prefer_window: "",
         target_chat_name: "",
-        auto_switch_chat: false,
         normal_summary: "目前E3系統正常",
         abnormal_header: "⚠️ E3系統監控異常通知（昨日圖示超過警戒線，請相關人員協助查詢）：",
         attach_annotated_image_on_alert: false,
@@ -1227,10 +1240,10 @@
 
       renderCropFields();
 
-      document.getElementById("sendModeSelect").value = config.teams.send_mode || "desktop_clipboard";
-      document.getElementById("autoSwitchChatChk").checked = !!config.teams.auto_switch_chat;
+      document.getElementById("teamsWindowSelect").value = config.teams.prefer_window || "";
       document.getElementById("autoPressEnterChk").checked = config.teams.auto_press_enter !== false;
-      document.getElementById("defaultChatInput").value = isTargetSet(config.teams.target_chat_name) ? config.teams.target_chat_name : "";
+      const defTarget = config.teams.target_chat_name;
+      document.getElementById("defaultChatInput").value = !isTargetSet(defTarget) ? "" : isSelfTarget(defTarget) ? SELF_TARGET : defTarget;
       document.getElementById("normalSummaryInput").value = config.teams.normal_summary || "目前E3系統正常";
       document.getElementById("abnormalHeaderInput").value = config.teams.abnormal_header || "";
       document.getElementById("authUserInput").value = config.auth.username || "";
@@ -1407,9 +1420,8 @@
 
     // ===== 發送對象與排程共用工具 =====
     const PLACEHOLDER_TARGET = /請將.*連結|貼在這裡|預設Teams群組/;
-    // Teams「自己跟自己的對話」固定對話 ID；引擎會轉成 msteams:/l/chat/48:notes/0 開啟
-    const SELF_CHAT_ID = "48:notes";
-    const SELF_CHAT_LINK = `https://teams.microsoft.com/l/message/${SELF_CHAT_ID}/0`;
+    // 發送對象填 Teams 聊天清單上的對話名稱；「自己」= 自己跟自己的個人對話 (舊設定的 48:notes 連結也視為自己)
+    const SELF_TARGET = "自己";
     const ALL_PAGES_KEY = "__all__";
     let previewScheduleId = null;   // null = 第一個啟用的排程；ALL_PAGES_KEY = 全部啟用頁面
     let expandedScheduleIdx = -1;
@@ -1418,14 +1430,28 @@
       return !!(t && t.trim() && !PLACEHOLDER_TARGET.test(t));
     }
 
+    function isSelfTarget(t) {
+      const s = (t || "").trim();
+      return /48(:|%3A)notes/i.test(s) || s === SELF_TARGET || s.toLowerCase() === "self";
+    }
+
+    // 引擎不接受的寫法 (與 e3_monitor_native.ps1 Resolve-ChatTarget 相同)；可用時回傳空字串
+    function targetProblem(t) {
+      if (!isTargetSet(t) || isSelfTarget(t)) return "";
+      const s = t.trim();
+      if (/^(https?|msteams):/i.test(s)) return "⚠️ 連結無法使用，請改填對話名稱";
+      if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) return "⚠️ Email 無法使用，請改填對話名稱";
+      return "";
+    }
+
+    function isTargetUsable(t) {
+      return isTargetSet(t) && !targetProblem(t);
+    }
+
     function describeTarget(t) {
       if (!isTargetSet(t)) return "⚠️ 尚未設定";
-      const s = t.trim();
-      const m = s.match(/\/l\/(?:message|chat)\/([^/?]+)/);
-      if (m && decodeURIComponent(m[1]) === SELF_CHAT_ID) return "👤 自己（個人對話）";
-      if (m) return `🔗 Teams 對話連結 (…${decodeURIComponent(m[1]).slice(-12)})`;
-      if (s.includes("@") && !s.startsWith("http")) return `👤 ${s}`;
-      return s;
+      if (isSelfTarget(t)) return "👤 自己（個人對話）";
+      return targetProblem(t) || `💬 ${t.trim()}`;
     }
 
     // 發送對象優先順序：排程 > 頁面 > 預設 (與 e3_monitor_native.ps1 相同)
@@ -1481,7 +1507,7 @@
       const page = config.pages[currentPageIdx];
       if (!el || !page) return;
       const { target, source } = resolveTarget(page, null);
-      el.className = "effective-target" + (isTargetSet(target) ? "" : " warn");
+      el.className = "effective-target" + (isTargetUsable(target) ? "" : " warn");
       el.innerHTML = "";
       const line = document.createElement("div");
       line.append("實際發送對象：");
@@ -1489,9 +1515,9 @@
       strong.textContent = describeTarget(target);
       line.append(strong, `（${source}）`);
       el.appendChild(line);
-      if (!isTargetSet(target)) {
+      if (!isTargetUsable(target)) {
         const hint = document.createElement("div");
-        hint.textContent = "請到「📅 排程與發送」貼上預設的 Teams 連結。";
+        hint.textContent = "請到「📅 排程與發送」填入預設的 Teams 對話名稱。";
         el.appendChild(hint);
       }
       (config.schedules || [])
@@ -1565,7 +1591,7 @@
         `;
         const targetEl = box.querySelector(".tp-target");
         targetEl.textContent = `發送到：${describeTarget(target)}`;
-        targetEl.style.color = isTargetSet(target) ? "#93c5fd" : "#fbbf24";
+        targetEl.style.color = isTargetUsable(target) ? "#93c5fd" : "#fbbf24";
         const when = sched ? `${daysText(sched)} ${sched.time}` : "手動執行";
         const batches = Math.ceil(grp.pages.length / 4);
         box.querySelector(".tp-meta").textContent =
@@ -1638,7 +1664,7 @@
             <div class="field"><label>星期（全不勾 = 每天）</label><div class="sched-pages" data-k="days"></div></div>
             <div class="field"><label>要傳的頁面（順序同頁面清單）</label><div class="sched-pages" data-k="pages"></div></div>
             <div class="field"><label>訊息開頭（選填）</label><input type="text" data-k="title" placeholder="例如【08:00 早班巡檢】" /></div>
-            <div class="field"><label>改送到其他對象（選填）</label><input type="text" data-k="target_chat_name" placeholder="留空 = 頁面或預設對象" /></div>
+            <div class="field"><label>改送到其他對象（選填）</label><input type="text" data-k="target_chat_name" placeholder="對話名稱；留空 = 預設對象" /></div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:8px;" data-k="taskInfo"></div>
             <div style="display:flex;justify-content:space-between;gap:6px;">
               <button data-k="delete" style="color:#f87171;border-color:#7f1d1d;padding:2px 8px;font-size:11.5px;">🗑️ 刪除</button>
@@ -1851,10 +1877,34 @@
     };
 
     document.getElementById("sendToSelfBtn").onclick = () => {
-      config.teams.target_chat_name = SELF_CHAT_LINK;
-      document.getElementById("defaultChatInput").value = SELF_CHAT_LINK;
+      config.teams.target_chat_name = SELF_TARGET;
+      document.getElementById("defaultChatInput").value = SELF_TARGET;
       renderTeamsPreview();
       showSaveToast("✅ 預設發送對象已設為「自己（個人對話）」，可直接按右側 🧪 測試貼上");
+    };
+
+    // 列出開著的 Teams 與發送對象能否找到 (會先存檔，用畫面上最新的設定)；不會切換或貼上
+    document.getElementById("detectTeamsBtn").onclick = async () => {
+      const btn = document.getElementById("detectTeamsBtn");
+      const out = document.getElementById("detectTeamsResult");
+      btn.disabled = true;
+      out.hidden = false;
+      out.textContent = "🔍 偵測中（約 5～20 秒）...";
+      try {
+        const jsonStr = JSON.stringify(config, null, 2);
+        const resp = await fetch("http://127.0.0.1:8765/api/teams-detect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: jsonStr
+        });
+        if (!resp.ok) throw new Error(resp.status);
+        lastSavedJson = jsonStr;
+        out.textContent = (await resp.json()).report;
+      } catch (e) {
+        out.textContent = "❌ 無法偵測：本機服務沒有回應，請雙擊 open_calibrator.bat 重新開啟";
+      } finally {
+        btn.disabled = false;
+      }
     };
 
     function renderAll() {
@@ -2247,11 +2297,8 @@
       renderAll();
     };
 
-    document.getElementById("sendModeSelect").onchange = e => {
-      config.teams.send_mode = e.target.value;
-    };
-    document.getElementById("autoSwitchChatChk").onchange = e => {
-      config.teams.auto_switch_chat = e.target.checked;
+    document.getElementById("teamsWindowSelect").onchange = e => {
+      config.teams.prefer_window = e.target.value;
     };
     document.getElementById("autoPressEnterChk").onchange = e => {
       config.teams.auto_press_enter = e.target.checked;
@@ -2363,7 +2410,7 @@
         return;
       }
       if (targets.some(t => t.startsWith("⚠️"))) {
-        alert("尚未設定發送對象，請先到「排程與發送」貼上 Teams 連結。");
+        alert("發送對象尚未設定或無法使用（連結 / Email），請先到「排程與發送」填入 Teams 對話名稱。");
         return;
       }
       const msg = `確定要用範例圖【正式送出】嗎？\n\n排程：${s ? `${s.time} ${s.name}` : "全部啟用頁面"}\n圖片：${pages.length} 張\n發送到：\n${targets.join("\n")}\n\n送出後無法收回。`;

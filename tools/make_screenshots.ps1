@@ -5,7 +5,7 @@
 # ==============================================================================
 # 重新產生 USER_MANUAL.html 的設定工具截圖，並直接嵌入手冊 (calibrator.html 介面改版後執行一次)
 # - 在暫存資料夾建立「示範環境」：複製目前的 calibrator.html / e3_monitor_native.ps1，
-#   搭配 _demo_config.json (假的 Teams 連結) 與 sample_data.js 內建範例圖，不會讀寫您的 config.json、Teams 或排程
+#   搭配 _demo_config.json (示範用的 Teams 對話名稱) 與 sample_data.js 內建範例圖，不會讀寫您的 config.json、Teams 或排程
 # - 用 headless Edge (獨立暫存設定檔) 截圖，寫入 USER_MANUAL.html 的 MANUAL_IMAGES 區塊，不另外留下圖片檔
 # 執行前請先關閉 open_calibrator.bat 的黑色視窗 (示範環境需要使用 8765 連接埠)
 # ==============================================================================
@@ -133,6 +133,9 @@ try {
     Shot "06_preview_panel" 1600 1000 "setSideTab('send'); previewScheduleId = 'afternoon'; renderAll()" ".right-panel"
     Shot "07_global_tab" 1600 700 "setSideTab('global'); renderAll()" ".sidebar"
     Shot "08_placeholder" 1600 700 "setSideTab('pages'); document.getElementById('addPageBtn').click(); await new Promise(r => setTimeout(r, 400))"
+    # 示範環境不真的偵測：顯示一份範例的偵測結果
+    $fakeDetect = "🔍 Teams 視窗偵測  2026-11-02 09:00:00\n使用哪種 Teams (teams.prefer_window)：自動 (PWA → 桌面版 → Edge 分頁)\n\n【找到的 Teams】\n  • Teams 應用程式 (PWA)：聊天 | E3 監控通報群組 | Microsoft Teams\n\n【發送時會使用】\n  ✅ Teams 應用程式 (PWA)\n  目前對話：E3 監控通報群組\n  「輸入訊息」框：✅ 找到\n  聊天清單：畫面上有 24 個項目\n  發送對象「E3 監控通報群組」：✅ 就是目前對話"
+    Shot "09_detect_teams" 1600 1000 "setSideTab('send'); renderAll(); const o = document.getElementById('detectTeamsResult'); o.hidden = false; o.textContent = '$fakeDetect'" ".sidebar"
     $ws.Dispose()
 
     # ---- 4. 寫入 USER_MANUAL.html 的 MANUAL_IMAGES 區塊 (每張圖一行) ----

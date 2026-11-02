@@ -1,0 +1,20 @@
+🔍 Teams 視窗偵測  2026-11-02 23:00:45
+使用哪種 Teams (teams.prefer_window)：自動 (PWA → 桌面版 → Edge 分頁)
+
+【找到的 Teams】
+  • 桌面版 Teams：聊天 | Sariel Lin-林玉婷 (您) | 聯華電子 | sariel_lin@umc.com | Microsoft Teams
+  • Edge 分頁中的 Teams：分頁「聊天 | Sariel Lin-林玉婷 (您) | Microsoft Teams - 高記憶體使用量 - 987 MB」(目前分頁)
+  • Edge 分頁中的 Teams：分頁「Chat | Sariel Lin-林玉婷 (You) | Microsoft Teams - 已捨棄 - 記憶體使用量 - 422 MB」(不是目前分頁，發送時會自動切過去)
+
+【所有 Edge / Teams 視窗標題】(PWA 沒被認出時，請回報這段)
+  [msedge] 聊天 | Sariel Lin-林玉婷 (您) | Microsoft Teams 和其他 2 個頁面 - 公司 - Microsoft​ Edge
+  [ms-teams] 聊天 | Sariel Lin-林玉婷 (您) | 聯華電子 | sariel_lin@umc.com | Microsoft Teams
+Teams PWA 捷徑：沒有
+桌面版 Teams (msteams: 連結)：已安裝
+
+【發送時會使用】
+  ✅ 桌面版 Teams
+  目前對話：Sariel Lin-林玉婷 (您)
+  「輸入訊息」框：✅ 找到
+  聊天清單：畫面上有 41 個項目
+  發送對象「自己（個人對話）」：✅ 就是目前對話
