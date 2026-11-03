@@ -443,6 +443,40 @@
       border-color: var(--accent);
       color: #fff;
     }
+    .zoom-input-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .zoom-input-row span {
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+    .zoom-presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+    .zoom-presets button {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-variant-numeric: tabular-nums;
+    }
+    .zoom-presets button:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+    .zoom-presets button.active {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: var(--accent);
+      color: #fff;
+    }
     .preview-select {
       width: 100%;
       background: #0f172a;
@@ -525,7 +559,7 @@
   </style>
 </head>
 <body>
-  <header>
+<header>
     <div class="brand">
       <span>📊 E3 監控截圖設定工具</span>
       <span class="badge">免外掛版</span>
@@ -537,6 +571,8 @@
     </div>
   </header>
 
+
+
   <div class="workspace">
     <!-- 左側設定面板 -->
     <div class="sidebar" data-active-tab="pages">
@@ -545,6 +581,8 @@
         <button data-tab="send">📅 排程與發送</button>
         <button data-tab="global">⚙️ 全域設定</button>
       </div>
+
+
 
       <!-- ===== 分頁：頁面與警戒線 ===== -->
       <div class="section-box" data-tab="pages">
@@ -557,6 +595,8 @@
         </div>
         <div class="page-tabs" id="pageTabs"></div>
       </div>
+
+
 
       <div class="section-box" data-tab="pages">
         <div class="section-title">
@@ -578,10 +618,26 @@
           <label>網址（按 Enter 或「抓圖」更新中間畫面）</label>
           <div style="display:flex;gap:5px;">
             <input type="text" id="pageUrlInput" style="flex:1;" />
-            <button id="fetchUrlImgBtn" class="primary" style="padding:4px 10px;font-size:12px;white-space:nowrap;" title="立即連線抓取此網址的真實畫面並更新中間截圖">
+            <button id="fetchUrlImgBtn" class="primary" style="padding:4px 10px;font-size:12px;white-space:nowrap;" title="開啟 Edge，先捲動再按「擷取目前畫面」">
               📸 抓圖
             </button>
           </div>
+        </div>
+        <div class="field">
+          <label for="pageBrowserZoom">網頁縮放（50～200 的整數 %；小於 100 一次看到較大範圍，大於 100 放大文字與圖表）</label>
+          <div class="zoom-input-row">
+            <input type="number" id="pageBrowserZoom" min="50" max="200" step="1" inputmode="numeric" />
+            <span>%</span>
+          </div>
+          <div class="zoom-presets" id="pageZoomPresets" title="常用比例 (與 Edge 的縮放級距相同)">
+            <button type="button" data-zoom="50">50</button><button type="button" data-zoom="67">67</button>
+            <button type="button" data-zoom="75">75</button><button type="button" data-zoom="80">80</button>
+            <button type="button" data-zoom="90">90</button><button type="button" data-zoom="100">100</button>
+            <button type="button" data-zoom="110">110</button><button type="button" data-zoom="125">125</button>
+            <button type="button" data-zoom="150">150</button><button type="button" data-zoom="175">175</button>
+            <button type="button" data-zoom="200">200</button>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.5;margin-top:5px;">按「抓圖」開啟 Edge → 捲到要的位置 → 按「擷取目前畫面」→ 回來框選。排程會還原縮放與捲動位置；變更後請確認警戒線。</div>
         </div>
         <div class="effective-target" id="cropSummary" style="margin-top:0;margin-bottom:8px;"></div>
         <details class="advanced">
@@ -603,6 +659,8 @@
         <div class="effective-target" id="pageEffectiveTarget"></div>
       </div>
 
+
+
       <!-- 警戒線清單與編輯區 -->
       <div class="section-box" id="rulesSection" data-tab="pages">
         <div class="section-title">
@@ -613,6 +671,8 @@
           <b>拖曳紅線</b>調整高度；拖曳框內可移動。沒有任何警戒線＝只截圖。
         </div>
         <div id="rulesList"></div>
+
+
 
         <div id="ruleEditor" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
           <label class="chk-row">
@@ -670,6 +730,8 @@
         </div>
       </div>
 
+
+
       <!-- ===== 分頁：排程與發送 ===== -->
       <div class="section-box" data-tab="send" style="border-color:#38bdf8;">
         <div class="section-title"><span>預設發送對象</span></div>
@@ -692,6 +754,8 @@
         </div>
       </div>
 
+
+
       <div class="section-box" data-tab="send" style="border-color:#a855f7;">
         <div class="section-title">
           <span>排程時段</span>
@@ -705,6 +769,8 @@
         <pre id="registerReport" style="display:none;white-space:pre-wrap;font-size:11px;margin:8px 0 0;color:var(--muted);"></pre>
       </div>
 
+
+
       <div class="section-box" data-tab="send">
         <div class="section-title"><span>訊息文字</span></div>
         <div class="field">
@@ -716,6 +782,8 @@
           <input type="text" id="abnormalHeaderInput" />
         </div>
       </div>
+
+
 
       <!-- ===== 分頁：全域設定 ===== -->
       <div class="section-box" data-tab="global">
@@ -736,6 +804,8 @@
         <div style="font-size:11px;color:var(--muted);">頁面出現密碼框，或只有 Login / 登入 按鈕（例如 Zabbix「You are not logged in」）時，會自動點選並填入；已用「🔐 登入監控網站」登入過可留空。</div>
       </div>
 
+
+
       <div class="section-box" data-tab="global">
         <div class="section-title"><span>Teams 發送安全</span></div>
         <label class="chk-row" style="margin-bottom:0;">
@@ -745,14 +815,17 @@
       </div>
     </div>
 
+
+
     <!-- 中間視覺化畫布區 -->
     <div class="center-stage">
       <div class="canvas-toolbar">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          <button id="modeCropBtn" title="顯示整頁畫面，拖曳框出要截圖傳送的範圍">✂️ 擷取範圍</button>
+          <button id="modeCropBtn" title="顯示擷取的來源畫面，拖曳框出要傳送的範圍">✂️ 擷取範圍</button>
           <button id="modeRuleBtn" class="active-mode" title="拖曳新增警戒線框、拖曳紅線調整高度">📏 警戒線</button>
           <span style="width:1px;height:20px;background:var(--border);margin:0 2px;"></span>
-          <button class="zoom-btn" data-zoom="fit" title="縮放到符合畫面寬度">符合寬度</button>
+          <span style="font-size:11px;color:#94a3b8;">畫布預覽</span>
+          <button class="zoom-btn" data-zoom="fit" title="僅調整預覽大小；原始網頁縮放請使用左側設定">符合寬度</button>
           <button class="zoom-btn" data-zoom="1">100%</button>
           <button class="zoom-btn" data-zoom="2">200%</button>
           <button class="zoom-btn" data-zoom="3">300%</button>
@@ -766,12 +839,16 @@
         </div>
       </div>
 
+
+
       <div class="canvas-scroll">
         <div class="canvas-wrapper">
           <canvas id="mainCanvas"></canvas>
         </div>
       </div>
     </div>
+
+
 
     <!-- 右側即時檢測結果與依 Teams 群組分流的預覽 -->
     <div class="right-panel">
@@ -789,6 +866,8 @@
         <div id="allPagesStatusSummary" style="font-size:12px;line-height:1.6;"></div>
       </div>
 
+
+
       <div class="section-box" style="flex:1;display:flex;flex-direction:column;">
         <div class="section-title">
           <span>💬 Teams 訊息預覽</span>
@@ -797,6 +876,8 @@
       </div>
     </div>
   </div>
+
+
 
   <script>
     const DEFAULT_CONFIG = {
@@ -954,6 +1035,8 @@
       ]
     };
 
+
+
     let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     let currentPageIdx = 0;
     let selectedRuleIdx = 0;
@@ -968,10 +1051,14 @@
     let isDragging = false;
     let dragStart = { x: 0, y: 0 };
 
+
+
     const mainCanvas = document.getElementById("mainCanvas");
     const ctx = mainCanvas.getContext("2d");
     const loupeCanvas = document.getElementById("loupeCanvas");
     const loupeCtx = loupeCanvas.getContext("2d");
+
+
 
     function hexToRgb(hex) {
       const clean = (hex || "#000000").replace("#", "");
@@ -979,15 +1066,21 @@
       return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
     }
 
+
+
     function rgbToHex(r, g, b) {
       return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
     }
+
+
 
     function isCurvePixel(r, g, b, rule) {
       const maxC = Math.max(r, g, b);
       const minC = Math.min(r, g, b);
       const saturation = maxC - minC;
       const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+
 
       if (rule.color_mode === "custom") {
         const target = hexToRgb(rule.target_color || "#2e34c6");
@@ -999,10 +1092,14 @@
         return dist <= (rule.color_tolerance || 48);
       }
 
+
+
       if (lum > 206 && saturation < 28) return false;
       if (r > 200 && (r - g) > 15 && g > 160 && b > 160) return false;
       return lum < 192 || saturation >= 30;
     }
+
+
 
     function evaluateRule(pageId, rule) {
       if (rule.enabled === false) return { exceeded: false, count: 0, hitPoints: [] };
@@ -1019,8 +1116,12 @@
       const rh = Math.max(1, Math.min(offCanvas.height - ry, Math.round(rule.roi.h)));
       const threshY = Math.round(rule.threshold_y);
 
+
+
       const imgData = offCtx.getImageData(rx, ry, rw, rh).data;
       const hitPoints = [];
+
+
 
       for (let dy = 0; dy < rh; dy++) {
         const absY = ry + dy;
@@ -1033,6 +1134,8 @@
         }
       }
 
+
+
       const minPx = rule.min_pixels || 2;
       return {
         exceeded: hitPoints.length >= minPx,
@@ -1040,8 +1143,7 @@
         hitPoints
       };
     }
-
-    // 每頁兩張圖：
+// 每頁兩張圖：
     //   fullImages[id]         整頁原圖 (📸 抓圖 / 🖼️ 載入截圖，存成 sample_images\<id>_full.png)
     //   pageImageCanvases[id]  依 crop_region 裁切後的圖 = 正式排程會送出的圖，警戒線座標以它為準 (存成 <id>.png)
     function imageToCanvas(img) {
@@ -1052,10 +1154,14 @@
       return c;
     }
 
+
+
     function setCroppedCanvas(pageId, canvas) {
       pageImageCanvases[pageId] = canvas;
       pageImages[pageId] = canvas;
     }
+
+
 
     function clampCrop(page, full) {
       const c = page.crop_region || (page.crop_region = { enabled: true, x: 0, y: 0, w: full.width, h: full.height });
@@ -1066,6 +1172,8 @@
       c.h = Math.max(1, Math.min(full.height - c.y, Math.round(c.h || full.height)));
     }
 
+
+
     // 擷取範圍不在整頁圖內 (例如新頁面或網頁版面變了) 時，改成整頁
     function fitCropToFull(page, full) {
       const c = page.crop_region;
@@ -1073,6 +1181,8 @@
         page.crop_region = { enabled: true, x: 0, y: 0, w: full.width, h: full.height };
       }
     }
+
+
 
     function rebuildCropped(page, persist) {
       const full = fullImages[page.id];
@@ -1086,6 +1196,8 @@
       setCroppedCanvas(page.id, off);
       if (persist) scheduleSampleSave(page.id, "crop");
     }
+
+
 
     const sampleSaveTimers = {};
     function scheduleSampleSave(pageId, kind) {
@@ -1108,6 +1220,8 @@
       }, 600);
     }
 
+
+
     function loadImage(src) {
       return new Promise((resolve, reject) => {
         const img = new Image();
@@ -1116,6 +1230,8 @@
         img.src = src;
       });
     }
+
+
 
     async function ensurePageImage(pageObj, callback) {
       if (pageImages[pageObj.id]) {
@@ -1149,6 +1265,8 @@
       if (callback) callback();
     }
 
+
+
     function makePlaceholderCanvas() {
       const c = document.createElement("canvas");
       c.width = 960;
@@ -1171,6 +1289,8 @@
       return c;
     }
 
+
+
     function loadSampleImages() {
       let loaded = 0;
       config.pages.forEach(p => {
@@ -1180,6 +1300,8 @@
         });
       });
     }
+
+
 
     function renderPageTabs() {
       const container = document.getElementById("pageTabs");
@@ -1208,6 +1330,8 @@
       });
     }
 
+
+
     function renderCropFields() {
       const page = config.pages[currentPageIdx];
       if (!page) return;
@@ -1222,13 +1346,15 @@
       if (fullImages[page.id]) {
         strong.textContent = `${c.w} × ${c.h}（從 ${c.x}, ${c.y} 開始）`;
         el.className = "effective-target";
-        el.append("擷取範圍：", strong, "　用畫布上方 ✂️ 擷取範圍 在整頁圖上框選");
+        el.append("擷取範圍：", strong, "　用畫布上方 ✂️ 擷取範圍 在來源圖上框選");
       } else {
-        strong.textContent = "按「📸 抓圖」取得整頁畫面後，用 ✂️ 擷取範圍框選";
+        strong.textContent = "按「📸 抓圖」，在 Edge 捲動並擷取後，用 ✂️ 擷取範圍框選";
         el.className = "effective-target warn";
         el.append("擷取範圍：", strong);
       }
     }
+
+
 
     function renderSidebarInputs() {
       const page = config.pages[currentPageIdx];
@@ -1237,8 +1363,13 @@
       document.getElementById("pageNameInput").value = page.name || "";
       document.getElementById("pageUrlInput").value = page.url || "";
       document.getElementById("pageWaitInput").value = page.wait_seconds || 5;
+      renderBrowserZoom(page);
+
+
 
       renderCropFields();
+
+
 
       document.getElementById("teamsWindowSelect").value = config.teams.prefer_window || "";
       document.getElementById("autoPressEnterChk").checked = config.teams.auto_press_enter !== false;
@@ -1248,6 +1379,8 @@
       document.getElementById("abnormalHeaderInput").value = config.teams.abnormal_header || "";
       document.getElementById("authUserInput").value = config.auth.username || "";
       document.getElementById("authPassInput").value = config.auth.password || "";
+
+
 
       const rulesList = document.getElementById("rulesList");
       rulesList.innerHTML = "";
@@ -1274,6 +1407,8 @@
         rulesList.appendChild(card);
       });
 
+
+
       const editor = document.getElementById("ruleEditor");
       const rule = (page.rules || [])[selectedRuleIdx];
       if (rule) {
@@ -1285,16 +1420,22 @@
         document.getElementById("roiW").value = rule.roi.w;
         document.getElementById("roiH").value = rule.roi.h;
 
+
+
         const slider = document.getElementById("thresholdYSlider");
         slider.min = rule.roi.y;
         slider.max = rule.roi.y + rule.roi.h;
         slider.value = rule.threshold_y;
         document.getElementById("thresholdYLabel").textContent = `Y = ${rule.threshold_y} px`;
 
+
+
         document.getElementById("colorModeSelect").value = rule.color_mode || "auto";
         document.getElementById("targetColorPicker").value = rule.target_color || "#2e34c6";
         document.getElementById("colorToleranceInput").value = rule.color_tolerance || 48;
         document.getElementById("ruleAlertMsgInput").value = rule.alert_message || "";
+
+
 
         const evalRes = evaluateRule(page.id, rule);
         document.getElementById("ruleLiveMetrics").textContent =
@@ -1308,10 +1449,14 @@
       }
     }
 
+
+
     // ✂️ 擷取範圍工具時顯示整頁原圖 + 擷取框；其他工具顯示裁切後的圖 (警戒線座標以裁切後的圖為準)
     function isCropView(page) {
       return currentTool === "crop" && !!fullImages[page.id];
     }
+
+
 
     function renderCanvas() {
       const page = config.pages[currentPageIdx];
@@ -1319,6 +1464,8 @@
       const cropView = isCropView(page);
       const img = cropView ? fullImages[page.id] : pageImages[page.id];
       if (!img) return;
+
+
 
       // 「符合寬度」：依中間區域寬度自動縮放，筆電小螢幕也不用左右捲動
       if (zoomMode === "fit") {
@@ -1330,13 +1477,19 @@
       }
       document.querySelectorAll(".zoom-btn").forEach(b => b.classList.toggle("active-mode", b.dataset.zoom === zoomMode));
 
+
+
       mainCanvas.width = img.width;
       mainCanvas.height = img.height;
       mainCanvas.style.width = `${Math.round(img.width * zoomLevel)}px`;
       mainCanvas.style.height = `${Math.round(img.height * zoomLevel)}px`;
 
+
+
       ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
       ctx.drawImage(img, 0, 0);
+
+
 
       if (cropView) {
         const c = page.crop_region;
@@ -1362,11 +1515,15 @@
         return;
       }
 
+
+
       {
         (page.rules || []).forEach((r, idx) => {
           if (r.enabled === false) return;
           const isSelected = idx === selectedRuleIdx;
           const res = evaluateRule(page.id, r);
+
+
 
           const dangerHeight = Math.max(0, r.threshold_y - r.roi.y);
           ctx.fillStyle = res.exceeded
@@ -1374,9 +1531,13 @@
             : "rgba(56, 189, 248, 0.15)";
           ctx.fillRect(r.roi.x, r.roi.y, r.roi.w, dangerHeight);
 
+
+
           ctx.lineWidth = isSelected ? 2 : 1.2;
           ctx.strokeStyle = res.exceeded ? "#ef4444" : isSelected ? "#38bdf8" : "#22c55e";
           ctx.strokeRect(r.roi.x, r.roi.y, r.roi.w, r.roi.h);
+
+
 
           ctx.beginPath();
           ctx.moveTo(r.roi.x - 6, r.threshold_y);
@@ -1392,10 +1553,14 @@
             ctx.fillRect(r.roi.x + r.roi.w + 6 - hs, r.threshold_y - hs, hs * 2, hs * 2);
           }
 
+
+
           if (res.exceeded) {
             ctx.fillStyle = "#fde047";
             res.hitPoints.forEach(pt => ctx.fillRect(pt.x, pt.y, 1, 1));
           }
+
+
 
           ctx.font = "bold 10px sans-serif";
           const tagText = `${idx + 1}.${res.exceeded ? "🚨超標" : "✅正常"}`;
@@ -1408,15 +1573,21 @@
       }
     }
 
+
+
     // 頁面有啟用中的警戒線 = 判定；沒有 = 只截圖 (不再需要手動選「處理模式」)
     function hasActiveRules(p) {
       return (p.rules || []).some(r => r.enabled !== false);
     }
 
+
+
     // 存檔前把 mode 同步成與警戒線一致，讓引擎與舊版設定都看得懂
     function normalizePageModes() {
       config.pages.forEach(p => { p.mode = hasActiveRules(p) ? "threshold_check" : "capture_only"; });
     }
+
+
 
     // ===== 發送對象與排程共用工具 =====
     const PLACEHOLDER_TARGET = /請將.*連結|貼在這裡|預設Teams群組/;
@@ -1426,14 +1597,20 @@
     let previewScheduleId = null;   // null = 第一個啟用的排程；ALL_PAGES_KEY = 全部啟用頁面
     let expandedScheduleIdx = -1;
 
+
+
     function isTargetSet(t) {
       return !!(t && t.trim() && !PLACEHOLDER_TARGET.test(t));
     }
+
+
 
     function isSelfTarget(t) {
       const s = (t || "").trim();
       return /48(:|%3A)notes/i.test(s) || s === SELF_TARGET || s.toLowerCase() === "self";
     }
+
+
 
     // 引擎不接受的寫法 (與 e3_monitor_native.ps1 Resolve-ChatTarget 相同)；可用時回傳空字串
     function targetProblem(t) {
@@ -1444,15 +1621,21 @@
       return "";
     }
 
+
+
     function isTargetUsable(t) {
       return isTargetSet(t) && !targetProblem(t);
     }
+
+
 
     function describeTarget(t) {
       if (!isTargetSet(t)) return "⚠️ 尚未設定";
       if (isSelfTarget(t)) return "👤 自己（個人對話）";
       return targetProblem(t) || `💬 ${t.trim()}`;
     }
+
+
 
     // 發送對象優先順序：排程 > 頁面 > 預設 (與 e3_monitor_native.ps1 相同)
     function resolveTarget(page, sched) {
@@ -1461,11 +1644,15 @@
       return { target: (config.teams.target_chat_name || "").trim(), source: "預設對象" };
     }
 
+
+
     function daysText(s) {
       const days = s.days || [];
       if (!days.length) return "每天";
       return "週" + WEEK_DAYS.filter(d => days.includes(d[0])).map(d => d[1]).join("");
     }
+
+
 
     function getPreviewSchedule() {
       ensureSchedules();
@@ -1476,6 +1663,8 @@
       return s;
     }
 
+
+
     // 與引擎相同：依排程 pages 順序，略過不存在或停用的頁面；sched 為 null 時 = 全部啟用頁面
     function pagesForSchedule(sched) {
       if (!sched) return config.pages.filter(p => p.enabled !== false);
@@ -1483,6 +1672,8 @@
         .map(id => config.pages.find(p => p.id === id))
         .filter(p => p && p.enabled !== false);
     }
+
+
 
     function renderPreviewSelect() {
       const sel = document.getElementById("previewScheduleSelect");
@@ -1500,6 +1691,8 @@
       sel.appendChild(optAll);
       sel.value = current ? current.id : ALL_PAGES_KEY;
     }
+
+
 
     // 頁面表單下方顯示「實際會送到哪」，並列出會改送他處的排程
     function renderPageEffectiveTarget() {
@@ -1529,7 +1722,7 @@
         });
     }
 
-    function renderTeamsPreview() {
+function renderTeamsPreview() {
       renderPageEffectiveTarget();
       renderPreviewSelect();
       const sched = getPreviewSchedule();
@@ -1538,15 +1731,21 @@
       const overallBadge = document.getElementById("overallBadge");
       const container = document.getElementById("teamsGroupsContainer");
 
+
+
       let totalAlerts = 0;
       const groups = new Map();
       summaryEl.innerHTML = "";
+
+
 
       pages.forEach(p => {
         const { target, source } = resolveTarget(p, sched);
         if (!groups.has(target)) groups.set(target, { source, pages: [], alerts: [] });
         const grp = groups.get(target);
         grp.pages.push(p);
+
+
 
         const line = document.createElement("div");
         const pageNo = config.pages.indexOf(p) + 1;
@@ -1565,16 +1764,23 @@
         summaryEl.appendChild(line);
       });
 
+
+
       if (!pages.length) summaryEl.textContent = "此排程沒有可傳送的頁面（請到「排程與發送」勾選頁面）。";
       overallBadge.className = "status-pill " + (totalAlerts ? "status-alert" : "status-ok");
       overallBadge.textContent = totalAlerts ? `${totalAlerts} 項超標` : "全部正常";
 
+
+
       container.innerHTML = "";
       groups.forEach((grp, target) => {
+        // 留空 (含只有空白) 時與引擎相同，使用預設文字
         let msgText = grp.alerts.length === 0
-          ? (config.teams.normal_summary || "目前E3系統正常")
-          : (config.teams.abnormal_header || "⚠️ 系統異常通知：") + "\n" + grp.alerts.join("\n");
+          ? ((config.teams.normal_summary || "").trim() ? config.teams.normal_summary : "目前E3系統正常")
+          : ((config.teams.abnormal_header || "").trim() ? config.teams.abnormal_header : "⚠️ 系統異常通知：") + "\n" + grp.alerts.join("\n");
         if (sched && sched.title) msgText = sched.title + "\n" + msgText;
+
+
 
         const box = document.createElement("div");
         box.className = "teams-preview";
@@ -1615,10 +1821,14 @@
       });
     }
 
+
+
     document.getElementById("previewScheduleSelect").onchange = e => {
       previewScheduleId = e.target.value;
       renderTeamsPreview();
     };
+
+
 
     // 舊版設定只有 schedule_time 時，轉成一個包含所有頁面的排程
     function ensureSchedules() {
@@ -1636,7 +1846,11 @@
       delete config.schedule_time;
     }
 
+
+
     const WEEK_DAYS = [["MON", "一"], ["TUE", "二"], ["WED", "三"], ["THU", "四"], ["FRI", "五"], ["SAT", "六"], ["SUN", "日"]];
+
+
 
     // 排程卡片：預設收合成一行摘要，點開才編輯 (同時只展開一張)
     function renderSchedules() {
@@ -1698,6 +1912,8 @@
           });
           q("taskInfo").textContent = `Windows 任務：E3_Monitor_${s.id}`;
 
+
+
           WEEK_DAYS.forEach(([code, label]) => {
             const lb = document.createElement("label");
             const chk = document.createElement("input");
@@ -1713,6 +1929,8 @@
             lb.append(chk, label);
             q("days").appendChild(lb);
           });
+
+
 
           config.pages.forEach((p, pi) => {
             const lb = document.createElement("label");
@@ -1731,6 +1949,8 @@
             q("pages").appendChild(lb);
           });
 
+
+
           q("delete").onclick = () => {
             if (!confirm(`確定刪除排程「${s.name || s.id}」？\n（會同時從 Windows 工作排程器移除）`)) return;
             config.schedules.splice(si, 1);
@@ -1746,6 +1966,8 @@
         list.appendChild(card);
       });
     }
+
+
 
     document.getElementById("addScheduleBtn").onclick = () => {
       ensureSchedules();
@@ -1768,6 +1990,8 @@
       renderTeamsPreview();
     };
 
+
+
     // ===== 自動儲存 & 自動套用排程 =====
     // 每秒比對設定有沒有變：有變就寫入 config.json；排程 (時間 / 星期 / 啟用 / 新增刪除) 有變就自動同步 Windows 工作排程
     let autoSaveEnabled = false;   // 設定確定是從 config.json 讀進來後才開啟，避免用瀏覽器暫存的舊設定覆蓋
@@ -1775,16 +1999,22 @@
     let lastAppliedSchedulesJson = "";
     let saveInFlight = false;
 
+
+
     function setAutoSaveStatus(kind, text) {
       const chip = document.getElementById("autoSaveStatus");
       chip.className = "save-chip" + (kind === "ok" ? "" : " " + kind);
       chip.textContent = text;
     }
 
+
+
     // 只比對會影響 Windows 排程的欄位 (名稱、標題、發送對象改了不需要重新註冊)
     function scheduleSignature() {
       return JSON.stringify((config.schedules || []).map(s => [s.id, s.enabled !== false, s.time, (s.days || []).join(",")]));
     }
+
+
 
     async function autoSaveTick() {
       if (!autoSaveEnabled || saveInFlight || isDragging || isCropDragging || ruleDrag) return;
@@ -1808,6 +2038,8 @@
     }
     setInterval(autoSaveTick, 1000);
 
+
+
     async function applySchedules() {
       ensureSchedules();
       normalizePageModes();
@@ -1826,6 +2058,13 @@
         const data = await resp.json();
         lastSavedJson = jsonStr;
         lastAppliedSchedulesJson = sig;
+        if (!resp.ok) {
+          // 服務拒絕寫入 (設定格式不正確)：config.json 維持原樣；下次修改設定時會再試
+          setAutoSaveStatus("error", "❌ 儲存失敗");
+          showSaveToast("❌ 儲存失敗：" + (data.error || resp.status), true);
+          document.getElementById("scheduleSyncStatus").textContent = "⚠️ 設定沒有儲存，排程也沒有同步";
+          return;
+        }
         reportEl.style.display = data.ok ? "none" : "block";
         reportEl.style.color = "#f87171";
         reportEl.textContent = data.report;
@@ -1837,11 +2076,15 @@
       await refreshScheduleStatus();
     }
 
+
+
     document.getElementById("registerSchedulesBtn").onclick = async () => {
       if (saveInFlight) return;
       saveInFlight = true;
       try { await applySchedules(); } finally { saveInFlight = false; }
     };
+
+
 
     // 讀取 Windows 工作排程器目前的任務，顯示每個排程的「下次執行時間」
     let scheduleTaskInfo = {};
@@ -1866,6 +2109,8 @@
       renderSchedules();
     }
 
+
+
     document.getElementById("loginSetupBtn").onclick = async () => {
       try {
         const resp = await fetch("http://127.0.0.1:8765/api/login-setup", { method: "POST" });
@@ -1876,12 +2121,16 @@
       }
     };
 
+
+
     document.getElementById("sendToSelfBtn").onclick = () => {
       config.teams.target_chat_name = SELF_TARGET;
       document.getElementById("defaultChatInput").value = SELF_TARGET;
       renderTeamsPreview();
       showSaveToast("✅ 預設發送對象已設為「自己（個人對話）」，可直接按右側 🧪 測試貼上");
     };
+
+
 
     // 列出開著的 Teams 與發送對象能否找到 (會先存檔，用畫面上最新的設定)；不會切換或貼上
     document.getElementById("detectTeamsBtn").onclick = async () => {
@@ -1897,6 +2146,10 @@
           headers: { "Content-Type": "application/json; charset=utf-8" },
           body: jsonStr
         });
+        if (resp.status === 400) {
+          out.textContent = "❌ 無法偵測：" + ((await resp.json()).error || "設定格式不正確");
+          return;
+        }
         if (!resp.ok) throw new Error(resp.status);
         lastSavedJson = jsonStr;
         out.textContent = (await resp.json()).report;
@@ -1907,6 +2160,8 @@
       }
     };
 
+
+
     function renderAll() {
       renderPageTabs();
       renderSidebarInputs();
@@ -1915,12 +2170,16 @@
       renderSchedules();
     }
 
+
+
     function getCanvasCoords(e) {
       const rect = mainCanvas.getBoundingClientRect();
-      const x = Math.max(0, Math.min(mainCanvas.width - 1, Math.floor((e.clientX - rect.left) / zoomLevel)));
-      const y = Math.max(0, Math.min(mainCanvas.height - 1, Math.floor((e.clientY - rect.top) / zoomLevel)));
+      const x = Math.max(0, Math.min(mainCanvas.width - 1, Math.floor((e.clientX - rect.left) * mainCanvas.width / rect.width)));
+      const y = Math.max(0, Math.min(mainCanvas.height - 1, Math.floor((e.clientY - rect.top) * mainCanvas.height / rect.height)));
       return { x, y };
     }
+
+
 
     function updateLoupe(x, y) {
       const page = config.pages[currentPageIdx];
@@ -1931,6 +2190,8 @@
       document.getElementById("cursorCoordText").textContent = `X: ${x}, Y: ${y}`;
       document.getElementById("cursorRgbText").textContent = `RGB: (${p[0]}, ${p[1]}, ${p[2]})`;
 
+
+
       loupeCtx.imageSmoothingEnabled = false;
       loupeCtx.clearRect(0, 0, 54, 54);
       loupeCtx.drawImage(mainCanvas, x - 4, y - 4, 9, 9, 0, 0, 54, 54);
@@ -1938,6 +2199,8 @@
       loupeCtx.lineWidth = 1;
       loupeCtx.strokeRect(24, 24, 6, 6);
     }
+
+
 
     // ===== 畫布滑鼠操作：✂️ 擷取範圍 / 📏 警戒線 兩種模式 =====
     // 📏 模式：在空白處拖曳 = 新增一條警戒線；拖曳選取中的紅線 = 調整高度；拖曳框內 = 移動框
@@ -1960,6 +2223,8 @@
       return null;
     }
 
+
+
     function addRule(page, roi) {
       const n = (page.rules || []).length + 1;
       page.rules = page.rules || [];
@@ -1978,6 +2243,8 @@
       selectedRuleIdx = page.rules.length - 1;
     }
 
+
+
     mainCanvas.addEventListener("mousedown", e => {
       const page = config.pages[currentPageIdx];
       if (!page) return;
@@ -1991,6 +2258,8 @@
       const img = pageImageCanvases[page.id];
       if (!img || img.isPlaceholder) return;
 
+
+
       if (currentTool === "pick_color") {
         const rule = (page.rules || [])[selectedRuleIdx];
         if (rule) {
@@ -2002,6 +2271,8 @@
         renderAll();
         return;
       }
+
+
 
       const hit = hitTestRules(page, pt);
       if (hit && hit.kind === "line") {
@@ -2016,11 +2287,14 @@
       }
     });
 
+
     mainCanvas.addEventListener("mousemove", e => {
       const pt = getCanvasCoords(e);
       updateLoupe(pt.x, pt.y);
       const page = config.pages[currentPageIdx];
       if (!page) return;
+
+
 
       if (isCropDragging) {
         page.crop_region = {
@@ -2036,12 +2310,16 @@
         return;
       }
 
+
+
       if (!ruleDrag) {
         // 游標提示：紅線上 = 上下拖曳、框內 = 移動、其他 = 十字 (框選新警戒線)
         const hit = currentTool === "rule" ? hitTestRules(page, pt) : null;
         mainCanvas.style.cursor = !hit ? "crosshair" : hit.kind === "line" ? "ns-resize" : "move";
         return;
       }
+
+
 
       const r = page.rules[selectedRuleIdx];
       if (ruleDrag.kind === "new") {
@@ -2066,6 +2344,8 @@
       renderCanvas();
     });
 
+
+
     window.addEventListener("mouseup", () => {
       isDragging = false;
       if (ruleDrag) {
@@ -2080,10 +2360,12 @@
       }
     });
 
+
+
     function setToolMode(mode) {
       const page = config.pages[currentPageIdx];
       if (mode === "crop" && page && !fullImages[page.id]) {
-        showSaveToast("此頁還沒有整頁畫面，請先在「網址」旁按 📸 抓圖", true);
+        showSaveToast("此頁還沒有來源畫面，請先按 📸 抓圖，在 Edge 捲動並擷取", true);
         return;
       }
       currentTool = mode;
@@ -2106,6 +2388,8 @@
       showSaveToast("💧 請在圖上點一下曲線，取用它的顏色");
     };
 
+
+
     document.querySelectorAll(".zoom-btn").forEach(btn => {
       btn.onclick = () => {
         zoomMode = btn.dataset.zoom;
@@ -2115,6 +2399,8 @@
     window.addEventListener("resize", () => {
       if (zoomMode === "fit") renderCanvas();
     });
+
+
 
     // 新增與刪除頁面
     document.getElementById("addPageBtn").onclick = () => {
@@ -2137,6 +2423,8 @@
       ensurePageImage(newPage, () => renderAll());
     };
 
+
+
     document.getElementById("deletePageBtn").onclick = () => {
       if (config.pages.length <= 1) {
         alert("至少需保留 1 個頁面（若不需使用可取消勾選『啟用此頁面』）。");
@@ -2151,8 +2439,19 @@
       });
       currentPageIdx = Math.max(0, currentPageIdx - 1);
       selectedRuleIdx = 0;
+      // 一併刪除該頁在 sample_images 的範例圖 (沒刪到也沒關係：下次開啟設定工具會清掉不在設定中的頁面圖)
+      delete fullImages[removedId];
+      delete pageImageCanvases[removedId];
+      delete pageImages[removedId];
+      fetch("http://127.0.0.1:8765/api/delete-sample", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageId: removedId })
+      }).catch(() => {});
       renderAll();
     };
+
+
 
     document.getElementById("pageEnabledChk").onchange = e => {
       config.pages[currentPageIdx].enabled = e.target.checked;
@@ -2174,27 +2473,44 @@
       const btn = document.getElementById("fetchUrlImgBtn");
       if (btn.disabled) return;  // Enter 與 change 事件會同時觸發，避免重複開 Edge
       const origText = btn.textContent;
-      btn.textContent = "⏳ 抓圖中...";
+      btn.textContent = "⏳ 等待擷取...";
       btn.disabled = true;
-      showSaveToast("⏳ 正在用已登入的專用 Edge 開啟網頁並截圖（約 10~20 秒）...");
+      showSaveToast("⏳ 正在開啟 Edge；載入完成後，請先捲動，再按網頁上的「擷取目前畫面」。");
+
+
 
       try {
         const resp = await fetch("http://127.0.0.1:8765/api/capture-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: page.url, pageId: page.id })
+          body: JSON.stringify({ url: page.url, pageId: page.id, browser_zoom: page.browser_zoom || 100, wait_seconds: page.wait_seconds || 5 })
         });
-        const data = await resp.json();
+        let data = await resp.json();
+        // 抓圖在背景執行 (最多 10 分鐘等使用者捲動選擇)，期間本機服務仍可自動存檔；每秒詢問一次結果
+        const deadline = Date.now() + 12 * 60 * 1000;
+        while (data && data.ok && data.pending && Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, 1000));
+          data = await (await fetch("http://127.0.0.1:8765/api/capture-status", { cache: "no-store" })).json();
+        }
+        if (data && data.pending) data = { ok: false, error: "等待抓圖結果逾時，請關閉抓圖用的 Edge 視窗後再試" };
         if (data && data.ok && data.dataUrl) {
           const img = new Image();
           img.onload = () => {
-            // 伺服器已存好 <id>_full.png；保留原本的擷取範圍 (超出新畫面才改成整頁)，再重新裁切
+            // 此來源圖是使用者選定的可視畫面，裁切座標相對於它；排程還原相同 viewport/scroll。
+            if (!data.capture_view) {
+              showSaveToast("❌ 抓圖服務版本過舊，請更新主程式並重新開啟設定工具。", true);
+              return;
+            }
+            const viewChanged = JSON.stringify(page.capture_view) !== JSON.stringify(data.capture_view);
+            page.capture_view = data.capture_view;
+            page.browser_zoom = data.capture_view.zoom;
+            if (viewChanged) page.crop_region = { enabled: true, x: 0, y: 0, w: img.width, h: img.height };
             fullImages[page.id] = imageToCanvas(img);
             fitCropToFull(page, img);
             rebuildCropped(page, true);
             renderAll();
             saveConfigDirectly("");
-            showSaveToast("✅ 已更新整頁畫面，可用 ✂️ 擷取範圍 框選要傳送的區域");
+            showSaveToast("✅ 已擷取你選的位置，請框選要傳送的區域並確認警戒線。");
           };
           img.src = data.dataUrl;
         } else {
@@ -2208,11 +2524,10 @@
       }
     }
 
+
+
     document.getElementById("pageUrlInput").oninput = e => {
       config.pages[currentPageIdx].url = e.target.value;
-    };
-    document.getElementById("pageUrlInput").onchange = () => {
-      fetchLiveUrlScreenshot();
     };
     document.getElementById("pageUrlInput").onkeydown = e => {
       if (e.key === "Enter") {
@@ -2226,6 +2541,34 @@
     document.getElementById("pageWaitInput").oninput = e => {
       config.pages[currentPageIdx].wait_seconds = parseInt(e.target.value) || 5;
     };
+    // 網頁縮放：50～200 任意整數 (與引擎 Get-BrowserZoom、/api/capture-url 的檢查一致)
+    function renderBrowserZoom(page) {
+      const pageZoom = Number(page.browser_zoom) || 100;
+      document.getElementById("pageBrowserZoom").value = String(pageZoom);
+      document.querySelectorAll("#pageZoomPresets button").forEach(b => b.classList.toggle("active", Number(b.dataset.zoom) === pageZoom));
+    }
+    function setBrowserZoom(raw) {
+      const page = config.pages[currentPageIdx];
+      if (!page) return;
+      const text = String(raw).trim();
+      const zoom = Number(text);
+      if (!/^\d+$/.test(text) || zoom < 50 || zoom > 200) {
+        showSaveToast("❌ 網頁縮放請輸入 50～200 的整數（例如 67）", true);
+        renderBrowserZoom(page);   // 還原成目前設定值
+        return;
+      }
+      const changed = (Number(page.browser_zoom) || 100) !== zoom;
+      page.browser_zoom = zoom;
+      renderBrowserZoom(page);
+      if (changed) showSaveToast(`網頁縮放已改為 ${zoom}%，請按「抓圖」後重新確認擷取範圍與警戒線。`);
+    }
+    document.getElementById("pageBrowserZoom").onchange = e => setBrowserZoom(e.target.value);
+    document.getElementById("pageBrowserZoom").onkeydown = e => {
+      if (e.key === "Enter") { e.preventDefault(); setBrowserZoom(e.target.value); }
+    };
+    document.querySelectorAll("#pageZoomPresets button").forEach(btn => {
+      btn.onclick = () => setBrowserZoom(btn.dataset.zoom);
+    });
     ["cropX", "cropY", "cropW", "cropH"].forEach(id => {
       document.getElementById(id).oninput = () => {
         const p = config.pages[currentPageIdx];
@@ -2238,6 +2581,8 @@
         renderTeamsPreview();
       };
     });
+
+
 
     document.getElementById("ruleEnabledChk").onchange = e => {
       const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
@@ -2297,6 +2642,8 @@
       renderAll();
     };
 
+
+
     document.getElementById("teamsWindowSelect").onchange = e => {
       config.teams.prefer_window = e.target.value;
     };
@@ -2322,6 +2669,8 @@
       config.auth.password = e.target.value;
     };
 
+
+
     document.getElementById("changePageImgInput").onchange = e => {
       const file = e.target.files[0];
       if (!file) return;
@@ -2342,6 +2691,8 @@
       reader.readAsDataURL(file);
     };
 
+
+
     function showSaveToast(msg, isError = false) {
       const el = document.getElementById("saveStatusText");
       el.style.color = isError ? "#f87171" : "#4ade80";
@@ -2350,6 +2701,8 @@
         if (el.textContent === msg) el.textContent = "";
       }, 4000);
     }
+
+
 
     // testMode: "" = 只儲存；"preview" = 測試貼上不送出；"send" = 正式送出
     // silent = 自動儲存 (不跳提示，只更新右上角狀態)
@@ -2360,7 +2713,9 @@
       // 1. 永遠同步保存一份到瀏覽器記憶，重整網頁也不會消失
       try { localStorage.setItem("e3_monitor_config_v1", jsonStr); } catch (e) {}
 
-      // 2. 優先透過本機背景服務 (http://127.0.0.1:8765) 直接寫入 c:\TEST\config.json (免彈窗、免下載)
+
+
+      // 2. 優先透過本機背景服務 (http://127.0.0.1:8765) 直接寫入程式資料夾的 config.json (免彈窗、免下載)
       const params = new URLSearchParams();
       if (scheduleId) params.set("schedule", scheduleId);
       if (testMode === "send") params.set("send", "1");
@@ -2373,6 +2728,15 @@
           headers: { "Content-Type": "application/json" },
           body: jsonStr
         });
+        if (!resp.ok && resp.status === 400) {
+          // 服務收到了但拒絕寫入 (設定格式不正確)：config.json 維持原樣，不是服務沒開
+          let reason = "設定格式不正確";
+          try { reason = (await resp.json()).error || reason; } catch (e) {}
+          lastSavedJson = jsonStr;   // 同一份內容不再每秒重試；下次修改設定時會再試
+          setAutoSaveStatus("error", "❌ 儲存失敗");
+          showSaveToast("❌ 儲存失敗：" + reason + "（config.json 沒有變更）", true);
+          return false;
+        }
         if (resp.ok) {
           lastSavedJson = jsonStr;
           if (!silent) {
@@ -2388,12 +2752,16 @@
         }
       } catch (err) {}
 
+
+
       // 本機服務沒有回應：明確告知 config.json 沒有更新 (瀏覽器暫存只是備份，排程讀不到)
       setAutoSaveStatus("error", "❌ 儲存失敗");
       showSaveToast("❌ 儲存失敗：本機服務沒有回應，config.json 沒有更新", true);
       showServiceBanner("⚠️ 本機服務沒有回應，剛才的修改只暫存在瀏覽器，config.json 沒有更新。請雙擊 open_calibrator.bat 重新開啟，修改會在重新開啟後自動儲存。");
       return false;
     }
+
+
 
     // 測試都以右側「預覽哪個排程」為準；預設只貼上不送出，正式送出需再次確認
     function previewScheduleArg() {
@@ -2417,6 +2785,8 @@
       if (confirm(msg)) saveConfigDirectly("send", previewScheduleArg());
     };
 
+
+
     // 左側三個分頁 (記住上次停留的分頁)
     function setSideTab(tab) {
       document.querySelector(".sidebar").dataset.activeTab = tab;
@@ -2431,6 +2801,8 @@
       if (["pages", "send", "global"].includes(savedTab)) setSideTab(savedTab);
     } catch (e) {}
 
+
+
     // 直接雙擊 calibrator.html (file://) 開啟時：圖片只能用內建舊範例、抓圖後的裁切圖也存不回去，
     // 所以本機服務有開就自動轉到 http://127.0.0.1:8765/calibrator.html，沒開就顯示警告
     function showServiceBanner(msg) {
@@ -2444,6 +2816,8 @@
       bar.textContent = msg;
     }
 
+
+
     async function initApp() {
       if (location.protocol === "file:") {
         try {
@@ -2456,17 +2830,29 @@
       }
       // 啟動時自動從本機 config.json 或瀏覽器記憶讀取最新設定
       let fromServer = false;
-      try {
-        const resp = await fetch("http://127.0.0.1:8765/api/config");
-        if (resp.ok) {
-          config = await resp.json();
+      let configError = "";
+      let resp = null;
+      try { resp = await fetch("http://127.0.0.1:8765/api/config"); } catch (e) {}
+      if (resp && resp.ok) {
+        // 服務有回應但內容無法解析 = config.json 本身格式錯誤 (例如手動編輯、複製貼上帶入特殊空白)，不是服務沒開
+        const text = await resp.text();
+        try {
+          const parsed = JSON.parse(text);
+          if (!parsed || !Array.isArray(parsed.pages)) throw new Error("缺少 pages 清單");
+          config = parsed;
           fromServer = true;
+        } catch (e) {
+          configError = e.message;
         }
-      } catch (e) {
+      }
+      if (!fromServer) {
         try {
           const cached = localStorage.getItem("e3_monitor_config_v1");
           if (cached) config = JSON.parse(cached);
         } catch (err) {}
+      }
+      if (configError) {
+        showServiceBanner(`❌ config.json 格式錯誤，無法讀取（${configError}）。為避免覆蓋，自動儲存已停用；畫面上是瀏覽器暫存的舊設定。請用記事本修正 config.json（常見原因：手動編輯少了逗號或引號、從網頁 / Teams 複製貼上帶入特殊空白），修正後重新整理此頁。`);
       }
       ensureSchedules();
       normalizePageModes();
@@ -2476,10 +2862,12 @@
         autoSaveEnabled = true;
         refreshScheduleStatus();
       } else {
-        setAutoSaveStatus("error", "⚠️ 無法自動儲存");
+        setAutoSaveStatus("error", configError ? "❌ config.json 格式錯誤" : "⚠️ 無法自動儲存");
       }
       loadSampleImages();
     }
+
+
 
     initApp();
   </script>

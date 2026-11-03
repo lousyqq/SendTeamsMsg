@@ -3,7 +3,22 @@
     {
       "id": "morning",
       "enabled": true,
-      "name": "早上 08:00 巡檢",
+      "name": "測試",
+      "time": "18:21",
+      "days": [],
+      "pages": [
+        "page1",
+        "page_1793694163534",
+        "page_1793694279892",
+        "page_1793694614919"
+      ],
+      "target_chat_name": "Sariel Lin-林玉婷 (您)",
+      "title": "[MSD 日管index]"
+    },
+    {
+      "id": "sched2",
+      "enabled": false,
+      "name": "排程 2",
       "time": "08:00",
       "days": [],
       "pages": [
@@ -17,48 +32,49 @@
     "enabled": true,
     "auth_type": "form_or_dialog",
     "login_url": "",
-    "username": "YOUR_USERNAME",
-    "password": "YOUR_PASSWORD",
+    "username": "esiuser",
+    "password": "ESI@168",
     "save_session": true
   },
   "teams": {
-    "send_mode": "desktop_clipboard",
+    "send_mode": "edge_teams_web",
     "desktop_window_title": "Teams",
-    "target_chat_name": "https://teams.microsoft.com/l/message/48:notes/1792403975409?context=%7B%22contextType%22%3A%22chat%22%2C%22oid%22%3A%228%3Aorgid%3A87b0a7e7-1f77-465e-b0a2-54797e0f0086%22%7D",
+    "target_chat_name": "Sariel Lin-林玉婷 (您)",
     "auto_switch_chat": false,
-    "normal_summary": "目前E3系統正常",
-    "abnormal_header": "⚠️ E3系統監控異常通知（昨日圖示超過警戒線，請相關人員協助查詢）：",
+    "normal_summary": "",
+    "abnormal_header": "",
     "attach_annotated_image_on_alert": false,
-    "auto_press_enter": true
+    "auto_press_enter": true,
+    "prefer_window": ""
   },
   "pages": [
     {
       "id": "page1",
       "enabled": true,
-      "name": "測試",
-      "url": "http://tw.yahoo.com/",
+      "name": "P14",
+      "url": "http://10.10.101.14/screens.php?elementid=194",
       "target_chat_name": "",
-      "mode": "threshold_check",
+      "mode": "capture_only",
       "wait_seconds": 5,
       "crop_region": {
         "enabled": true,
-        "x": 302,
-        "y": 20,
-        "w": 1300,
-        "h": 288
+        "x": 37,
+        "y": 6,
+        "w": 1840,
+        "h": 943
       },
       "rules": [
         {
           "id": "p1_r1",
-          "enabled": true,
+          "enabled": false,
           "name": "F14E3DB1: 03.CPU load (7d)",
           "roi": {
-            "x": 19,
-            "y": 10,
+            "x": 0,
+            "y": 0,
             "w": 1215,
             "h": 651
           },
-          "threshold_y": 238,
+          "threshold_y": 305,
           "color_mode": "auto",
           "target_color": "#8e7f84",
           "color_tolerance": 48,
@@ -67,7 +83,7 @@
         },
         {
           "id": "p1_r2",
-          "enabled": true,
+          "enabled": false,
           "name": "F14E3DB1: 02.Memory Usage (7d)",
           "roi": {
             "x": 708,
@@ -84,7 +100,7 @@
         },
         {
           "id": "p1_r3",
-          "enabled": true,
+          "enabled": false,
           "name": "F12AE3AP21: 26.FDC Execution Time (7d)",
           "roi": {
             "x": 708,
@@ -99,7 +115,108 @@
           "min_pixels": 2,
           "alert_message": "⚠️ [頁面1 - F12AE3AP21: 26.FDC Execution Time] 昨日執行時間超過警戒線，請 AP 負責人協助查詢！"
         }
-      ]
+      ],
+      "capture_view": {
+        "width": 2293,
+        "height": 1146,
+        "x": 0,
+        "y": 266,
+        "zoom": 125
+      },
+      "browser_zoom": 125
+    },
+    {
+      "id": "page_1793694163534",
+      "enabled": true,
+      "name": "P58",
+      "url": "http://10.13.2.27/screens.php?elementid=138",
+      "target_chat_name": "",
+      "mode": "capture_only",
+      "wait_seconds": 5,
+      "crop_region": {
+        "enabled": true,
+        "x": 37,
+        "y": 32,
+        "w": 1831,
+        "h": 881
+      },
+      "rules": [],
+      "capture_view": {
+        "width": 2390,
+        "height": 1195,
+        "x": 0,
+        "y": 250,
+        "zoom": 100
+      },
+      "browser_zoom": 100
+    },
+    {
+      "id": "page_1793694279892",
+      "enabled": true,
+      "name": "CMS",
+      "url": "http://10.10.101.14/screens.php?elementid=201",
+      "target_chat_name": "",
+      "mode": "capture_only",
+      "wait_seconds": 5,
+      "crop_region": {
+        "enabled": true,
+        "x": 123,
+        "y": 61,
+        "w": 1636,
+        "h": 833
+      },
+      "rules": [
+        {
+          "id": "page_1793694279892_r1793694428828",
+          "enabled": false,
+          "name": "監控小圖 #1",
+          "roi": {
+            "x": 158,
+            "y": 231,
+            "w": 1626,
+            "h": 710
+          },
+          "threshold_y": 480,
+          "color_mode": "auto",
+          "target_color": "#2e34c6",
+          "color_tolerance": 48,
+          "min_pixels": 2,
+          "alert_message": "⚠️ [CMS - 監控小圖 #1] 昨日圖示超過警戒線，請相關人員協助查詢！"
+        }
+      ],
+      "capture_view": {
+        "width": 2124,
+        "height": 1062,
+        "x": 0,
+        "y": 222,
+        "zoom": 100
+      },
+      "browser_zoom": 100
+    },
+    {
+      "id": "page_1793694614919",
+      "enabled": true,
+      "name": "KPI",
+      "url": "http://p58web01/PT_MainIndex/PT_WebReport.aspx",
+      "target_chat_name": "",
+      "mode": "capture_only",
+      "wait_seconds": 5,
+      "crop_region": {
+        "enabled": true,
+        "x": 16,
+        "y": 0,
+        "w": 1869,
+        "h": 906
+      },
+      "rules": [],
+      "capture_view": {
+        "width": 2390,
+        "height": 1195,
+        "x": 0,
+        "y": 0,
+        "zoom": 100
+      },
+      "browser_zoom": 100
     }
   ]
 }
