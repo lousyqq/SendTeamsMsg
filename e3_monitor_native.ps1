@@ -17,15 +17,20 @@
     [switch]$LoginMode = $false,
     [switch]$NoSend = $false,
     [switch]$DryRun = $false,
-    [switch]$DetectTeams = $false,     # 只偵測開著的 Teams (PWA / 桌面版 / Edge 分頁) 並寫入 logs\teams_detect.txt，不切換、不貼上
+    [switch]$DetectTeams = $false,     # 只偵測 Teams 或 CDP 連線，不傳送
+    [switch]$CdpSetup = $false,        # 互動設定 CDP 登入與各收件對象的固定分頁
     [int]$CountdownSeconds = 0
 )
+
+
 
 
 
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+
+
 
 
 
@@ -52,6 +57,26 @@ public static class E3Win {
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
+    [DllImport("user32.dll", SetLastError=true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+    [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetUserObjectInformation(IntPtr handle, int index, System.Text.StringBuilder value, int length, out int needed);
+    [DllImport("wtsapi32.dll", SetLastError=true)] static extern bool WTSQuerySessionInformation(IntPtr server, int session, int infoClass, out IntPtr buffer, out int bytes);
+    [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr buffer);
+    public static string DesktopBlockReason() {
+        IntPtr buffer; int bytes;
+        int session; using (var process = System.Diagnostics.Process.GetCurrentProcess()) { session = process.SessionId; }
+        if (!WTSQuerySessionInformation(IntPtr.Zero, session, 8, out buffer, out bytes)) return "SessionStateUnknown";
+        try { if (bytes < 4 || Marshal.ReadInt32(buffer) != 0) return "SessionDisconnected"; }
+        finally { WTSFreeMemory(buffer); }
+        IntPtr desktop = OpenInputDesktop(0, false, 1);
+        if (desktop == IntPtr.Zero) return "DesktopUnavailable";
+        try {
+            var name = new System.Text.StringBuilder(256); int needed;
+            if (!GetUserObjectInformation(desktop, 2, name, name.Capacity * 2, out needed)) return "DesktopNameUnavailable";
+            return String.Equals(name.ToString(), "Default", StringComparison.OrdinalIgnoreCase) ? "" : "DesktopLocked";
+        } finally { CloseDesktop(desktop); }
+    }
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     public static string GetTitle(IntPtr h) { var sb = new System.Text.StringBuilder(1024); GetWindowText(h, sb, 1024); return sb.ToString(); }
     // 可見的頂層視窗：「hwnd|pid|標題」
@@ -69,12 +94,16 @@ public static class E3Win {
 
 
 
+
+
 if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot "config.json" }
 if (-not (Test-Path $ConfigPath)) {
     Write-Host "❌ 找不到設定檔: $ConfigPath" -ForegroundColor Red
     exit 1
 }
 $ConfigPath = (Resolve-Path $ConfigPath).Path
+
+
 
 
 
@@ -89,6 +118,8 @@ try {
 
 
 
+
+
 $TaskPrefix = "E3_Monitor_"
 $LegacyTaskName = "E3_Daily_Monitor_Teams"
 # teams.normal_summary / abnormal_header 留空時的預設文字 (與 calibrator.html 預覽相同)
@@ -96,6 +127,12 @@ $DefaultNormalSummary = "目前E3系統正常"
 $DefaultAbnormalHeader = "⚠️ 系統異常通知："
 # 排程截圖 (captures\<日期>\) 保留天數；logs\*.log 另外保留 30 天
 $CaptureKeepDays = 7
+. (Join-Path $PSScriptRoot 'teams_delivery.ps1')
+
+
+
+
+
 
 
 
@@ -104,6 +141,8 @@ function Get-SampleImagePageId([string]$fileName) {
     if ($fileName -match '^(?:annotated_|tmp_)?(?<id>[A-Za-z0-9_-]+?)(?:_full)?\.png(?:\.json)?$') { return $Matches['id'] }
     return $null
 }
+
+
 
 
 
@@ -124,6 +163,8 @@ function Remove-OrphanSampleImages($cfg, [string]$sampleDir) {
 
 
 
+
+
 # ==============================================================================
 # 排程設定：讀取 config.schedules (舊版只有 schedule_time 時，自動視為一個「全部頁面」的排程)
 # ==============================================================================
@@ -137,6 +178,8 @@ function Get-ScheduleList($cfg) {
         days = @(); pages = @($cfg.pages | ForEach-Object { $_.id }); target_chat_name = ""; title = ""
     })
 }
+
+
 
 
 
@@ -160,6 +203,8 @@ function Resolve-SchedulePages($cfg, $sched) {
 
 
 
+
+
 function Convert-DayNames($days) {
     $map = @{ MON = "Monday"; TUE = "Tuesday"; WED = "Wednesday"; THU = "Thursday"; FRI = "Friday"; SAT = "Saturday"; SUN = "Sunday" }
     $out = @()
@@ -171,6 +216,8 @@ function Convert-DayNames($days) {
     }
     return $out
 }
+
+
 
 
 
@@ -188,10 +235,49 @@ function Show-ScheduleList($cfg) {
 
 
 
+
+
 # ==============================================================================
 # 模式：依 config.schedules 一次註冊所有 Windows 工作排程 (每個排程一個任務 E3_Monitor_<id>)
 # 以「目前登入使用者 / 僅在登入時執行」註冊，不需系統管理員權限 (貼 Teams 需互動桌面)
 # ==============================================================================
+function Get-DesktopBlockReason {
+    if (-not $script:Win32Ready) { return 'Windows 視窗控制無法使用' }
+    $reason = [E3Win]::DesktopBlockReason()
+    if ($reason) { return "桌面已鎖定、遠端工作階段已斷線，或桌面不可存取（$reason）" }
+    return ''
+}
+
+
+
+function Assert-InteractiveDesktop {
+    $reason = Get-DesktopBlockReason
+    if ($reason) { throw "$reason；已停止操作 Teams。若已貼上部分內容，請解鎖後檢查草稿與已送訊息，勿直接重送" }
+}
+
+
+
+function Wait-TeamsDesktop([int]$TimeoutSeconds = 1800) {
+    $reason = Get-DesktopBlockReason
+    if (-not $reason) { return }
+    # 同一次執行的多個對話共用第一次等待的截止時間，避免每個對話再等 30 分鐘。
+    if (-not $script:DesktopWaitDeadline) { $script:DesktopWaitDeadline = (Get-Date).AddSeconds($TimeoutSeconds) }
+    Write-Host "⏳ $reason。本次擷取結果已記錄，等待解鎖／重新連線後發送；截止 $($script:DesktopWaitDeadline.ToString('HH:mm:ss'))" -ForegroundColor Yellow
+    $nextReport = (Get-Date).AddSeconds(60)
+    while ($reason) {
+        if ((Get-Date) -ge $script:DesktopWaitDeadline) { throw '等待桌面恢復逾時（本次最多 30 分鐘）；已有的截圖仍保留，尚未對此對話貼上或送出，請解鎖後檢查 log 再補跑' }
+        Start-Sleep -Seconds 5
+        $reason = Get-DesktopBlockReason
+        if ($reason -and (Get-Date) -ge $nextReport) {
+            Write-Host '⏳ 仍等待桌面解鎖／遠端重新連線，尚未操作 Teams...' -ForegroundColor Yellow
+            $nextReport = (Get-Date).AddSeconds(60)
+        }
+    }
+    Write-Host '✅ 桌面已恢復，繼續發送本次擷取結果（不重新擷取現在的畫面）' -ForegroundColor Green
+}
+
+
+
 function Register-AllSchedules($cfg) {
     $logDir = Join-Path $PSScriptRoot "logs"
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Force -Path $logDir | Out-Null }
@@ -200,11 +286,15 @@ function Register-AllSchedules($cfg) {
 
 
 
+
+
     $scriptPath = Join-Path $PSScriptRoot "e3_monitor_native.ps1"
     $userId = "$env:USERDOMAIN\$env:USERNAME"
     $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
-    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew
+    $settings = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
+
+
 
 
 
@@ -212,6 +302,8 @@ function Register-AllSchedules($cfg) {
     foreach ($s in Get-ScheduleList $cfg) {
         if ($s.enabled -eq $false) { continue }
         $taskName = "$TaskPrefix$($s.id)"
+        # 更新被公司政策拒絕時保留既有任務，不可在下方清理流程誤刪。
+        if ($s.id -match '^[A-Za-z0-9_-]+$') { $wanted[$taskName] = $true }
         try {
             if ($s.id -notmatch '^[A-Za-z0-9_-]+$') { throw "排程 id 只能使用英數字、底線、減號" }
             if ($s.time -notmatch '^([01]?\d|2[0-3]):[0-5]\d$') { throw "時間格式需為 HH:mm (目前: '$($s.time)')" }
@@ -228,12 +320,14 @@ function Register-AllSchedules($cfg) {
                 -Description "E3 監控自動截圖：$($s.name)" -Force | Out-Null
             $wanted[$taskName] = $true
             $dayText = if ($dayNames.Count -gt 0) { ($s.days -join ",") } else { "每天" }
-            $report.Add("✅ 已註冊 $taskName  ($dayText $($s.time)，$(@($s.pages).Count) 個頁面)")
+            $report.Add("✅ 已註冊 $taskName  ($dayText $($s.time)，$(@($s.pages).Count) 個頁面；要求喚醒、錯過後補跑)")
         } catch {
             $ok = $false
             $report.Add("❌ 註冊 $taskName 失敗: $($_.Exception.Message)")
         }
     }
+
+
 
 
 
@@ -251,6 +345,8 @@ function Register-AllSchedules($cfg) {
 
 
 
+
+
     foreach ($line in $report) {
         Write-Host $line -ForegroundColor $(if ($line.StartsWith("❌")) { "Red" } else { "Green" })
     }
@@ -262,10 +358,14 @@ function Register-AllSchedules($cfg) {
 
 
 
+
+
 if ($ListSchedules) {
     Show-ScheduleList $config
     exit 0
 }
+
+
 
 
 
@@ -275,6 +375,8 @@ if ($RegisterSchedules) {
     $regOk = Register-AllSchedules $config
     exit $(if ($regOk) { 0 } else { 1 })
 }
+
+
 
 
 
@@ -291,6 +393,8 @@ if ($Calibrator) {
 
 
 
+
+
     # 寫入設定工具送來的 config.json：先確認是可解析、含 pages 陣列的 JSON，再寫到暫存檔後整檔取代，
     # 避免格式錯誤或寫到一半的內容蓋掉原本的設定。格式不對時 throw，由呼叫端回 400。
     function Save-ConfigBody([string]$body) {
@@ -298,11 +402,20 @@ if ($Calibrator) {
         if (-not $parsed -or $parsed -is [array] -or -not ($parsed.PSObject.Properties.Name -contains 'pages') -or $parsed.pages -isnot [array]) {
             throw "設定內容缺少 pages 清單，未儲存"
         }
+        # 舊設定頁可能仍留在瀏覽器；儲存時移除已退役的發送設定與網址。
+        if ($parsed.teams) {
+            foreach ($key in @('delivery_method','webhook_targets','webhook_url')) {
+                $parsed.teams.PSObject.Properties.Remove($key)
+            }
+        }
+        $body = $parsed | ConvertTo-Json -Depth 30
         $tmp = "$configPath.saving"
         [System.IO.File]::WriteAllText($tmp, $body, (New-Object System.Text.UTF8Encoding($false)))
         try { [System.IO.File]::Replace($tmp, $configPath, $null) }
         catch { [System.IO.File]::Copy($tmp, $configPath, $true); Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
     }
+
+
 
 
 
@@ -313,6 +426,8 @@ if ($Calibrator) {
         $res.OutputStream.Write($bytes, 0, $bytes.Length)
         $res.Close()
     }
+
+
 
 
 
@@ -328,6 +443,8 @@ if ($Calibrator) {
 
 
 
+
+
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host "🛠️ E3 視覺化設定工具本機服務已啟動: ${url}calibrator.html" -ForegroundColor Green
     Write-Host "👉 所有設定、抓圖、登入監控網站、測試與排程都在網頁中操作，修改會自動儲存" -ForegroundColor Yellow
@@ -340,6 +457,8 @@ if ($Calibrator) {
 
 
 
+
+
     while ($listener.IsListening) {
         try {
             $context = $listener.GetContext()
@@ -349,11 +468,15 @@ if ($Calibrator) {
 
 
 
+
+
             # 安全：只接受本工具自己的頁面 (http://127.0.0.1:8765) 發出的請求。
             # 不送 CORS 允許標頭，並拒絕帶有其他網站 Origin 的請求，避免任何網頁偷讀 config.json (含密碼)、
             # 改寫設定、觸發 Teams 發送或註冊排程。沒有 Origin 的請求 (本機 PowerShell 等) 照常允許。
             # 不讓瀏覽器快取：更新 calibrator.html / 手冊 / 截圖後，重新整理就是最新版
             $res.AddHeader("Cache-Control", "no-store")
+
+
 
 
 
@@ -367,6 +490,8 @@ if ($Calibrator) {
 
 
 
+
+
             if ($path -eq "/api/config" -and $req.HttpMethod -eq "GET") {
                 $jsonBytes = [System.IO.File]::ReadAllBytes($configPath)
                 $res.ContentType = "application/json; charset=utf-8"
@@ -377,10 +502,14 @@ if ($Calibrator) {
 
 
 
+
+
             if ($path -eq "/api/save" -and $req.HttpMethod -eq "POST") {
                 $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
                 $body = $reader.ReadToEnd()
                 $reader.Close()
+
+
 
 
 
@@ -393,12 +522,16 @@ if ($Calibrator) {
 
 
 
+
+
                 $respBytes = [System.Text.Encoding]::UTF8.GetBytes('{"ok":true}')
                 $res.ContentType = "application/json; charset=utf-8"
                 $res.OutputStream.Write($respBytes, 0, $respBytes.Length)
                 $res.Close()
                 continue
             }
+
+
 
 
 
@@ -411,6 +544,8 @@ if ($Calibrator) {
 
 
 
+
+
                 $targetUrl = [string]$payload.url
                 $pageId = if ($payload.pageId) { [string]$payload.pageId } else { "page1" }
                 $requestedZoom = 0; $requestedWait = 0
@@ -418,6 +553,8 @@ if ($Calibrator) {
                     ([int]::TryParse([string]$payload.browser_zoom, [ref]$requestedZoom) -and $requestedZoom -ge 50 -and $requestedZoom -le 200)
                 $validWait = -not ($payload.PSObject.Properties.Name -contains 'wait_seconds') -or
                     ([int]::TryParse([string]$payload.wait_seconds, [ref]$requestedWait) -and $requestedWait -ge 1 -and $requestedWait -le 60)
+
+
 
 
 
@@ -434,6 +571,8 @@ if ($Calibrator) {
                     $tmpPng = Join-Path $sampleDir "tmp_${pageId}_full.png"
                     Remove-Item $tmpPng -Force -ErrorAction SilentlyContinue
                     Remove-Item ($tmpPng + '.json') -Force -ErrorAction SilentlyContinue
+
+
 
 
 
@@ -454,12 +593,16 @@ if ($Calibrator) {
 
 
 
+
+
                 $respBytes = [System.Text.Encoding]::UTF8.GetBytes($respJson)
                 $res.ContentType = "application/json; charset=utf-8"
                 $res.OutputStream.Write($respBytes, 0, $respBytes.Length)
                 $res.Close()
                 continue
             }
+
+
 
 
 
@@ -484,6 +627,8 @@ if ($Calibrator) {
 
 
 
+
+
                         Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ✅ 成功擷取畫面 (${w}x${h}) -> $fullPng" -ForegroundColor Green
                         $captureView = (Get-Content -LiteralPath ($tmpPng + '.json') -Raw -Encoding UTF8 | ConvertFrom-Json).capture_view
                         Remove-Item ($tmpPng + '.json') -Force -ErrorAction SilentlyContinue
@@ -505,10 +650,14 @@ if ($Calibrator) {
 
 
 
+
+
             if ($path -eq "/api/test-teams" -and $req.HttpMethod -eq "POST") {
                 $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
                 $body = $reader.ReadToEnd()
                 $reader.Close()
+
+
 
 
 
@@ -519,6 +668,8 @@ if ($Calibrator) {
                 }
                 $modeText = if ($req.QueryString["send"] -eq "1") { "正式送出" } else { "只貼上不送出" }
                 Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 🚀 已儲存設定並啟動 Teams 發送測試 ($modeText)..." -ForegroundColor Cyan
+
+
 
 
 
@@ -533,14 +684,15 @@ if ($Calibrator) {
 
 
 
+
+
                 $respBytes = [System.Text.Encoding]::UTF8.GetBytes('{"ok":true}')
                 $res.ContentType = "application/json; charset=utf-8"
                 $res.OutputStream.Write($respBytes, 0, $respBytes.Length)
                 $res.Close()
                 continue
             }
-
-
+ 
 
             # calibrator 依擷取範圍裁切後的圖 (kind=crop -> <id>.png) 或載入的整頁圖 (kind=full -> <id>_full.png)
             # 寫回 sample_images，讓測試按鈕 (-TestSample) 與下次開啟設定工具都用同一張圖
@@ -549,6 +701,8 @@ if ($Calibrator) {
                 $body = $reader.ReadToEnd()
                 $reader.Close()
                 $payload = $body | ConvertFrom-Json
+
+
 
 
 
@@ -571,6 +725,8 @@ if ($Calibrator) {
                 $res.Close()
                 continue
             }
+
+
 
 
 
@@ -604,12 +760,15 @@ if ($Calibrator) {
 
 
 
+
+
             # 目前 Windows 工作排程器中的 E3_Monitor_* 任務與下次執行時間 (設定工具顯示同步狀態用)
             if ($path -eq "/api/schedule-status" -and $req.HttpMethod -eq "GET") {
                 $tasks = @(Get-ScheduledTask -TaskName "E3_Monitor_*" -ErrorAction SilentlyContinue | ForEach-Object {
                     $info = $_ | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
                     $next = if ($info -and $info.NextRunTime -and $info.NextRunTime.Year -gt 2000) { $info.NextRunTime.ToString("MM/dd HH:mm") } else { "" }
-                    @{ id = $_.TaskName.Substring("E3_Monitor_".Length); state = "$($_.State)"; next = $next }
+                    @{ id = $_.TaskName.Substring("E3_Monitor_".Length); state = "$($_.State)"; next = $next
+                       wake = [bool]$_.Settings.WakeToRun; catch_up = [bool]$_.Settings.StartWhenAvailable }
                 })
                 $respBytes = [System.Text.Encoding]::UTF8.GetBytes((@{ tasks = $tasks } | ConvertTo-Json -Depth 4 -Compress))
                 $res.ContentType = "application/json; charset=utf-8"
@@ -620,11 +779,15 @@ if ($Calibrator) {
 
 
 
+
+
             # 儲存設定後，依 config.schedules 一次同步所有 Windows 工作排程
             if ($path -eq "/api/register-schedules" -and $req.HttpMethod -eq "POST") {
                 $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
                 $body = $reader.ReadToEnd()
                 $reader.Close()
+
+
 
 
 
@@ -637,12 +800,16 @@ if ($Calibrator) {
 
 
 
+
+
                 $scriptPath = $PSCommandPath
                 $reportFile = Join-Path $rootDir "logs\register_last.txt"
                 Remove-Item $reportFile -Force -ErrorAction SilentlyContinue
                 $proc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -ConfigPath `"$configPath`" -RegisterSchedules" -WindowStyle Hidden -Wait -PassThru
                 $report = if (Test-Path $reportFile) { [System.IO.File]::ReadAllText($reportFile, [System.Text.Encoding]::UTF8) } else { "未產生註冊結果，請查看 logs\register_last.txt" }
                 Write-Host $report
+
+
 
 
 
@@ -653,6 +820,8 @@ if ($Calibrator) {
                 $res.Close()
                 continue
             }
+
+
 
 
 
@@ -669,6 +838,18 @@ if ($Calibrator) {
 
 
 
+
+
+            if ($path -eq '/api/cdp-setup' -and $req.HttpMethod -eq 'POST') {
+                $reader = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8)
+                $body = $reader.ReadToEnd(); $reader.Close()
+                try { Save-ConfigBody $body } catch { Send-JsonError $res 400 $_.Exception.Message; continue }
+                # This is the user-requested interactive setup window, not an unattended sender.
+                Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ConfigPath `"$configPath`" -CdpSetup" -WindowStyle Normal
+                $bytes = [Text.Encoding]::UTF8.GetBytes('{"ok":true}')
+                $res.ContentType = 'application/json; charset=utf-8'; $res.OutputStream.Write($bytes,0,$bytes.Length); $res.Close()
+                continue
+            }
             # 「🔍 偵測 Teams 視窗」：先存檔 (用畫面上最新的發送對象)，再以 -DetectTeams 列出開著的 Teams，不切換、不貼上
             if ($path -eq "/api/teams-detect" -and $req.HttpMethod -eq "POST") {
                 $reader = New-Object System.IO.StreamReader($req.InputStream, [System.Text.Encoding]::UTF8)
@@ -684,12 +865,16 @@ if ($Calibrator) {
 
 
 
+
+
                 $reportFile = Join-Path $rootDir "logs\teams_detect.txt"
                 Remove-Item $reportFile -Force -ErrorAction SilentlyContinue
                 Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 🔍 正在偵測開著的 Teams..." -ForegroundColor Cyan
                 $proc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ConfigPath `"$configPath`" -DetectTeams" -WindowStyle Hidden -Wait -PassThru
                 $report = if (Test-Path $reportFile) { [System.IO.File]::ReadAllText($reportFile, [System.Text.Encoding]::UTF8) } else { "沒有產生偵測結果 (logs\teams_detect.txt)" }
                 Write-Host $report
+
+
 
 
 
@@ -702,12 +887,16 @@ if ($Calibrator) {
 
 
 
+
+
             # 靜態檔案白名單：只提供設定工具、使用手冊與其圖片；config.json 等其他檔案一律不直接提供
             $relPath = $path.TrimStart('/')
             if ($relPath -eq "") { $relPath = "calibrator.html" }
             $allowed = $relPath -in @("calibrator.html", "sample_data.js", "USER_MANUAL.html") -or
                 $relPath -match '^sample_images/[A-Za-z0-9_-]+\.png$'
             $filePath = Join-Path $rootDir ($relPath -replace '/', '\')
+
+
 
 
 
@@ -740,6 +929,8 @@ if ($Calibrator) {
 
 
 
+
+
 # 尋找系統內建的 Microsoft Edge 或 Google Chrome (免安裝任何外部瀏覽器或外掛)
 function Get-BrowserPath {
     $candidates = @(
@@ -756,8 +947,12 @@ function Get-BrowserPath {
 
 
 
+
+
 # Teams 被關掉、又沒有 Teams PWA 捷徑與桌面版時，用預設瀏覽器開的 Teams 網頁版網址 (使用者現有的登入)
 $TeamsWebHome = "https://teams.cloud.microsoft/"
+
+
 
 
 
@@ -773,6 +968,8 @@ function Invoke-CdpCommand($ws, [int]$id, [string]$method, [hashtable]$params = 
 
 
 
+
+
         $buffer = New-Object byte[] 65536
         $sb = New-Object System.Text.StringBuilder
         while ($true) {
@@ -783,6 +980,8 @@ function Invoke-CdpCommand($ws, [int]$id, [string]$method, [hashtable]$params = 
             if ($res.EndOfMessage) {
                 $msgStr = $sb.ToString()
                 $sb.Clear() | Out-Null
+                # 先用字串比對指令編號，略過大量的網頁事件 (例如 Teams 的 console 訊息)，不必逐一解析 JSON
+                if ($msgStr.IndexOf("`"id`":$id,") -lt 0 -and $msgStr.IndexOf("`"id`":$id}") -lt 0) { continue }
                 try {
                     $json = $msgStr | ConvertFrom-Json
                     if ($json.id -eq $id) { return $json }
@@ -799,8 +998,12 @@ function Invoke-CdpCommand($ws, [int]$id, [string]$method, [hashtable]$params = 
 
 
 
+
+
 $profileDir = Join-Path $PSScriptRoot "edge_profile"
 if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Force -Path $profileDir | Out-Null }
+
+
 
 
 
@@ -833,6 +1036,8 @@ function Stop-ProfileEdge {
 
 
 
+
+
 # Browser.close 會中斷 CDP 連線，因此只限時送出，不等待一般指令的回覆。
 # 使用本次截圖既有的連線，不連到可能由其他瀏覽器占用的除錯埠。
 function Close-CaptureBrowser($ws) {
@@ -853,6 +1058,8 @@ function Close-CaptureBrowser($ws) {
 
 
 
+
+
 # 等待 Edge CDP 除錯埠就緒 (公司電腦防毒掃描時 Edge 啟動可能較慢)
 function Wait-CdpTargets([int]$port, [int]$timeoutSec = 20) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
@@ -863,6 +1070,9 @@ function Wait-CdpTargets([int]$port, [int]$timeoutSec = 20) {
 }
 
 
+
+
+
 # 在頁面執行 JavaScript，回傳結果值 (字串)
 function Invoke-CdpEval($ws, [int]$id, [string]$js) {
     $r = Invoke-CdpCommand $ws $id "Runtime.evaluate" @{ expression = $js; returnByValue = $true }
@@ -871,9 +1081,13 @@ function Invoke-CdpEval($ws, [int]$id, [string]$js) {
 
 
 
+
+
 function Test-AuthConfigured($authCfg) {
     return [bool]($authCfg -and $authCfg.enabled -and $authCfg.username -and $authCfg.username -ne "YOUR_USERNAME")
 }
+
+
 
 
 
@@ -901,6 +1115,8 @@ $JsLoginState = $JsFindLoginButton + @'
 $JsClickLoginButton = $JsFindLoginButton + @'
 (function () { var b = e3FindLoginButton(); if (b) { b.click(); return 'CLICKED'; } return 'NOT_FOUND'; })()
 '@
+
+
 
 
 
@@ -939,6 +1155,8 @@ function Get-JsFillLogin($authCfg) {
 })()
 "@
 }
+
+
 
 
 
@@ -1010,12 +1228,13 @@ function Get-JsZabbixTimeStep([string]$action = "inspect") {
 }
 
 
-
 function Set-ZabbixRecentWeek($ws, [ref]$commandId, [string]$url, [int]$waitSeconds = 5, [int]$timeoutSeconds = 180) {
     # 只處理本專案使用的舊版 Zabbix screens / charts 頁面，其他報表照原流程截圖。
     $pageUri = $null
     if (-not [Uri]::TryCreate($url, [UriKind]::Absolute, [ref]$pageUri) -or
         $pageUri.AbsolutePath -notmatch '/(screens|charts)\.php$') { return $false }
+
+
 
 
 
@@ -1081,6 +1300,8 @@ function Set-ZabbixRecentWeek($ws, [ref]$commandId, [string]$url, [int]$waitSeco
 
 
 
+
+
 # ==============================================================================
 # 模式 A：首次手動登入記憶模式 (-LoginMode)
 # ==============================================================================
@@ -1093,6 +1314,8 @@ if ($LoginMode) {
 
 
 
+
+
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host "🔓 [首次登入記憶模式] 已開啟公司內建瀏覽器 (免外掛)" -ForegroundColor Cyan
     Write-Host "👉 1. 請在彈出的瀏覽器視窗中，輸入帳號密碼登入各頁面（可勾選『記住我』或儲存密碼）。" -ForegroundColor Yellow
@@ -1101,11 +1324,15 @@ if ($LoginMode) {
 
 
 
+
+
     $proc = Start-Process -FilePath $browserExe -ArgumentList $argStr -PassThru
     $proc.WaitForExit()
     Write-Host "✅ 登入狀態與 Cookie 已永久保存於 $profileDir ！" -ForegroundColor Green
     exit 0
 }
+
+
 
 
 
@@ -1124,21 +1351,17 @@ function Get-BrowserZoom($page) {
 
 
 
+
+
 function Set-CaptureViewport($ws, [ref]$commandId, [int]$zoom, $view = $null, [switch]$FitWindow) {
     $factor = $zoom / 100.0
     $width = [int][Math]::Round(1920 / $factor); $height = [int][Math]::Round(1080 / $factor)
-    if ($FitWindow) {
-        $id = $commandId.Value; $commandId.Value++
-        $window = Invoke-CdpCommand $ws $id 'Browser.getWindowForTarget'
-        $id = $commandId.Value; $commandId.Value++
-        Invoke-CdpCommand $ws $id 'Browser.setWindowBounds' @{windowId=$window.result.windowId; bounds=@{windowState='maximized'}} | Out-Null
-        $id = $commandId.Value; $commandId.Value++
-        Invoke-CdpCommand $ws $id 'Emulation.clearDeviceMetricsOverride' | Out-Null
-        Start-Sleep -Milliseconds 500
-        $id = $commandId.Value; $commandId.Value++
-        $native = (Invoke-CdpEval $ws $id 'JSON.stringify({w:innerWidth,h:innerHeight})') | ConvertFrom-Json
-        $width = [int][Math]::Floor($native.w / $factor); $height = [int][Math]::Floor($native.h / $factor)
-    } elseif ($view) {
+    # 抓圖與排程都使用完整視窗顯示；排程的 CSS 尺寸仍取自保存的 capture_view。
+    $id = $commandId.Value; $commandId.Value++
+    $window = Invoke-CdpCommand $ws $id 'Browser.getWindowForTarget'
+    $id = $commandId.Value; $commandId.Value++
+    Invoke-CdpCommand $ws $id 'Browser.setWindowBounds' @{windowId=$window.result.windowId; bounds=@{windowState='maximized'}} | Out-Null
+    if ($view -and -not $FitWindow) {
         if ($view.zoom -ne $zoom) { throw '網頁縮放已變更，請重新抓圖並選擷取目前畫面，更新捲動位置' }
         foreach ($key in @('width','height','x','y')) {
             if ($null -eq $view.$key -or [double]$view.$key -ne [Math]::Floor([double]$view.$key) -or [double]$view.$key -lt 0) {
@@ -1147,23 +1370,61 @@ function Set-CaptureViewport($ws, [ref]$commandId, [int]$zoom, $view = $null, [s
         }
         $width = [int]$view.width; $height = [int]$view.height
     }
+    # 先讀未套用 Emulation 的網站縮放。Edge 可能已記住 80%，不是使用者這次手動改動。
+    # 啟動參數固定 force-device-scale-factor=1，因此這裡的 DPR 就是 Edge 原生縮放。
+    # 僅補償本次 CDP 渲染，不修改 Preferences、網站縮放或登入資料。
+    $id = $commandId.Value; $commandId.Value++
+    Invoke-CdpCommand $ws $id 'Emulation.clearDeviceMetricsOverride' | Out-Null
+    Start-Sleep -Milliseconds 500
+    $id = $commandId.Value; $commandId.Value++
+    $native = (Invoke-CdpEval $ws $id 'JSON.stringify({w:innerWidth,h:innerHeight,dpr:devicePixelRatio})') | ConvertFrom-Json
+    $nativeZoom = [double]$native.dpr
+    if ($nativeZoom -le 0 -or [double]::IsNaN($nativeZoom) -or [double]::IsInfinity($nativeZoom)) {
+        throw '無法確認 Edge 網頁縮放，請重新抓圖'
+    }
+    if ($FitWindow) {
+        $width = [int][Math]::Floor($native.w * $nativeZoom / $factor)
+        $height = [int][Math]::Floor($native.h * $nativeZoom / $factor)
+    }
     if ($width -lt 1 -or $height -lt 1 -or $width*$factor -gt 16384 -or $height*$factor -gt 16384 -or $width*$height*$factor*$factor -gt 64000000) {
         throw '可視範圍尺寸無效或過大，請重新抓圖'
     }
-    # 以 CSS 可視範圍與輸出像素密度模擬網頁縮放；固定實體視窗基準，讓文字與圖表一起放大並重新排版。
+    # Edge 原生縮放會同時除 viewport、乘 DPR，須成對補償才能維持設定比例與 PNG 座標。
+    $renderFactor = $factor / $nativeZoom
+    $renderWidth = [int][Math]::Round($width * $nativeZoom)
+    $renderHeight = [int][Math]::Round($height * $nativeZoom)
     $id = $commandId.Value; $commandId.Value++
     Invoke-CdpCommand $ws $id 'Emulation.setDeviceMetricsOverride' @{
-        width = $width; height = $height
-        deviceScaleFactor = $factor; mobile = $false; scale = $(if ($FitWindow) { $factor } else { 1 })
+        width = $renderWidth; height = $renderHeight
+        deviceScaleFactor = $renderFactor; mobile = $false; scale = $renderFactor
+        # 兩種模式皆保留真正顯示區；scale 僅影響視窗顯示，不改保存的 CSS 尺寸或 PNG 像素密度。
+        dontSetVisibleSize = $true
     } | Out-Null
     $id = $commandId.Value; $commandId.Value++
     Invoke-CdpCommand $ws $id 'Emulation.setPageScaleFactor' @{ pageScaleFactor = 1 } | Out-Null
+    if ($view -and -not $FitWindow) {
+        # Chromium 的 CSS 尺寸會四捨五入，且 DPR 有 float32 誤差。讀回實際尺寸微調，
+        # 不猜測 floor/ceil，也不放寬後續 Restore-CaptureScroll 的精確核對。
+        for ($attempt = 0; $attempt -lt 4; $attempt++) {
+            $id = $commandId.Value; $commandId.Value++
+            $actual = (Invoke-CdpEval $ws $id 'JSON.stringify({w:innerWidth,h:innerHeight})') | ConvertFrom-Json
+            if ($actual.w -eq $width -and $actual.h -eq $height) { break }
+            if ($attempt -eq 3) { throw '無法還原設定的可視範圍，請重新抓圖' }
+            if ($actual.w -ne $width) { $renderWidth += [Math]::Sign($width-$actual.w) * [Math]::Max(1,[Math]::Round([Math]::Abs($width-$actual.w)*$nativeZoom)) }
+            if ($actual.h -ne $height) { $renderHeight += [Math]::Sign($height-$actual.h) * [Math]::Max(1,[Math]::Round([Math]::Abs($height-$actual.h)*$nativeZoom)) }
+            $id = $commandId.Value; $commandId.Value++
+            Invoke-CdpCommand $ws $id 'Emulation.setDeviceMetricsOverride' @{
+                width=$renderWidth; height=$renderHeight; deviceScaleFactor=$renderFactor; mobile=$false; scale=$renderFactor; dontSetVisibleSize=$true
+            } | Out-Null
+        }
+    }
 }
 
 
 
-# $zoom：設定工具的「網頁縮放」。在 Edge 裡手動縮放 (Ctrl＋滾輪 / Ctrl＋加減號) 時 devicePixelRatio 會偏離 zoom/100，
-# 面板會即時提示按 Ctrl+0，且不接受擷取 (Edge 會記住手動縮放，排程時再套用一次而無法還原位置)
+
+
+# $zoom：設定工具的「網頁縮放」。已在載入後補償 Edge 記住的縮放；面板開啟後 DPR 再變動才阻擋。
 function Get-JsCaptureControls([int]$zoom = 100) {
     $script = @'
 (() => {
@@ -1178,7 +1439,7 @@ const warn = root.getElementById('warn');
 function zoomed() { return Math.abs(devicePixelRatio - expected) > 0.01; }
 function check() {
    warn.hidden = !zoomed();
-   if (zoomed()) warn.textContent = '偵測到網頁被手動縮放（約 ' + Math.round(devicePixelRatio / expected * 100) + '%）。請在這個視窗按 Ctrl+0 還原後再擷取；要改比例請用設定工具的「網頁縮放」。';
+   if (zoomed()) warn.textContent = '擷取期間網頁縮放已變更（相對原比例約 ' + Math.round(devicePixelRatio / expected * 100) + '%）。請按「取消」後重新抓圖；要改比例請用設定工具的「網頁縮放」。';
 }
 function choose(cancel){
    if (!cancel && zoomed()) { check(); return; }
@@ -1197,16 +1458,20 @@ document.documentElement.appendChild(host); check(); return 'READY';
 
 
 
-# 排程與抓圖擷取前確認沒有手動縮放 (devicePixelRatio 應等於網頁縮放)，否則給出明確原因而不是「無法還原捲動位置」
+
+
+# 排程與抓圖擷取前確認套用比例後沒有再次縮放；原本記住的網站縮放已由 Set-CaptureViewport 補償。
 function Assert-NoManualZoom($ws, [ref]$commandId, [int]$zoom) {
     $id = $commandId.Value; $commandId.Value++
     $dpr = [double](Invoke-CdpEval $ws $id 'String(devicePixelRatio)')
     $expected = $zoom / 100.0
     if ($dpr -gt 0 -and [Math]::Abs($dpr - $expected) -gt 0.01) {
         $manual = [int][Math]::Round($dpr / $expected * 100)
-        throw "專用 Edge 記住了此網站的手動縮放（約 $manual%）：請按 🔐 登入監控網站，開啟此網站按 Ctrl+0 還原後關閉，再重新 📸 抓圖"
+        throw "擷取期間網頁縮放已變更（相對原比例約 $manual%）：請重新 📸 抓圖；要改比例請用設定工具的「網頁縮放」"
     }
 }
+
+
 
 
 
@@ -1233,6 +1498,8 @@ function Wait-InteractiveCapture($ws, [ref]$commandId, [int]$zoom, [int]$Timeout
 
 
 
+
+
 function Restore-CaptureScroll($ws, [ref]$commandId, $view, [int]$waitSeconds = 1) {
     $x=[int]$view.x; $y=[int]$view.y
     $id = $commandId.Value; $commandId.Value++
@@ -1245,6 +1512,8 @@ function Restore-CaptureScroll($ws, [ref]$commandId, $view, [int]$waitSeconds = 
     }
     Write-Host "  ↕️ 已還原捲動位置 X=$x, Y=$y；可視範圍 $($view.width) × $($view.height)" -ForegroundColor DarkGray
 }
+
+
 
 
 
@@ -1267,10 +1536,14 @@ function Save-RenderedPage($ws, [ref]$commandId, $page, [string]$outDir, [int]$z
         $width * $height * $factor * $factor -gt 64000000) {
         throw '完整網頁圖片過大（上限單邊 16384 像素、總計 6400 萬像素），請降低網頁縮放或改用較短的報表網址'
     }
+    # captureScreenshot.clip 使用 DIP；有 Edge 原生縮放時不能直接填 CSS 尺寸，
+    # 否則 80% 網頁會多出空白邊或 125% 網頁被截短。contentSize 是對應的 DIP 範圍。
+    $clipSize = $layout.result.contentSize
+    if (-not $clipSize -or $clipSize.width -le 0 -or $clipSize.height -le 0) { throw '無法取得完整網頁擷取範圍' }
     $id = $commandId.Value; $commandId.Value++
     $shot = Invoke-CdpCommand $ws $id 'Page.captureScreenshot' @{
         format = 'png'; fromSurface = $true; captureBeyondViewport = $true
-        clip = @{ x = 0; y = 0; width = $width; height = $height; scale = 1 }
+        clip = @{ x = 0; y = 0; width = $clipSize.width; height = $clipSize.height; scale = 1 }
     }
     }
     if (-not $shot.result.data) { throw 'Edge 沒有回傳完整網頁圖片' }
@@ -1304,6 +1577,8 @@ function Save-RenderedPage($ws, [ref]$commandId, $page, [string]$outDir, [int]$z
 
 
 
+
+
 # 連到專用 Edge 的分頁並啟用需要的 CDP 功能；Edge 啟動時與連線被中止後的重新連線共用
 # -NewTab：上一頁的網頁卡死時，重連同一個分頁一樣不會回應，改開新分頁並關閉舊分頁 (由瀏覽器程序處理，不經過卡住的網頁)
 function Connect-CdpPage([int]$port, [ref]$commandId, [switch]$NewTab) {
@@ -1324,6 +1599,8 @@ function Connect-CdpPage([int]$port, [ref]$commandId, [switch]$NewTab) {
 
 
 
+
+
     $ws = [System.Net.WebSockets.ClientWebSocket]::new()
     $connectToken = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(15))
     try {
@@ -1332,6 +1609,8 @@ function Connect-CdpPage([int]$port, [ref]$commandId, [switch]$NewTab) {
         $ws.Dispose()
         throw "無法連線到專用 Edge 的除錯通道（$($_.Exception.Message)）"
     } finally { $connectToken.Dispose() }
+
+
 
 
 
@@ -1347,12 +1626,16 @@ function Connect-CdpPage([int]$port, [ref]$commandId, [switch]$NewTab) {
 
 
 
+
+
 # 開啟網址；連線失敗 (DNS、拒絕連線、逾時等) 時 Page.navigate 會回傳 errorText，此時 Edge 顯示的是錯誤頁
 function Open-PageUrl($ws, [ref]$commandId, [string]$url) {
     $id = $commandId.Value; $commandId.Value++
     $nav = Invoke-CdpCommand $ws $id "Page.navigate" @{ url = $url }
     if ($nav.result.errorText) { throw "網頁無法開啟（$($nav.result.errorText)）" }
 }
+
+
 
 
 
@@ -1370,19 +1653,72 @@ function Assert-PageLoaded($ws, [ref]$commandId) {
 
 
 
-function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch]$Interactive) {
+
+
+# 清除專用 Edge 記住的「網站縮放」(Ctrl＋滾輪等手動縮放會依網站存在 Preferences 的 per_host_zoom_levels)。
+# 抓圖與排程若記住的比例不同，保存的可視範圍無法精確還原而停止；每次啟動前清除，兩者條件就一致，比例只由設定工具的「網頁縮放」決定。
+# 只把 per_host_zoom_levels 換成 {}，其餘內容逐字保留；改完必須仍是有效 JSON 才寫入，並留 Preferences.e3bak。任何疑慮就不改 (仍有 Set-CaptureViewport 補償)。
+# Edge 必須已關閉 (呼叫前先 Stop-ProfileEdge)。預設縮放 (edge://settings 的頁面縮放) 不清除，由補償處理。
+function Clear-RememberedZoom {
+    $pref = Join-Path $profileDir 'Default\Preferences'
+    if (-not (Test-Path -LiteralPath $pref)) { return }
+    try {
+        $text = [IO.File]::ReadAllText($pref, [Text.Encoding]::UTF8)
+        $key = '"per_host_zoom_levels":'
+        $sb = New-Object System.Text.StringBuilder
+        $pos = 0; $changed = $false
+        while (($i = $text.IndexOf($key, $pos)) -ge 0) {
+            $start = $i + $key.Length
+            while ($start -lt $text.Length -and [char]::IsWhiteSpace($text[$start])) { $start++ }
+            if ($start -ge $text.Length -or $text[$start] -ne '{') { return }
+            # 找對應的右大括號 (略過字串內容與跳脫字元)
+            $depth = 0; $inStr = $false; $end = -1
+            for ($k = $start; $k -lt $text.Length; $k++) {
+                $c = $text[$k]
+                if ($inStr) { if ($c -eq '\') { $k++ } elseif ($c -eq '"') { $inStr = $false } }
+                elseif ($c -eq '"') { $inStr = $true }
+                elseif ($c -eq '{') { $depth++ }
+                elseif ($c -eq '}') { $depth--; if ($depth -eq 0) { $end = $k; break } }
+            }
+            if ($end -lt 0) { return }
+            if ($text.Substring($start, $end - $start + 1) -notmatch '^\{\s*(\"[^\"]*\"\s*:\s*\{\s*\}\s*,?\s*)*\}$') { $changed = $true }
+            [void]$sb.Append($text, $pos, $start - $pos).Append('{}')
+            $pos = $end + 1
+        }
+        if (-not $changed) { return }
+        [void]$sb.Append($text, $pos, $text.Length - $pos)
+        $new = $sb.ToString()
+        $null = $new | ConvertFrom-Json -ErrorAction Stop   # 確認改完仍是有效的 JSON
+        [IO.File]::Copy($pref, "$pref.e3bak", $true)
+        [IO.File]::WriteAllText($pref, $new, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "  🔧 已清除專用 Edge 記住的網站縮放（截圖比例以設定工具的「網頁縮放」為準）" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  ⚠️ 無法清除專用 Edge 記住的網站縮放（$($_.Exception.Message)），改用比例補償" -ForegroundColor Yellow
+    }
+}
+
+
+
+function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch]$Interactive, [switch]$Headless) {
+    if ($Interactive -and $Headless) { throw '互動抓圖不能使用背景模式' }
     $browserExe = Get-BrowserPath
     if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 
 
 
+
+
     Stop-ProfileEdge
+    Clear-RememberedZoom
     $debugPort = 9333
     # 參考公司內部 46518 實測經驗：加入防止 Edge 背景分頁休眠/凍結參數
     # --force-device-scale-factor=1：筆電顯示比例 125%/150% 時，截圖座標仍與設定工具一致
     # Translate (Chromium) / msEdgeTranslate (Edge)：停用翻譯提示，避免詢問中文是否轉英文。
     $argList = "--remote-debugging-port=$debugPort --user-data-dir=`"$profileDir`" --disable-features=Translate,msEdgeTranslate --window-size=1920,1080 --force-device-scale-factor=1 --hide-crash-restore-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding about:blank"
-    $proc = Start-Process -FilePath $browserExe -ArgumentList $argList -PassThru
+    if ($Headless) { $argList += ' --headless=new' }
+    $proc = Start-Process -FilePath $browserExe -ArgumentList $argList -WindowStyle Hidden -PassThru
+
+
 
 
 
@@ -1392,6 +1728,8 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
     try {
         $cmdId = 1
         $ws = Connect-CdpPage $debugPort ([ref]$cmdId)
+
+
 
 
 
@@ -1408,12 +1746,15 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
                 $ws = Connect-CdpPage $debugPort ([ref]$cmdId) -NewTab
             }
             $pageZoom = Get-BrowserZoom $p
-            Set-CaptureViewport $ws ([ref]$cmdId) $pageZoom $p.capture_view -FitWindow:$Interactive
+            # 此時仍可能是上一個網站；儲存的 viewport 留待導航到目標網站後才還原。
+            Set-CaptureViewport $ws ([ref]$cmdId) $pageZoom -FitWindow:$Interactive
             Write-Host "🌐 [$idx/$($pagesToCapture.Count)] 正在開啟 $($p.name): $($p.url)" -ForegroundColor Cyan
             Invoke-CdpCommand $ws ($cmdId++) "Page.bringToFront" | Out-Null
             try { Invoke-CdpCommand $ws ($cmdId++) "Page.setWebLifecycleState" @{ state = "active" } | Out-Null } catch {}
             Open-PageUrl $ws ([ref]$cmdId) $p.url
             Start-Sleep -Seconds 3
+
+
 
 
 
@@ -1458,10 +1799,16 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
 
 
 
+
+
+            # 導航／登入後 Edge 才套用該網站記住的縮放，必須在目標頁重新校正。
+            Set-CaptureViewport $ws ([ref]$cmdId) $pageZoom $p.capture_view -FitWindow:$Interactive
             $waitSec = if ($p.wait_seconds) { [int]$p.wait_seconds } else { 5 }
             Start-Sleep -Seconds $waitSec
             Assert-PageLoaded $ws ([ref]$cmdId)
             Set-ZabbixRecentWeek $ws ([ref]$cmdId) $p.url $waitSec | Out-Null
+
+
 
 
 
@@ -1479,6 +1826,8 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
 
 
 
+
+
     } finally {
         try { Close-CaptureBrowser $ws } finally {
             if ($ws) { $ws.Dispose() }
@@ -1488,8 +1837,7 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
     # Files：頁面 id → 截圖路徑；Failures：頁面 id → 失敗原因 (依頁面順序)
     return @{ Files = $capturedMap; Failures = $failures }
 }
-
-
+ 
 
 # ==============================================================================
 # 函數：判斷單一像素是否屬於數據趨勢曲線
@@ -1507,10 +1855,14 @@ function Test-CurvePixel($r, $g, $b, $rule) {
 
 
 
+
+
     $maxC = [Math]::Max($r, [Math]::Max($g, $b))
     $minC = [Math]::Min($r, [Math]::Min($g, $b))
     $sat = $maxC - $minC
     $lum = 0.299 * $r + 0.587 * $g + 0.114 * $b
+
+
 
 
 
@@ -1519,8 +1871,13 @@ function Test-CurvePixel($r, $g, $b, $rule) {
 
 
 
+
+
     return ($lum -lt 192 -or $sat -ge 30)
 }
+
+
+
 
 
 # ==============================================================================
@@ -1536,6 +1893,8 @@ $ChatPrefix = '(群組聊天|會議聊天|聊天|Group chat|Meeting chat|Chat)'
 
 
 
+
+
 function Get-TopWindows {
     foreach ($line in [E3Win]::ListWindows()) {
         $h, $procId, $title = $line -split '\|', 3
@@ -1546,10 +1905,14 @@ function Get-TopWindows {
 
 
 
+
+
 function Find-UIA($root, [string]$type, [scriptblock]$filter) {
     $cond = New-Object System.Windows.Automation.PropertyCondition($UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::$type)
     @($root.FindAll($UIAll, $cond) | Where-Object $filter)
 }
+
+
 
 
 
@@ -1564,9 +1927,13 @@ function Select-UIAElement($el) {
 
 
 
+
+
 $TeamsKinds = @("pwa", "desktop", "edge-tab")   # 尋找順序
 $TeamsKindText = @{ pwa = "Teams 應用程式 (PWA)"; desktop = "桌面版 Teams"; "edge-tab" = "Edge 分頁中的 Teams" }
 $EdgeSuffix = 'Microsoft[\s\u200B]*Edge\s*$'   # 一般 Edge 瀏覽器視窗的標題結尾 (中間可能有零寬空白)
+
+
 
 
 
@@ -1591,6 +1958,8 @@ function Get-EdgeTabs([IntPtr]$hwnd) {
     }
     return $tabs
 }
+
+
 
 
 
@@ -1628,6 +1997,8 @@ function Get-TeamsCandidates([string[]]$kinds = $TeamsKinds, [switch]$firstOnly)
 
 
 
+
+
 # 回傳 @{ Hwnd; Kind = pwa | desktop | edge-tab; Title }；找不到回傳 $null。Edge 分頁會被切成目前分頁
 # $prefer (config teams.prefer_window，選填)：只找指定種類；空白 = 依 PWA → 桌面版 → Edge 分頁
 function Find-TeamsWindow([string]$prefer = "") {
@@ -1644,6 +2015,8 @@ function Find-TeamsWindow([string]$prefer = "") {
 
 
 
+
+
 # 「開始」功能表 / 桌面上的 Teams PWA 捷徑 (Edge 安裝的應用程式，參數含 --app-id)；沒有回傳 $null
 # 桌面只看最上層：桌面常被重新導向到 OneDrive / 網路磁碟，整個往下搜尋可能要一分鐘以上
 function Find-TeamsPwaShortcut {
@@ -1657,7 +2030,11 @@ function Find-TeamsPwaShortcut {
 
 
 
+
+
 function Test-TeamsDesktopInstalled { Test-Path "Registry::HKEY_CLASSES_ROOT\msteams\shell\open\command" }
+
+
 
 
 
@@ -1691,6 +2068,8 @@ function Open-TeamsApp([string]$prefer = "") {
 
 
 
+
+
 # 設定的發送對象 → 聊天清單要找的對話。回傳 @{ Self = $true/$false; Name = 對話名稱 }
 function Resolve-ChatTarget([string]$target) {
     $t = if ($target) { $target.Trim() } else { "" }
@@ -1704,6 +2083,8 @@ function Resolve-ChatTarget([string]$target) {
 
 
 
+
+
 # 從視窗標題取出目前對話名稱，不是聊天畫面時回傳 $null。標題格式：「聊天 | 對話名稱 | 組織 | … | Microsoft Teams」
 # PWA 可能在前面加「Microsoft Teams (PWA) - 」；Edge 分頁會在後面加「 和其他 N 個頁面 - 設定檔 - Microsoft Edge」
 # 聊天前可能有未讀數量，例如「Microsoft Teams (PWA) - (1) 聊天 | ...」。
@@ -1714,6 +2095,8 @@ function Get-ChatNameFromTitle([string]$title) {
 
 
 
+
+
 # 視窗標題是否為該對話：對話名稱必須完全相同 (避免「E3」誤認成「E3 乖乖」)；自己的個人對話名稱以 (您) / (You) 結尾
 function Test-ChatTitle([string]$title, $chat) {
     $name = Get-ChatNameFromTitle $title
@@ -1721,6 +2104,8 @@ function Test-ChatTitle([string]$title, $chat) {
     if ($chat.Self) { return $name -match '\((您|You)\)$' }
     return $name -eq $chat.Name
 }
+
+
 
 
 
@@ -1735,12 +2120,16 @@ function Get-ChatItemFilter($chat) {
 
 
 
+
+
 # 左側導覽列的「聊天」
 function Find-TeamsChatNav($root) {
     $nav = Find-UIA $root "Button" { $_.Current.Name -match "^(聊天|Chat)(\s|\(|$)" } | Select-Object -First 1
     if (-not $nav) { $nav = Find-UIA $root "ListItem" { $_.Current.Name -match "^(聊天|Chat)(\s|\(|$)" } | Select-Object -First 1 }
     return $nav
 }
+
+
 
 
 
@@ -1759,11 +2148,15 @@ function Find-ChatListItem($root, [scriptblock]$match) {
 
 
 
+
+
 # 在聊天清單找到並點選對話，確認視窗標題是該對話；找不到就停止
 function Open-TeamsChat([IntPtr]$hwnd, $chat) {
     if (Test-ChatTitle ([E3Win]::GetTitle($hwnd)) $chat) { return }   # 已經在這個對話
     $root = $UIA::FromHandle($hwnd)
     $match = Get-ChatItemFilter $chat
+
+
 
 
 
@@ -1777,6 +2170,8 @@ function Open-TeamsChat([IntPtr]$hwnd, $chat) {
         Start-Sleep -Seconds 2
     }
     if ($nav) { Select-UIAElement $nav; Start-Sleep -Seconds 2 }   # 目前不在「聊天」畫面：先點左側的「聊天」
+
+
 
 
 
@@ -1797,8 +2192,12 @@ function Open-TeamsChat([IntPtr]$hwnd, $chat) {
 
 
 
+
+
 # 目前對話名稱 (從視窗標題取出)，不是聊天畫面時回傳 $null
 function Get-CurrentChatName([IntPtr]$hwnd) { Get-ChatNameFromTitle ([E3Win]::GetTitle($hwnd)) }
+
+
 
 
 
@@ -1815,6 +2214,8 @@ function Get-ComposeState([IntPtr]$hwnd) {
     $text = ($text -replace '[\u200B-\u200D\u2060\uFEFF\s]', '')
     return @{ Found = $true; Images = $imgCount; Text = $text.Length }
 }
+
+
 
 
 
@@ -1841,6 +2242,8 @@ function Set-WindowForeground([IntPtr]$hwnd) {
 
 
 
+
+
 function Find-TeamsComposeBox([IntPtr]$hwnd) {
     $root = $UIA::FromHandle($hwnd)
     $editCond = New-Object System.Windows.Automation.PropertyCondition($UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
@@ -1856,6 +2259,8 @@ function Find-TeamsComposeBox([IntPtr]$hwnd) {
     }
     return $null
 }
+
+
 
 
 
@@ -1877,8 +2282,11 @@ function Set-TeamsComposeFocus([IntPtr]$hwnd) {
 
 
 
+
+
 # 每次貼上 / 按 Enter 前確認 Teams 仍在最前面且游標在輸入框 (使用者中途點到別的視窗時會自動拉回)
 function Confirm-TeamsReady([IntPtr]$hwnd, $chat) {
+    Assert-InteractiveDesktop
     if ([E3Win]::GetForegroundWindow() -ne $hwnd) {
         Write-Host "🔁 Teams 不在最前面，重新切回 Teams..." -ForegroundColor Yellow
         if (-not (Set-WindowForeground $hwnd)) { throw "無法把 Teams 視窗切到最前面，已停止貼上 (避免貼到其他視窗)" }
@@ -1889,38 +2297,36 @@ function Confirm-TeamsReady([IntPtr]$hwnd, $chat) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [string]$messageText, $teamsCfg, [bool]$isDryRun) {
-    # 【模式 A】若設定了 Teams Webhook URL，直接從背景透過 HTTP POST 傳送 (完全不需開啟 Teams 視窗！)
-    if ($teamsCfg.webhook_url -and $teamsCfg.webhook_url.Trim() -like "http*") {
-        Write-Host "🌐 [Teams Webhook] 正在從背景直接發送至指定對話 (免開 Teams 視窗)..." -ForegroundColor Cyan
-        $cardBody = @()
-        foreach ($imgFile in $imageFiles) {
-            if (-not (Test-Path $imgFile)) { continue }
-            # 自動將圖片轉為壓縮 JPEG Base64 以符合 Teams Webhook 卡片限制
-            $srcBmp = [System.Drawing.Bitmap]::new($imgFile)
-            $ms = New-Object System.IO.MemoryStream
-            $srcBmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Jpeg)
-            $b64 = [Convert]::ToBase64String($ms.ToArray())
-            $ms.Dispose()
-            $srcBmp.Dispose()
-            $cardBody += @{ type = "Image"; url = "data:image/jpeg;base64,$b64"; size = "Stretch" }
-        }
-        $cardBody += @{ type = "TextBlock"; text = $messageText; wrap = $true; weight = "Bolder" }
-        $payload = @{
-            type = "message"
-            attachments = @(@{
-                contentType = "application/vnd.microsoft.card.adaptive"
-                content = @{ '$schema' = "http://adaptivecards.io/schemas/adaptive-card.json"; type = "AdaptiveCard"; version = "1.4"; body = $cardBody }
-            })
-        } | ConvertTo-Json -Depth 15 -Compress
-        Invoke-RestMethod -Uri $teamsCfg.webhook_url.Trim() -Method Post -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($payload)) | Out-Null
-        Write-Host "✅ [Teams Webhook] 已成功從背景直接傳送至您的指定 Teams 對話！" -ForegroundColor Green
+    if ($teamsCfg.prefer_window -eq 'cdp') {
+        . (Join-Path $PSScriptRoot 'teams_cdp\Delivery.ps1')
+        Send-GroupToTeamsCdp -targetChatName $targetChatName -imageFiles $imageFiles -messageText $messageText -teamsCfg $teamsCfg -isDryRun $isDryRun
         return
     }
+    
+
+
 
 
 
     # 【模式 B】使用已開啟的 Teams (PWA → 桌面版 → Edge 分頁)
+    Assert-InteractiveDesktop
     if (-not $script:Win32Ready) { throw "無法載入 Windows 視窗控制 (可能被公司政策封鎖)，無法操作 Teams 視窗" }
     # 先檢查文字，避免貼完圖片才發現文字無法貼上，讓圖片留在輸入框成為草稿
     if ([string]::IsNullOrWhiteSpace($messageText)) { throw "總結文字是空的，未貼上任何內容" }
@@ -1935,10 +2341,14 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
 
 
 
+
+
     $originalChat = Get-CurrentChatName $hwnd
     Open-TeamsChat $hwnd $chat
     Write-Host "💬 [Teams] 已切換到對話：$($chat.Name)（視窗標題：$([E3Win]::GetTitle($hwnd))）" -ForegroundColor Cyan
     Start-Sleep -Seconds 2   # 等對話與輸入框載入
+
+
 
 
 
@@ -1950,12 +2360,15 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
 
 
 
+
+
     & {
-        # 參考同事 46518 實測限制：Teams 單一訊息最多夾帶 4 張圖片，超過自動分批
-        $batchSize = 4
-        $batches = [Math]::Max(1, [Math]::Ceiling($imageFiles.Count / $batchSize))
+        $entries=@($imageFiles|ForEach-Object{@{path=$_;size=(Get-Item -LiteralPath $_ -ErrorAction Stop).Length}})
+        $batchPlan=@(Split-TeamsImageBatches $entries)
+        $batches=$batchPlan.Count
         for ($b = 0; $b -lt $batches; $b++) {
-            $batchImgs = @($imageFiles | Select-Object -Skip ($b * $batchSize) -First $batchSize | Where-Object { Test-Path $_ })
+            $batchImgs = @($batchPlan[$b].Items|ForEach-Object{$_.path})
+            $batchText=Get-TeamsBatchText $messageText ($b+1) $batches
             foreach ($imgFile in $batchImgs) {
                 Confirm-TeamsReady $hwnd $chat
                 Write-Host "📋 [Teams -> $($chat.Name)] 正在貼上圖片: $([System.IO.Path]::GetFileName($imgFile))" -ForegroundColor Gray
@@ -1963,6 +2376,7 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
                 [System.Windows.Forms.Clipboard]::SetImage($imgObj)
                 $imgObj.Dispose()
                 Start-Sleep -Milliseconds 400
+                Assert-InteractiveDesktop
                 [System.Windows.Forms.SendKeys]::SendWait("^v")
                 Start-Sleep -Seconds 1
             }
@@ -1971,6 +2385,7 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
             do {
                 Start-Sleep -Seconds 2
                 # 等待期間若有人把 Teams 切到別的對話，立刻停止 (草稿留在原對話，不會送錯)
+                Assert-InteractiveDesktop
                 if (-not (Test-ChatTitle ([E3Win]::GetTitle($hwnd)) $chat)) { throw "等待圖片時 Teams 被切到其他對話，已停止 (內容留在「$($chat.Name)」的輸入框，未送出)" }
                 $st = Get-ComposeState $hwnd
             } while ($st.Images -lt $batchImgs.Count -and (Get-Date) -lt $deadline)
@@ -1978,16 +2393,21 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
 
 
 
-            if ($b -eq $batches - 1) {
+
+
+            & {
                 Confirm-TeamsReady $hwnd $chat
                 Write-Host "📝 [Teams -> $($chat.Name)] 正在貼上總結文字..." -ForegroundColor Gray
-                [System.Windows.Forms.Clipboard]::SetText($messageText)
+                [System.Windows.Forms.Clipboard]::SetText($batchText)
                 Start-Sleep -Milliseconds 400
+                Assert-InteractiveDesktop
                 [System.Windows.Forms.SendKeys]::SendWait("^v")
                 Start-Sleep -Seconds 2
                 if ((Get-ComposeState $hwnd).Text -eq 0) { throw "總結文字沒有出現在 Teams 輸入框，已停止 (未送出)" }
             }
-            Write-Host "🔎 [Teams] 輸入框已有 $($st.Images) 張圖片$(if ($b -eq $batches - 1) { '與總結文字' })" -ForegroundColor DarkGray
+            Write-Host "🔎 [Teams] 輸入框已有 $($st.Images) 張圖片與總結文字" -ForegroundColor DarkGray
+
+
 
 
 
@@ -2012,6 +2432,8 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
 
 
 
+
+
         # 切回原本的對話
         if ($originalChat -and -not (Test-ChatTitle "聊天 | $originalChat" $chat)) {
             try {
@@ -2021,14 +2443,36 @@ function Send-GroupToTeams([string]$targetChatName, [string[]]$imageFiles, [stri
         }
     }
 }
-
+ 
 
 # ==============================================================================
 # 模式：calibrator「🔍 偵測 Teams 視窗」(-DetectTeams)
 # 列出開著的 Teams、發送時會用哪一個、能否讀到目前對話 / 輸入框 / 聊天清單；不切換分頁、不點選、不貼上
 # 結果同時寫入 logs\teams_detect.txt (供設定工具顯示，也方便複製回報)
 # ==============================================================================
+# 模式：CDP 背景傳送的登入與檢查 (-CdpSetup；setup_cdp.bat、設定工具「🔐 登入並檢查 CDP 傳送」)
+# 需放在所有函數定義之後：teams_cdp\Delivery.ps1 共用主程式的 CDP / Teams 對話函數
+if ($CdpSetup) {
+    try {
+        . (Join-Path $PSScriptRoot 'teams_cdp\Delivery.ps1')
+        Set-E3CdpBinding $config
+    } catch { Write-Host "❌ CDP 設定：$($_.Exception.Message)" -ForegroundColor Red }
+    [void](Read-Host '按 Enter 關閉此視窗')
+    exit
+}
+
+
+
 if ($DetectTeams) {
+    if ($config.teams.prefer_window -eq 'cdp') {
+        $code=0
+        try { . (Join-Path $PSScriptRoot 'teams_cdp\Delivery.ps1'); $report = @(Test-E3CdpConnection $config) -join "`r`n" }
+        catch { $code=1; $report="❌ CDP：$($_.Exception.Message)" }
+        [IO.Directory]::CreateDirectory((Join-Path $PSScriptRoot 'logs'))|Out-Null
+        [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'logs\teams_detect.txt'),$report,[Text.UTF8Encoding]::new($false))
+        Write-Host $report
+        exit $code
+    }
     $out = New-Object System.Collections.Generic.List[string]
     $say = { param($s) $out.Add($s); Write-Host $s }
     try {
@@ -2036,6 +2480,8 @@ if ($DetectTeams) {
         if (-not $script:Win32Ready) { throw "無法載入 Windows 視窗控制 (可能被公司政策封鎖)，無法操作 Teams 視窗" }
         $prefer = if ($config.teams.prefer_window) { [string]$config.teams.prefer_window } else { "" }
         & $say "使用哪種 Teams (teams.prefer_window)：$(if ($prefer) { $TeamsKindText[$prefer] } else { '自動 (PWA → 桌面版 → Edge 分頁)' })"
+
+
 
 
 
@@ -2054,12 +2500,16 @@ if ($DetectTeams) {
 
 
 
+
+
         & $say ""
         & $say "【所有 Edge / Teams 視窗標題】(PWA 沒被認出時，請回報這段)"
         Get-TopWindows | Where-Object { $_.Proc -in @("msedge", "ms-teams", "Teams") } | ForEach-Object { & $say "  [$($_.Proc)] $($_.Title)" }
         $lnk = Find-TeamsPwaShortcut
         & $say "Teams PWA 捷徑：$(if ($lnk) { $lnk.FullName } else { '沒有' })"
         & $say "桌面版 Teams (msteams: 連結)：$(if (Test-TeamsDesktopInstalled) { '已安裝' } else { '沒有' })"
+
+
 
 
 
@@ -2087,6 +2537,8 @@ if ($DetectTeams) {
                 $root = $UIA::FromHandle($hwnd)
                 $items = @(Find-UIA $root "TreeItem" { $true })
                 & $say "  聊天清單：畫面上有 $($items.Count) 個項目$(if ($items.Count -eq 0) { ' (不在「聊天」畫面，發送時會自動點左側「聊天」)' })"
+
+
 
 
 
@@ -2118,6 +2570,8 @@ if ($DetectTeams) {
 
 
 
+
+
 # ==============================================================================
 # 主流程：支援任意數量頁面、任意警戒線、以及分流發送到特定 Teams 群組
 # ==============================================================================
@@ -2138,6 +2592,8 @@ if ($PreviewCapture) {
         if ($Url -notmatch '^https?://') { throw "網址需以 http:// 或 https:// 開頭" }
         try { $hasLock = $mutex.WaitOne([TimeSpan]::FromSeconds(10)) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
         if (-not $hasLock) { throw "排程正在執行中，請稍後再抓圖" }
+
+
 
 
 
@@ -2175,6 +2631,8 @@ if ($PreviewCapture) {
 
 
 
+
+
 $runSchedule = $null
 if ($Schedule) {
     $runSchedule = Get-ScheduleList $config | Where-Object { $_.id -eq $Schedule } | Select-Object -First 1
@@ -2188,6 +2646,8 @@ $runTag = if ($runSchedule) { $runSchedule.id } else { "all" }
 
 
 
+
+
 # 每次執行寫一份 log (排程在背景執行時沒有視窗可看)，保留 30 天
 $logDir = Join-Path $PSScriptRoot "logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Force -Path $logDir | Out-Null }
@@ -2195,6 +2655,9 @@ Get-ChildItem $logDir -Filter "*.log" -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } | Remove-Item -Force -ErrorAction SilentlyContinue
 $logFile = Join-Path $logDir ("{0}_{1}.log" -f (Get-Date -Format "yyyy-MM-dd_HHmm"), $runTag)
 try { Start-Transcript -Path $logFile -Append | Out-Null } catch {}
+Write-Host "📝 工作 [$runTag] 已啟動，正在檢查舊截圖目錄…" -ForegroundColor Gray
+
+
 
 
 
@@ -2216,10 +2679,18 @@ if (Test-Path $captureRoot) {
 
 
 
+
+
 # 多個排程時間相近時依序執行 (共用 edge_profile 與 Teams 視窗/剪貼簿，不能同時跑)
 $runMutex = New-Object System.Threading.Mutex($false, "Local\E3MonitorNativeRun")
 $hasLock = $false
-try { $hasLock = $runMutex.WaitOne([TimeSpan]::FromMinutes(30)) } catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
+try {
+    $hasLock = $runMutex.WaitOne(0)
+    if(-not $hasLock){
+        Write-Host "⏳ 上一個截圖／傳送工作尚未結束；[$runTag] 等待執行權，最多 30 分鐘。請勿重複啟動。" -ForegroundColor Yellow
+        $hasLock = $runMutex.WaitOne([TimeSpan]::FromMinutes(30))
+    }
+} catch [System.Threading.AbandonedMutexException] { $hasLock = $true }
 if (-not $hasLock) {
     Write-Host "❌ 等待上一個排程執行完畢逾時 (30 分鐘)，本次 [$runTag] 取消" -ForegroundColor Red
     try { Stop-Transcript | Out-Null } catch {}
@@ -2228,13 +2699,24 @@ if (-not $hasLock) {
 
 
 
+
+
+$sleepGuard = $false
+$script:DesktopWaitDeadline = $null
 try {
+if ($runSchedule -and $script:Win32Ready) {
+    $sleepGuard = [E3Win]::SetThreadExecutionState([uint32]2147483649) -ne 0
+    if ($sleepGuard) { Write-Host '🔋 執行期間要求系統保持清醒（不解除鎖定，不變更電源計畫）' -ForegroundColor Gray }
+    else { Write-Host '⚠️ 無法要求系統保持清醒，請檢查主機電源政策' -ForegroundColor Yellow }
+}
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "🚀 啟動 E3 彈性化監控截圖 & 警戒線檢查 (Windows 零外掛原生版)" -ForegroundColor Cyan
 if ($runSchedule) {
     Write-Host "📅 排程: [$($runSchedule.id)] $($runSchedule.name)" -ForegroundColor Cyan
 }
 Write-Host "============================================================" -ForegroundColor Cyan
+
+
 
 
 
@@ -2248,6 +2730,8 @@ if ($enabledPages.Count -eq 0) {
     Write-Host "⚠️ 沒有可擷取的頁面，結束。" -ForegroundColor Yellow
     exit 0
 }
+
+
 
 
 
@@ -2267,7 +2751,13 @@ if ($TestSample) {
     # 同一天多個排程分開存放：captures\<日期>\<排程id>_<HHmm>\
     $outDir = Join-Path $PSScriptRoot ("captures\{0}\{1}_{2}" -f (Get-Date -Format "yyyy-MM-dd"), $runTag, (Get-Date -Format "HHmm"))
     try {
-        $capture = Capture-PagesNative $enabledPages $config.auth $outDir
+        $backgroundCapture = $false
+        if ($runSchedule) {
+            $desktopReason = Get-DesktopBlockReason
+            $backgroundCapture = -not [string]::IsNullOrEmpty($desktopReason)
+            if ($backgroundCapture) { Write-Host '🌐 桌面不可用，使用背景 Edge 擷取，保留已存的縮放與位置' -ForegroundColor Yellow }
+        }
+        $capture = Capture-PagesNative $enabledPages $config.auth $outDir -Headless:$backgroundCapture
         $capturedFiles = $capture.Files
         $captureFailures = $capture.Failures
     } catch {
@@ -2283,12 +2773,16 @@ if ($captureFailures.Count -gt 0) { $exitCode = 1 }
 
 
 
+
+
 # 發送對象優先順序：排程 target_chat_name > 頁面 target_chat_name > teams.target_chat_name
 $defaultChat = if ($config.teams.target_chat_name) { $config.teams.target_chat_name } else { "預設Teams群組" }
 $scheduleChat = if ($runSchedule -and $runSchedule.target_chat_name) { $runSchedule.target_chat_name.Trim() } else { "" }
 # 用有序字典，讓多個群組依頁面順序發送
 $chatGroups = [ordered]@{}
 $sendFailures = @()
+
+
 
 
 
@@ -2303,12 +2797,15 @@ foreach ($page in $enabledPages) {
 
 
 
+
+
     $imgPath = $capturedFiles[$page.id]
     $failReason = $captureFailures[$page.id]
     if (-not $failReason -and (-not $imgPath -or -not (Test-Path $imgPath))) {
-        Write-Host "⚠️ [$($page.id)] 沒有擷取到截圖，已略過" -ForegroundColor Yellow
-        continue
+        $failReason='本次未取得截圖檔，請檢查頁面與擷取設定'
     }
+
+
 
 
 
@@ -2322,12 +2819,29 @@ foreach ($page in $enabledPages) {
 
 
 
+
+
     # 擷取失敗的頁面不送圖，改在訊息中標示原因 (不把錯誤頁 / 登入畫面當成正常結果)
     if ($failReason) {
         Write-Host "⚠️ [$($page.id)] $($page.name) (目標Teams: $targetChat) -> 擷取失敗，將在訊息中標示" -ForegroundColor Yellow
-        $chatGroups[$targetChat].failures += "⚠️ $($page.name) 無法擷取：$failReason"
+        $chatGroups[$targetChat].failures += "⚠️ $($page.name) 截圖失敗，本頁圖片未附上，請檢查：$failReason"
+        $exitCode=1
         continue
     }
+
+
+
+    $bmp=$null;$annotated=$null;$g=$null;$pageAlerts=@()
+    try {
+    $fileInfo=Get-Item -LiteralPath $imgPath -ErrorAction Stop
+    if($fileInfo.Length -lt 8 -or $fileInfo.Length -gt 10MB){throw '圖片檔大小無效或超過 10 MiB'}
+    $check=[Drawing.Bitmap]::new($imgPath)
+    try {
+        if($check.RawFormat.Guid -ne [Drawing.Imaging.ImageFormat]::Png.Guid){throw '截圖不是 PNG 格式'}
+        if($check.Width -gt 4096 -or $check.Height -gt 4096 -or [long]$check.Width*$check.Height -gt 16000000){throw '截圖超過邊長 4096 或 1600 萬畫素'}
+    } finally {$check.Dispose()}
+
+
 
 
 
@@ -2341,10 +2855,14 @@ foreach ($page in $enabledPages) {
 
 
 
+
+
     $bmp = [System.Drawing.Bitmap]::new($imgPath)
     $annotated = [System.Drawing.Bitmap]::new($bmp)
     $g = [System.Drawing.Graphics]::FromImage($annotated)
     $pageHasAlert = $false
+
+
 
 
 
@@ -2364,8 +2882,12 @@ foreach ($page in $enabledPages) {
 
 
 
+
+
         $hitCount = 0
         $maxCheckY = [Math]::Min($ry + $rh - 1, $threshY)
+
+
 
 
 
@@ -2380,16 +2902,20 @@ foreach ($page in $enabledPages) {
 
 
 
+
+
         $exceeded = ($hitCount -ge $minPx)
         if ($exceeded) {
             $pageHasAlert = $true
             Write-Host "  🚨 [$($page.id)] $($rule.name) : 超過警戒線! (越線像素: $hitCount px, Y=$threshY)" -ForegroundColor Red
-            $chatGroups[$targetChat].alerts += $rule.alert_message
+            $pageAlerts += $rule.alert_message
             $penBox = [System.Drawing.Pen]::new([System.Drawing.Color]::Red, 2)
         } else {
             Write-Host "  ✅ [$($page.id)] $($rule.name) : 正常 (越線像素: $hitCount px, Y=$threshY)" -ForegroundColor Green
             $penBox = [System.Drawing.Pen]::new([System.Drawing.Color]::LimeGreen, 2)
         }
+
+
 
 
 
@@ -2402,20 +2928,32 @@ foreach ($page in $enabledPages) {
 
 
 
+
+
     $outAnnotated = Join-Path ([System.IO.Path]::GetDirectoryName($imgPath)) "annotated_$([System.IO.Path]::GetFileName($imgPath))"
     $annotated.Save($outAnnotated, [System.Drawing.Imaging.ImageFormat]::Png)
-    $g.Dispose()
-    $annotated.Dispose()
-    $bmp.Dispose()
+
+
 
 
 
     if ($pageHasAlert -and $config.teams.attach_annotated_image_on_alert) {
+        if((Get-Item -LiteralPath $outAnnotated).Length -gt 10MB){throw '警戒線標記圖片超過 10 MiB'}
         $chatGroups[$targetChat].images += $outAnnotated
     } else {
         $chatGroups[$targetChat].images += $imgPath
     }
+    $chatGroups[$targetChat].alerts += $pageAlerts
+    } catch {
+        $exitCode=1
+        $chatGroups[$targetChat].failures += "⚠️ $($page.name) 圖片處理失敗，本頁圖片未附上，請檢查：$($_.Exception.Message)"
+        Write-Host "⚠️ [$($page.id)] 圖片處理失敗，繼續下一頁：$($_.Exception.Message)" -ForegroundColor Yellow
+    } finally {
+        if($g){$g.Dispose()};if($annotated){$annotated.Dispose()};if($bmp){$bmp.Dispose()}
+    }
 }
+
+
 
 
 
@@ -2425,6 +2963,8 @@ foreach ($chatName in @($chatGroups.Keys)) {
     $imgs = $grp.images
     $alerts = $grp.alerts
     $problems = @($alerts) + @($grp.failures)
+
+
 
 
 
@@ -2442,10 +2982,14 @@ foreach ($chatName in @($chatGroups.Keys)) {
 
 
 
+
+
     Write-Host "`n------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host "🎯 目標 Teams 群組/聊天室: 【$chatName】 (共 $($imgs.Count) 張圖)" -ForegroundColor Cyan
     Write-Host $msg -ForegroundColor $(if ($problems.Count -eq 0) { "Green" } else { "Yellow" })
     Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
+
+
 
 
 
@@ -2458,6 +3002,7 @@ foreach ($chatName in @($chatGroups.Keys)) {
     if (-not $NoSend) {
         # 逐個對話發送：一個對話失敗 (找不到對話名稱、被切走、草稿…) 只記錄並繼續送下一個對話
         try {
+            if ($runSchedule -and $config.teams.prefer_window -ne 'cdp') { Wait-TeamsDesktop }
             Send-GroupToTeams -targetChatName $chatName -imageFiles $imgs -messageText $msg -teamsCfg $config.teams -isDryRun $DryRun
         } catch {
             $sendFailures += "【$chatName】$($_.Exception.Message)"
@@ -2468,7 +3013,7 @@ foreach ($chatName in @($chatGroups.Keys)) {
     }
 }
 if ($sendFailures.Count -gt 0) {
-    Write-Host "`n❌ 共有 $($sendFailures.Count)/$($chatGroups.Count) 個對話沒有送出：" -ForegroundColor Red
+    Write-Host "`n❌ 共有 $($sendFailures.Count)/$($chatGroups.Count) 個對話未完整完成；可能已有部分訊息送達，請先核對再補跑：" -ForegroundColor Red
     $sendFailures | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
 }
 } catch {
@@ -2476,9 +3021,11 @@ if ($sendFailures.Count -gt 0) {
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
     $exitCode = 1
 } finally {
+    if ($sleepGuard) { [void][E3Win]::SetThreadExecutionState([uint32]2147483648) }
     $runMutex.ReleaseMutex()
     $runMutex.Dispose()
     try { Stop-Transcript | Out-Null } catch {}
 }
 if ($exitCode) { exit $exitCode }
+
  

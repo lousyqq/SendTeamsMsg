@@ -27,7 +27,7 @@ if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyCon
 # ---- 1. 建立示範環境 ----
 Remove-Item $demo, $shotDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $demo "sample_images"), $shotDir | Out-Null
-Copy-Item (Join-Path $root "calibrator.html"), (Join-Path $root "e3_monitor_native.ps1"), (Join-Path $root "sample_data.js") -Destination $demo
+Copy-Item (Join-Path $root "calibrator.html"), (Join-Path $root "e3_monitor_native.ps1"), (Join-Path $root "teams_delivery.ps1"), (Join-Path $root "sample_data.js") -Destination $demo
 Copy-Item (Join-Path $here "_demo_config.json") (Join-Path $demo "config.json")
 $js = Get-Content (Join-Path $root "sample_data.js") -Raw
 foreach ($m in [regex]::Matches($js, "(page\d+):\s*'data:image/png;base64,([^']+)'")) {
@@ -136,6 +136,8 @@ try {
     # 示範環境不真的偵測：顯示一份範例的偵測結果
     $fakeDetect = "🔍 Teams 視窗偵測  2026-11-02 09:00:00\n使用哪種 Teams (teams.prefer_window)：自動 (PWA → 桌面版 → Edge 分頁)\n\n【找到的 Teams】\n  • Teams 應用程式 (PWA)：聊天 | E3 監控通報群組 | Microsoft Teams\n\n【發送時會使用】\n  ✅ Teams 應用程式 (PWA)\n  目前對話：E3 監控通報群組\n  「輸入訊息」框：✅ 找到\n  聊天清單：畫面上有 24 個項目\n  發送對象「E3 監控通報群組」：✅ 就是目前對話"
     Shot "09_detect_teams" 1600 1000 "setSideTab('send'); renderAll(); const o = document.getElementById('detectTeamsResult'); o.hidden = false; o.textContent = '$fakeDetect'" ".sidebar"
+    # CDP 背景傳送模式：顯示 🔐 登入並檢查 CDP 傳送按鈕與說明 (示範環境只切換畫面，不寫回設定)
+    Shot "10_cdp_mode" 1600 1000 "setSideTab('send'); config.teams.prefer_window = 'cdp'; renderAll()" ".sidebar"
     $ws.Dispose()
 
     # ---- 4. 寫入 USER_MANUAL.html 的 MANUAL_IMAGES 區塊 (每張圖一行) ----
