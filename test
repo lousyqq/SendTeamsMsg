@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>LF2 網頁守門員</title>
+<style>
+  body, html { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100%; overflow: hidden; }
+  
+  /* 你的真正網頁內容 */
+  #main-website {
+    padding: 60px 20px;
+    background: #0f172a;
+    color: #f8fafc;
+    height: 100vh;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 遊戲守門員全螢幕層 */
+  #lf2-gatekeeper {
+    position: fixed;
+    inset: 0;
+    background: #0b0f19;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  #lf2-gatekeeper.unlocked {
+    opacity: 0;
+    transform: scale(1.05);
+    pointer-events: none;
+  }
+
+  #game-wrapper {
+    box-shadow: 0 0 35px rgba(30, 144, 255, 0.35);
+    border: 3px solid #1e3a8a;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #111;
+  }
+
+  canvas { display: block; }
+
+  .controls-bar {
+    color: #94a3b8;
+    margin-top: 14px;
+    font-size: 14px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+  .key-cap {
+    background: #1e293b;
+    border: 1px solid #475569;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #f1f5f9;
+    font-weight: 600;
+    font-family: monospace;
+  }
+  .skip-btn {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #64748b;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .skip-btn:hover { color: #f1f5f9; border-color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<!-- 守門員遊戲層 -->
+<div id="lf2-gatekeeper">
+  <div id="game-wrapper">
+    <canvas id="lf2Canvas" width="760" height="420"></canvas>
+  </div>
+  <div class="controls-bar">
+    <span>移動：<span class="key-cap">↑</span> <span class="key-cap">↓</span> <span class="key-cap">←</span> <span class="key-cap">→</span></span>
+    <span>近戰出拳：<span class="key-cap">Z</span></span>
+    <span>氣功波 (耗MP)：<span class="key-cap">X</span></span>
+    <button class="skip-btn" onclick="unlockWebsite()">略過 (Skip)</button>
+  </div>
+</div>
+
+<!-- 真正的主網頁 -->
+<div id="main-website">
+  <h1 style="font-size: 2.5rem; margin-bottom: 12px;">🎉 恭喜擊敗守衛，成功進入系統！</h1>
+  <p style="color: #94a3b8;">這是原本網頁的主體內容。重新整理頁面（或清除狀態）可再次觸發守門員。</p>
+  <button onclick="sessionStorage.removeItem('lf2_unlocked'); location.reload();" 
+          style="margin-top: 20px; padding: 10px 22px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+    重設狀態並重玩一次
+  </button>
+</div>
+
+<script>
+// 1. 記憶狀態：已通關則不重複攔截
+if (sessionStorage.getItem('lf2_unlocked') === 'true') {
+  document.getElementById('lf2-gatekeeper').style.display = 'none';
+}
+
+const canvas = document.getElementById('lf2Canvas');
+const ctx = canvas.getContext('2d');
+
+const GROUND_TOP = 220;
+const GROUND_BOTTOM = 385;
+let isCleared = false;
+let isUnlocked = false;
+let screenShake = 0;
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+class Fighter {
+  constructor(name, x, z, suitColor, bandColor, isAI = false) {
+    this.name = name;
+    this.x = x;
+    this.z = z;
+    this.vx = 0;
+    this.vz = 0;
+    this.dir = isAI ? -1 : 1;
+    this.suitColor = suitColor;
+    this.bandColor = bandColor;
+    this.isAI = isAI;
+
+    this.hp = 100;
+    this.maxHp = 100;
+    this.mp = 100;
+    this.maxMp = 100;
+
+    this.state = 'idle'; // idle, walk, punch, blast, hurt, ko
+    this.stateTimer = 0;
+    this.cooldown = 0;
+  }
+
+  update(target) {
+    if (this.mp < this.maxMp && this.state !== 'ko') this.mp += 0.2;
+    if (this.cooldown > 0) this.cooldown--;
+
+    if (this.stateTimer > 0) {
+      this.stateTimer--;
+      if (this.stateTimer === 0 && this.state !== 'ko') this.state = 'idle';
+    }
+
+    this.x += this.vx;
+    this.z += this.vz;
+    this.vx *= 0.82;
+    this.vz *= 0.82;
+
+    if (['ko', 'hurt', 'punch', 'blast'].includes(this.state)) {
+      this.clamp();
+      return;
+    }
+
+    if (!this.isAI) {
+      let moved = false;
+      const spdX = 4.2;
+      const spdZ = 2.6;
+
+      if (keys['arrowleft'])  { this.x -= spdX; this.dir = -1; moved = true; }
+      if (keys['arrowright']) { this.x += spdX; this.dir = 1;  moved = true; }
+      if (keys['arrowup'])    { this.z -= spdZ; moved = true; }
+      if (keys['arrowdown'])  { this.z += spdZ; moved = true; }
+
+      this.state = moved ? 'walk' : 'idle';
+
+      if (keys['z'] && this.cooldown === 0) this.punch(target);
+      if (keys['x'] && this.cooldown === 0 && this.mp >= 25) this.blast();
+    } else {
+      this.stepAI(target);
+    }
+
+    this.clamp();
+  }
+
+  stepAI(player) {
+    if (player.state === 'ko') { this.state = 'idle'; return; }
+    const dx = player.x - this.x;
+    const dz = player.z - this.z;
+    this.dir = dx >= 0 ? 1 : -1;
+
+    if (Math.abs(dz) > 20) {
+      this.z += Math.sign(dz) * 1.8;
+      this.state = 'walk';
+    } else if (Math.abs(dx) > 60) {
+      if (Math.abs(dx) > 200 && this.mp >= 30 && Math.random() < 0.03 && this.cooldown === 0) {
+        this.blast();
+      } else {
+        this.x += Math.sign(dx) * 2.5;
+        this.state = 'walk';
+      }
+    } else {
+      if (this.cooldown === 0 && Math.random() < 0.15) {
+        this.punch(player);
+      } else {
+        this.state = 'idle';
+      }
+    }
+  }
+
+  punch(target) {
+    this.state = 'punch';
+    this.stateTimer = 12;
+    this.cooldown = 18;
+
+    const hitDistX = (target.x - this.x) * this.dir;
+    const hitDistZ = Math.abs(target.z - this.z);
+    if (hitDistX > 0 && hitDistX < 65 && hitDistZ < 28 && target.state !== 'ko') {
+      target.takeDamage(12, this.dir * 8);
+    }
+  }
+
+  blast() {
+    this.mp -= 25;
+    this.state = 'blast';
+    this.stateTimer = 16;
+    this.cooldown = 32;
+
+    projectiles.push({
+      x: this.x + this.dir * 35,
+      z: this.z,
+      vx: this.dir * 9.5,
+      owner: this,
+      color: this.isAI ? '#ef4444' : '#00d2ff'
+    });
+  }
+
+  takeDamage(amount, kx) {
+    this.hp = Math.max(0, this.hp - amount);
+    this.vx = kx;
+    screenShake = 6;
+    addHitSparks(this.x, this.z - 40);
+
+    if (this.hp <= 0) {
+      this.state = 'ko';
+      this.vx = kx * 1.6;
+      if (this.isAI) isCleared = true;
+    } else {
+      this.state = 'hurt';
+      this.stateTimer = 14;
+    }
+  }
+
+  clamp() {
+    this.z = Math.max(GROUND_TOP, Math.min(GROUND_BOTTOM, this.z));
+    const maxX = (!this.isAI && isCleared) ? canvas.width + 40 : canvas.width - 30;
+    this.x = Math.max(30, Math.min(maxX, this.x));
+
+    if (!this.isAI && isCleared && this.x >= canvas.width - 5 && !isUnlocked) {
+      unlockWebsite();
+    }
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.z);
+
+    // 腳底 2.5D 陰影
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 22, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (this.state === 'ko') {
+      ctx.translate(0, -10);
+      ctx.rotate(-this.dir * Math.PI / 2);
+    }
+
+    const bob = (this.state === 'walk') ? Math.sin(Date.now() * 0.022) * 4 : 0;
+
+    // 身體
+    ctx.fillStyle = this.state === 'hurt' ? '#ffffff' : this.suitColor;
+    ctx.fillRect(-14, -50 + bob, 28, 34);
+
+    // 雙腿
+    ctx.fillStyle = '#1e293b';
+    const legOffset = (this.state === 'walk') ? Math.sin(Date.now() * 0.025) * 8 : 0;
+    ctx.fillRect(-11 + legOffset, -16, 9, 16);
+    ctx.fillRect(2 - legOffset, -16, 9, 16);
+
+    // 頭部
+    ctx.fillStyle = this.state === 'hurt' ? '#fecaca' : '#fed7aa';
+    ctx.beginPath();
+    ctx.arc(0, -64 + bob, 16, 0, Math.PI * 2);
+    ctx.fill();
+
+    // LF2 標誌性飄揚頭帶
+    ctx.fillStyle = this.bandColor;
+    ctx.fillRect(-16, -72 + bob, 32, 6);
+    ctx.beginPath();
+    ctx.moveTo(-this.dir * 15, -70 + bob);
+    ctx.lineTo(-this.dir * 34, -64 + bob + Math.sin(Date.now() * 0.02) * 4);
+    ctx.lineTo(-this.dir * 28, -57 + bob);
+    ctx.fill();
+
+    // 眼睛
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(this.dir * 5, -66 + bob, 5, 4);
+
+    // 攻擊揮拳手部
+    if (this.state === 'punch' || this.state === 'blast') {
+      ctx.fillStyle = '#fed7aa';
+      ctx.fillRect(this.dir * 10, -46 + bob, this.dir * 28, 10);
+      ctx.fillStyle = this.bandColor;
+      ctx.beginPath();
+      ctx.arc(this.dir * 40, -41 + bob, 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    // 頭頂名稱標籤
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.name, this.x, this.z - 92);
+  }
+}
+
+const player = new Fighter('YOU', 130, 290, '#2563eb', '#ef4444', false);
+const boss   = new Fighter('GATEKEEPER BOSS', 610, 290, '#334155', '#f59e0b', true);
+const projectiles = [];
+const sparks = [];
+
+function addHitSparks(x, y) {
+  for (let i = 0; i < 9; i++) {
+    sparks.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 11,
+      vy: (Math.random() - 0.5) * 11,
+      life: 14
+    });
+  }
+}
+
+// 繪製頂部 LF2 藍底 HUD
+function drawHUD() {
+  ctx.fillStyle = '#0f1f38';
+  ctx.fillRect(0, 0, canvas.width, 74);
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(3, 3, canvas.width - 6, 68);
+
+  const renderStatus = (fighter, startX) => {
+    // 頭像外框
+    ctx.fillStyle = '#070d18';
+    ctx.fillRect(startX, 14, 46, 46);
+    ctx.strokeStyle = '#475569';
+    ctx.strokeRect(startX, 14, 46, 46);
+
+    // 剪影頭像
+    ctx.fillStyle = fighter.suitColor;
+    ctx.beginPath();
+    ctx.arc(startX + 23, 40, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = fighter.bandColor;
+    ctx.fillRect(startX + 10, 26, 26, 5);
+
+    // 血條 HP (紅色)
+    ctx.fillStyle = '#450a0a';
+    ctx.fillRect(startX + 58, 18, 180, 15);
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(startX + 58, 18, 180 * (fighter.hp / fighter.maxHp), 15);
+    ctx.strokeStyle = '#000';
+    ctx.strokeRect(startX + 58, 18, 180, 15);
+
+    // 魔力條 MP (藍色)
+    ctx.fillStyle = '#082f49';
+    ctx.fillRect(startX + 58, 40, 180, 10);
+    ctx.fillStyle = '#0284c7';
+    ctx.fillRect(startX + 58, 40, 180 * (fighter.mp / fighter.maxMp), 10);
+    ctx.strokeRect(startX + 58, 40, 180, 10);
+
+    // 姓名
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(fighter.name, startX + 248, 31);
+  };
+
+  renderStatus(player, 25);
+  renderStatus(boss, 420);
+}
+
+function drawBackground() {
+  // 背景遠景
+  ctx.fillStyle = '#1e293b';
+  ctx.fillRect(0, 74, canvas.width, GROUND_TOP - 74);
+
+  // 擂台邊線與深色地面
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, GROUND_TOP - 30, canvas.width, 30);
+
+  const grad = ctx.createLinearGradient(0, GROUND_TOP, 0, canvas.height);
+  grad.addColorStop(0, '#1e293b');
+  grad.addColorStop(1, '#0f172a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, GROUND_TOP, canvas.width, canvas.height - GROUND_TOP);
+
+  // 右側大門邊界光條
+  ctx.strokeStyle = isCleared ? '#22c55e' : '#ef4444';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(canvas.width - 5, GROUND_TOP);
+  ctx.lineTo(canvas.width - 5, GROUND_BOTTOM);
+  ctx.stroke();
+}
+
+function loop() {
+  if (isUnlocked) return;
+
+  ctx.save();
+  if (screenShake > 0) {
+    ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
+    screenShake--;
+  }
+
+  drawBackground();
+
+  player.update(boss);
+  boss.update(player);
+
+  // 處理氣功波
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.x += p.vx;
+
+    ctx.save();
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(p.x, p.z - 41, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+
+    const target = p.owner.isAI ? player : boss;
+    if (target.state !== 'ko' && Math.abs(p.x - target.x) < 28 && Math.abs(p.z - target.z) < 26) {
+      target.takeDamage(25, Math.sign(p.vx) * 12);
+      projectiles.splice(i, 1);
+      continue;
+    }
+
+    if (p.x < -40 || p.x > canvas.width + 40) projectiles.splice(i, 1);
+  }
+
+  // 按 Z 軸排序渲染，確保正確的遮蔽層級
+  [player, boss].sort((a, b) => a.z - b.z).forEach(f => f.draw());
+
+  // 打擊特效
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.x += s.vx; s.y += s.vy; s.life--;
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(s.x, s.y, 4, 4);
+    if (s.life <= 0) sparks.splice(i, 1);
+  }
+
+  // 玩家被擊倒時快速重生，確保不把使用者卡死
+  if (player.state === 'ko' && !player.reviving) {
+    player.reviving = true;
+    setTimeout(() => {
+      player.hp = 100;
+      player.mp = 100;
+      player.state = 'idle';
+      player.reviving = false;
+    }, 1000);
+  }
+
+  // 擊倒後出現 LF2 經典 "GO! ➔" 箭頭
+  if (isCleared) {
+    if (Math.floor(Date.now() / 240) % 2 === 0) {
+      ctx.fillStyle = '#22c55e';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 4;
+      ctx.font = 'italic bold 44px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.strokeText('GO! ➔', canvas.width - 25, 160);
+      ctx.fillText('GO! ➔', canvas.width - 25, 160);
+    }
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('守門員已被擊敗！走向畫面最右方以進入網站 ➔', canvas.width / 2, 110);
+  }
+
+  drawHUD();
+  ctx.restore();
+
+  requestAnimationFrame(loop);
+}
+
+function unlockWebsite() {
+  isUnlocked = true;
+  sessionStorage.setItem('lf2_unlocked', 'true');
+  const gate = document.getElementById('lf2-gatekeeper');
+  gate.classList.add('unlocked');
+  setTimeout(() => gate.remove(), 600);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
