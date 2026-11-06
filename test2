@@ -21,7 +21,7 @@
     padding: 20px;
   }
   #main-app h1 { font-size: 2.4rem; margin-bottom: 10px; color: #38bdf8; }
-  #main-app p { color: #94a3b8; max-width: 500px; line-height: 1.6; }
+  #main-app p { color: #94a3b8; max-width: 520px; line-height: 1.6; font-size: 16px; }
   .reset-btn {
     margin-top: 24px;
     padding: 10px 24px;
@@ -46,11 +46,11 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.7s ease, transform 0.7s ease;
+    transition: opacity 0.6s ease, transform 0.6s ease;
   }
   #mario-gatekeeper.unlocked {
     opacity: 0;
-    transform: scale(1.06);
+    transform: scale(1.05);
     pointer-events: none;
   }
 
@@ -60,12 +60,14 @@
     background: #1f2937;
     border: 3px solid #374151;
     border-bottom: none;
-    border-radius: 10px 10px 0 0;
-    padding: 12px 20px;
+    border-radius: 12px 12px 0 0;
+    padding: 10px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     color: #f9fafb;
+    position: relative;
+    z-index: 20;
   }
   .char-group {
     display: flex;
@@ -73,42 +75,59 @@
     gap: 12px;
   }
   .char-label { font-weight: bold; font-size: 14px; color: #9ca3af; margin-right: 4px; }
+  
+  /* 帶有角色圖片的選角卡片 */
   .char-card {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    border-radius: 6px;
+    gap: 10px;
+    padding: 6px 16px 6px 10px;
+    border-radius: 8px;
     border: 2px solid #4b5563;
     background: #111827;
     color: #d1d5db;
     cursor: pointer;
     font-weight: bold;
-    font-size: 14px;
+    font-size: 15px;
     transition: all 0.2s;
   }
-  .char-card .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
-  .char-card.mario .dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
-  .char-card.luigi .dot { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
-  
-  .char-card.active.mario { border-color: #ef4444; background: rgba(239, 68, 68, 0.15); color: #fff; }
-  .char-card.active.luigi { border-color: #22c55e; background: rgba(34, 197, 94, 0.15); color: #fff; }
+  .char-card img {
+    width: 38px;
+    height: 38px;
+    border-radius: 6px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    object-fit: contain;
+    image-rendering: pixelated;
+  }
+  .char-card:hover { border-color: #9ca3af; }
+  .char-card.active.mario {
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.18);
+    color: #fff;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.35);
+  }
+  .char-card.active.luigi {
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.18);
+    color: #fff;
+    box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
+  }
 
-  .action-group { display: flex; gap: 10px; align-items: center; }
   .start-btn {
-    padding: 8px 22px;
+    padding: 10px 24px;
     background: #f59e0b;
     color: #111827;
     border: none;
-    border-radius: 6px;
-    font-weight: 800;
-    font-size: 14px;
+    border-radius: 8px;
+    font-weight: 900;
+    font-size: 15px;
     cursor: pointer;
-    letter-spacing: 0.5px;
+    box-shadow: 0 4px 0 #b45309;
     transition: transform 0.1s, background 0.2s;
   }
   .start-btn:hover { background: #fbbf24; }
-  .start-btn:active { transform: scale(0.96); }
+  .start-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #b45309; }
 
   /* 遊戲畫布容器 */
   #canvas-container {
@@ -116,27 +135,60 @@
     width: 800px;
     height: 440px;
     border: 3px solid #374151;
-    border-radius: 0 0 10px 10px;
+    border-radius: 0 0 12px 12px;
     overflow: hidden;
     box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
     background: #5c94fc;
   }
-  canvas { display: block; }
+  canvas { display: block; outline: none; }
 
-  /* 待機遮罩（尚未按開始時） */
+  /* 待機遮罩（點擊畫面中間也可以直接開始） */
   #standby-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(17, 24, 39, 0.78);
+    background: rgba(15, 23, 42, 0.82);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     color: #fff;
-    backdrop-filter: blur(2px);
+    z-index: 10;
+    cursor: pointer;
+  }
+  .preview-avatars {
+    display: flex;
+    gap: 28px;
+    margin-bottom: 16px;
+  }
+  .preview-avatars img {
+    width: 68px;
+    height: 68px;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 6px 8px rgba(0,0,0,0.5));
+    transition: transform 0.2s;
+  }
+  .preview-avatars img.selected {
+    transform: scale(1.2) translateY(-6px);
+    filter: drop-shadow(0 0 12px #fbbf24);
   }
   #standby-overlay h2 { font-size: 28px; margin: 0 0 10px 0; color: #fcd34d; text-shadow: 2px 2px 0 #000; }
-  #standby-overlay p { color: #d1d5db; font-size: 15px; margin: 0; }
+  #standby-overlay p { color: #e2e8f0; font-size: 15px; margin: 0 0 20px 0; }
+  .big-play-btn {
+    padding: 12px 32px;
+    background: #22c55e;
+    color: #fff;
+    font-size: 18px;
+    font-weight: bold;
+    border: 2px solid #86efac;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
 
   .footer-controls {
     margin-top: 12px;
@@ -160,36 +212,43 @@
 
 <!-- ==================== 外層瑪利歐暗號守門員 ==================== -->
 <div id="mario-gatekeeper">
-  <!-- 最上方那排：選人物（哥哥 / 弟弟）與開始按鈕 -->
+  <!-- 最上方那排：帶有人物圖片的選角按鈕與開始鍵 -->
   <div class="top-selector-bar">
     <div class="char-group">
-      <span class="char-label">SELECT PLAYER:</span>
-      <div id="btn-mario" class="char-card mario active" onclick="selectChar('mario')">
-        <span class="dot"></span> 哥哥 (MARIO)
+      <span class="char-label">選擇角色：</span>
+      <div id="btn-mario" class="char-card mario active" role="button" tabindex="0">
+        <img id="avatar-mario" alt="哥哥 Mario" />
+        <span>哥哥 (MARIO)</span>
       </div>
-      <div id="btn-luigi" class="char-card luigi" onclick="selectChar('luigi')">
-        <span class="dot"></span> 弟弟 (LUIGI)
+      <div id="btn-luigi" class="char-card luigi" role="button" tabindex="0">
+        <img id="avatar-luigi" alt="弟弟 Luigi" />
+        <span>弟弟 (LUIGI)</span>
       </div>
     </div>
-    <div class="action-group">
-      <button id="btn-start" class="start-btn" onclick="startGame()">▶ 開始挑戰 (START)</button>
+    <div>
+      <button id="btn-start" type="button" class="start-btn">▶ 開始挑戰 (START)</button>
     </div>
   </div>
 
-  <!-- 遊戲畫布 -->
+  <!-- 遊戲畫布與待機畫面 -->
   <div id="canvas-container">
-    <canvas id="gameCanvas" width="800" height="440"></canvas>
+    <canvas id="gameCanvas" width="800" height="440" tabindex="1"></canvas>
     <div id="standby-overlay">
+      <div class="preview-avatars">
+        <img id="preview-mario" class="selected" alt="Mario Preview" />
+        <img id="preview-luigi" alt="Luigi Preview" />
+      </div>
       <h2>SUPER GATEKEEPER BROS.</h2>
-      <p>請先在上方選擇「哥哥」或「弟弟」，再點擊【開始挑戰】進入關卡</p>
+      <p>上方可切換「哥哥」或「弟弟」，點擊下方按鈕或按 Enter 立即開始！</p>
+      <button id="btn-overlay-start" type="button" class="big-play-btn">▶ 點擊這裡開始遊戲</button>
     </div>
   </div>
 
-  <!-- 下方操作說明（不洩漏暗號） -->
+  <!-- 下方操作說明 -->
   <div class="footer-controls">
     <span>移動：<span class="key-badge">←</span> <span class="key-badge">→</span></span>
     <span>蹲下 / 鑽水管：<span class="key-badge">↓</span></span>
-    <span>跳躍：<span class="key-badge">Space</span> 或 <span class="key-badge">↑</span></span>
+    <span>跳躍：<span class="key-badge">空白鍵 Space</span> 或 <span class="key-badge">↑</span></span>
     <span>動作：<span class="key-badge">Z</span></span>
   </div>
 </div>
@@ -198,636 +257,677 @@
 <div id="main-app">
   <h1>🏰 認證成功！歡迎進入機密主系統</h1>
   <p id="pass-msg">你成功使用了專屬通關密技解鎖網頁！一般訪客只會被那面高牆擋在門外。</p>
-  <button class="reset-btn" onclick="resetGatekeeper()">🔒 鎖定並返回守門員遊戲</button>
+  <button id="btn-reset-gate" type="button" class="reset-btn">🔒 鎖定並返回守門員遊戲</button>
 </div>
 
 <script>
-// 若本階段已過關，直接隱藏守門員
-if (sessionStorage.getItem('mario_gate_passed') === 'true') {
-  document.getElementById('mario-gatekeeper').style.display = 'none';
-}
-
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getElementById('gameCanvas').getContext('2d');
-
-// 遊戲全域狀態
-const GROUND_Y = 380;
-let selectedChar = 'mario'; // 'mario' | 'luigi'
-let gameRunning = false;
-let gameCleared = false;
-let bannerText = '';
-let bannerTimer = 0;
-
-// 鍵盤監聽與搓招紀錄
-const keys = {};
-let pipeKeyBuffer = []; // 紀錄站在水管上的按鍵序列
-
-window.addEventListener('keydown', e => {
-  const k = e.key.toLowerCase();
-  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
-  
-  if (!keys[k] && gameRunning && !gameCleared) {
-    // 跳躍觸發
-    if (k === ' ' || k === 'arrowup') {
-      handleJumpPress();
-    }
-    // 水管上搓招監聽 (路線 2: 哥哥限定 ↓ ↓ ↑ Z)
-    if (isStandingOnPipe()) {
-      const codeMap = { 'arrowdown': 40, 'arrowup': 38, 'z': 90 };
-      if (codeMap[k]) {
-        pipeKeyBuffer.push(codeMap[k]);
-        if (pipeKeyBuffer.length > 4) pipeKeyBuffer.shift();
-        checkPipeCombo();
-      }
-    }
-  }
-  keys[k] = true;
-});
-
-window.addEventListener('keyup', e => {
-  keys[e.key.toLowerCase()] = false;
-});
-
-// 切換角色 (方案2：角色綁定不同暗號)
-function selectChar(charName) {
-  selectedChar = charName;
-  document.getElementById('btn-mario').classList.toggle('active', charName === 'mario');
-  document.getElementById('btn-luigi').classList.toggle('active', charName === 'luigi');
-  if (gameRunning) {
-    initLevel(); // 切換角色時重置關卡狀態
-  }
-}
-
-function startGame() {
-  document.getElementById('standby-overlay').style.display = 'none';
-  document.getElementById('btn-start').textContent = '↻ 重新開始 (RESET)';
-  gameRunning = true;
-  initLevel();
-}
-
-function resetGatekeeper() {
-  sessionStorage.removeItem('mario_gate_passed');
-  location.reload();
-}
-
-// 玩家與關卡物件定義
-const player = {
-  x: 60, y: GROUND_Y - 40,
-  w: 28, h: 40,
-  vx: 0, vy: 0,
-  dir: 1, // 1: 右, -1: 左
-  onGround: true,
-  crouching: false,
-  backWallCharge: 0, // 路線 4：背對高牆蹲下計時器
-  enteringPipe: false,
-  pipeAnimY: 0
-};
-
-// 左上方 3 顆問號磚塊 (編號 1, 2, 3)
-let qBlocks = [];
-let blockHitHistory = [];
-
-// 中場綠色水管
-const pipe = { x: 310, y: GROUND_Y - 70, w: 56, h: 70 };
-
-// 隱藏空氣彈簧磚塊 (路線 3：位於水管與高牆正中間 x: 430)
-const hiddenSpringBlock = { x: 420, y: 245, w: 36, h: 36, revealed: false, bounceAnim: 0 };
-
-// 阻擋去路的超高實心磚牆
-const greatWall = { x: 530, y: 60, w: 48, h: GROUND_Y - 60, targetY: 60 };
-
-// 終點旗桿與城堡
-const flagpole = { x: 650, y: 90, h: GROUND_Y - 90, flagY: 110 };
-const particles = [];
-
-function initLevel() {
-  gameCleared = false;
-  pipeKeyBuffer = [];
-  blockHitHistory = [];
-  
-  player.x = 60;
-  player.y = GROUND_Y - 40;
-  player.vx = 0;
-  player.vy = 0;
-  player.dir = 1;
-  player.onGround = true;
-  player.crouching = false;
-  player.backWallCharge = 0;
-  player.enteringPipe = false;
-  player.pipeAnimY = 0;
-
-  qBlocks = [
-    { id: 1, x: 115, y: 235, w: 36, h: 36, bounce: 0 },
-    { id: 2, x: 165, y: 235, w: 36, h: 36, bounce: 0 },
-    { id: 3, x: 215, y: 235, w: 36, h: 36, bounce: 0 }
-  ];
-
-  hiddenSpringBlock.revealed = false;
-  hiddenSpringBlock.bounceAnim = 0;
-
-  greatWall.y = 60;
-  greatWall.targetY = 60;
-  flagpole.flagY = 110;
-
-  showBanner(selectedChar === 'mario' ? '當前角色：哥哥 MARIO' : '當前角色：弟弟 LUIGI');
-}
-
-function showBanner(msg) {
-  bannerText = msg;
-  bannerTimer = 110;
-}
-
-// 產生彈出金幣或特效粒子
-function spawnParticles(x, y, color, count = 8) {
-  for (let i = 0; i < count; i++) {
-    particles.push({
-      x, y,
-      vx: (Math.random() - 0.5) * 7,
-      vy: -Math.random() * 6 - 2,
-      color,
-      life: 28
-    });
-  }
-}
-
-// 判斷是否站在綠色水管頂端
-function isStandingOnPipe() {
-  return player.onGround &&
-         Math.abs((player.y + player.h) - pipe.y) < 3 &&
-         player.x + player.w > pipe.x + 4 &&
-         player.x < pipe.x + pipe.w - 4;
-}
-
-// 檢查【路線 2：哥哥限定水管搓招 ↓ ↓ ↑ Z】
-function checkPipeCombo() {
-  // 編碼雜湊驗證: [40, 40, 38, 90] -> 40*1 + 40*3 + 38*7 + 90*13 = 1596
-  if (pipeKeyBuffer.length === 4) {
-    const hash = pipeKeyBuffer[0]*1 + pipeKeyBuffer[1]*3 + pipeKeyBuffer[2]*7 + pipeKeyBuffer[3]*13;
-    if (hash === 1596 && pipeKeyBuffer[0] === 40 && pipeKeyBuffer[3] === 90) {
-      if (selectedChar === 'mario') {
-        player.enteringPipe = true;
-        showBanner('✨ 觸發哥哥專屬密技：水管祕道傳送！');
-      } else {
-        showBanner('⚠️ 此水管密技僅限「哥哥 (MARIO)」使用！');
-        pipeKeyBuffer = [];
-      }
-    }
-  }
-}
-
-// 處理跳躍與【路線 4：弟弟限定穿牆術】
-function handleJumpPress() {
-  if (!player.onGround || player.enteringPipe) return;
-
-  // 檢查是否觸發【路線 4：Speedrun 背對高牆蹲下蓄力穿牆】
-  if (player.backWallCharge >= 90 && selectedChar === 'luigi') {
-    player.x = greatWall.x + greatWall.w + 12; // 瞬間向後卡進牆壁穿過去
-    player.vy = -8;
-    player.onGround = false;
-    player.backWallCharge = 0;
-    spawnParticles(greatWall.x + greatWall.w / 2, player.y + 20, '#a855f7', 18);
-    showBanner('⚡ 觸發弟弟專屬密技：Speedrun 倒車穿牆術！');
-    return;
+(function() {
+  // =========================================================================
+  // 1. 建立精緻的像素風哥哥 (Mario) 與弟弟 (Luigi) SVG 角色圖片 (Data URI)
+  // 若妳想換成自己的 PNG/JPG 圖片，直接把 createHeroSprite 回傳值改成圖片網址即可！
+  // =========================================================================
+  function createHeroSprite(hatColor, shirtColor, letter) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width="64" height="80">
+      <!-- 陰影底座 -->
+      <ellipse cx="32" cy="76" rx="20" ry="4" fill="rgba(0,0,0,0.28)"/>
+      <!-- 鞋子 -->
+      <rect x="12" y="66" width="16" height="9" rx="3" fill="#78350f" stroke="#291305" stroke-width="2"/>
+      <rect x="36" y="66" width="16" height="9" rx="3" fill="#78350f" stroke="#291305" stroke-width="2"/>
+      <!-- 紅/綠長袖上衣與白手套 -->
+      <rect x="8" y="38" width="48" height="18" rx="6" fill="${shirtColor}" stroke="#111" stroke-width="2"/>
+      <circle cx="11" cy="54" r="6" fill="#ffffff" stroke="#111" stroke-width="2"/>
+      <circle cx="53" cy="54" r="6" fill="#ffffff" stroke="#111" stroke-width="2"/>
+      <!-- 經典藍色吊帶褲 -->
+      <rect x="16" y="46" width="32" height="22" rx="4" fill="#1d4ed8" stroke="#111" stroke-width="2"/>
+      <rect x="20" y="36" width="6" height="14" fill="#1d4ed8" stroke="#111" stroke-width="1.5"/>
+      <rect x="38" y="36" width="6" height="14" fill="#1d4ed8" stroke="#111" stroke-width="1.5"/>
+      <!-- 吊帶褲黃色大鈕扣 -->
+      <circle cx="23" cy="49" r="3" fill="#fde047" stroke="#111" stroke-width="1.2"/>
+      <circle cx="41" cy="49" r="3" fill="#fde047" stroke="#111" stroke-width="1.2"/>
+      <!-- 臉部與耳朵 -->
+      <rect x="13" y="21" width="6" height="10" rx="3" fill="#fed7aa" stroke="#111" stroke-width="1.8"/>
+      <rect x="16" y="16" width="32" height="23" rx="6" fill="#fed7aa" stroke="#111" stroke-width="2"/>
+      <!-- 鬢角與眼睛 -->
+      <rect x="16" y="20" width="5" height="9" fill="#78350f"/>
+      <rect x="35" y="21" width="4" height="7" rx="2" fill="#111"/>
+      <rect x="36" y="22" width="1.5" height="2.5" fill="#fff"/>
+      <!-- 招牌大鼻子與翹鬍子 -->
+      <ellipse cx="45" cy="28" rx="6" ry="4.5" fill="#fdba74" stroke="#111" stroke-width="1.8"/>
+      <path d="M28 33 Q38 30 49 34 Q49 38 38 37 Q32 37 28 33 Z" fill="#451a03" stroke="#111" stroke-width="1.2"/>
+      <!-- 帽子與白色徽章 -->
+      <path d="M13 18 C13 4, 49 4, 49 18 Z" fill="${hatColor}" stroke="#111" stroke-width="2"/>
+      <rect x="12" y="15" width="44" height="6" rx="3" fill="${hatColor}" stroke="#111" stroke-width="2"/>
+      <circle cx="32" cy="11" r="5.5" fill="#ffffff" stroke="#111" stroke-width="1.2"/>
+      <text x="32" y="14.5" font-size="9" font-family="Arial, sans-serif" font-weight="900" fill="${hatColor}" text-anchor="middle">${letter}</text>
+    </svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
   }
 
-  // 一般跳躍或蹲跳 (弟弟跳躍力略高一點)
-  const jumpForce = (selectedChar === 'luigi') ? -11.5 : -10.8;
-  player.vy = jumpForce;
-  player.onGround = false;
-  player. crouchesWhenJumped = player.crouching; // 紀錄起跳瞬間是否為蹲下狀態
-}
+  const MARIO_IMG_SRC = createHeroSprite('#ef4444', '#dc2626', 'M');
+  const LUIGI_IMG_SRC = createHeroSprite('#22c55e', '#16a34a', 'L');
 
-// 檢查【路線 1：哥哥限定頂磚塊 2-1-3】
-function onHitQuestionBlock(block) {
-  block.bounce = 8;
-  spawnParticles(block.x + 18, block.y - 6, '#facc15', 6);
+  // 建立給 Canvas 繪製用的 Image 物件
+  const marioImg = new Image();
+  const luigiImg = new Image();
+  marioImg.src = MARIO_IMG_SRC;
+  luigiImg.src = LUIGI_IMG_SRC;
 
-  blockHitHistory.push(block.id);
-  if (blockHitHistory.length > 3) blockHitHistory.shift();
+  // 將圖片填入上方選角按鈕與待機預覽區
+  document.getElementById('avatar-mario').src = MARIO_IMG_SRC;
+  document.getElementById('avatar-luigi').src = LUIGI_IMG_SRC;
+  document.getElementById('preview-mario').src = MARIO_IMG_SRC;
+  document.getElementById('preview-luigi').src = LUIGI_IMG_SRC;
 
-  // 編碼雜湊驗證: [2, 1, 3] -> 2*100 + 1*10 + 3 = 213
-  if (blockHitHistory.length === 3) {
-    const seqCode = blockHitHistory[0] * 100 + blockHitHistory[1] * 10 + blockHitHistory[2];
-    if (seqCode === 213) {
-      if (selectedChar === 'mario') {
-        greatWall.targetY = GROUND_Y; // 高牆降下
-        spawnParticles(greatWall.x + 24, GROUND_Y - 30, '#f97316', 20);
-        showBanner('🎵 音律暗號正確！高牆已為哥哥降下！');
-      } else {
-        showBanner('⚠️ 音律磚塊暗號僅限「哥哥 (MARIO)」觸發！');
-      }
-    }
-  }
-}
-
-function updatePhysics() {
-  if (!gameRunning || gameCleared) return;
-
-  // 若正在鑽水管過關動畫中
-  if (player.enteringPipe) {
-    player.pipeAnimY += 2.2;
-    if (player.pipeAnimY > player.h + 10) {
-      triggerWin('透過【路線 2：哥哥專屬水管搓招】');
-    }
-    return;
-  }
-
-  // 高牆升降平滑動畫
-  if (greatWall.y < greatWall.targetY) {
-    greatWall.y = Math.min(greatWall.targetY, greatWall.y + 4);
-  }
-
-  // 蹲下狀態
-  player.crouching = player.onGround && !!keys['arrowdown'];
-
-  // 左右移動 (蹲下時不能左右走，但可以轉向)
-  const moveSpeed = (selectedChar === 'luigi') ? 4.3 : 4.0;
-  if (keys['arrowleft']) {
-    player.dir = -1;
-    if (!player.crouching) player.vx = -moveSpeed;
-  } else if (keys['arrowright']) {
-    player.dir = 1;
-    if (!player.crouching) player.vx = moveSpeed;
-  } else {
-    player.vx *= 0.75;
-    if (Math.abs(player.vx) < 0.1) player.vx = 0;
-  }
-
-  if (player.crouching) player.vx = 0;
-
-  // 【路線 4 偵測】緊貼高牆左側 + 背對高牆(面向左 dir===-1) + 蹲下
-  const touchingWallLeft = Math.abs((player.x + player.w) - greatWall.x) <= 4 && greatWall.y < GROUND_Y - 20;
-  if (touchingWallLeft && player.dir === -1 && player.crouching) {
-    player.backWallCharge++;
-    if (player.backWallCharge === 90) {
-      if (selectedChar === 'luigi') {
-        showBanner('⚡ 穿牆蓄力完成！放開或按【空白鍵】向後穿牆！');
-      } else {
-        showBanner('⚠️ 背對穿牆術僅限「弟弟 (LUIGI)」使用！');
-      }
-    }
-  } else {
-    player.backWallCharge = 0;
-  }
-
-  // 水平移動與碰撞
-  player.x += player.vx;
-  if (player.x < 10) player.x = 10;
-  if (player.x + player.w > canvas.width - 10) player.x = canvas.width - 10 - player.w;
-
-  // 水平碰撞：綠色水管與高牆
-  const obstacles = [pipe];
-  if (greatWall.y < GROUND_Y - 5) {
-    obstacles.push({ x: greatWall.x, y: greatWall.y, w: greatWall.w, h: GROUND_Y - greatWall.y });
-  }
-  if (hiddenSpringBlock.revealed) {
-    obstacles.push(hiddenSpringBlock);
-  }
-
-  for (const obs of obstacles) {
-    if (rectOverlap(player.x, player.y, player.w, player.h, obs.x, obs.y, obs.w, obs.h)) {
-      if (player.vx > 0) player.x = obs.x - player.w;
-      else if (player.vx < 0) player.x = obs.x + obs.w;
-      player.vx = 0;
-    }
-  }
-
-  // 垂直移動與重力
-  player.vy += 0.52;
-  player.y += player.vy;
-  player.onGround = false;
-
-  // 地面碰撞
-  if (player.y + player.h >= GROUND_Y) {
-    player.y = GROUND_Y - player.h;
-    player.vy = 0;
-    player.onGround = true;
-    player.crouchesWhenJumped = false;
-  }
-
-  // 問號磚塊碰撞 (由下往上頂 & 由上往下踩)
-  for (const b of qBlocks) {
-    if (b.bounce > 0) b.bounce--;
-    if (rectOverlap(player.x, player.y, player.w, player.h, b.x, b.y, b.w, b.h)) {
-      if (player.vy < 0 && player.y > b.y) {
-        player.y = b.y + b.h;
-        player.vy = 1.5;
-        onHitQuestionBlock(b);
-      } else if (player.vy >= 0 && player.y + player.h - player.vy <= b.y + 8) {
-        player.y = b.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
-      }
-    }
-  }
-
-  // 【路線 3：弟弟限定蹲跳頂出隱藏空氣磚塊】
-  if (hiddenSpringBlock.bounceAnim > 0) hiddenSpringBlock.bounceAnim--;
-  if (!hiddenSpringBlock.revealed) {
-    // 只有往上跳 (vy < 0) 且起跳時有按蹲下 (crouchesWhenJumped) 才會頂出隱藏磚
-    if (player.vy < 0 && player.crouchesWhenJumped &&
-        rectOverlap(player.x, player.y, player.w, player.h, hiddenSpringBlock.x, hiddenSpringBlock.y, hiddenSpringBlock.w, hiddenSpringBlock.h)) {
-      if (selectedChar === 'luigi') {
-        hiddenSpringBlock.revealed = true;
-        hiddenSpringBlock.bounceAnim = 10;
-        player.y = hiddenSpringBlock.y + hiddenSpringBlock.h;
-        player.vy = 2;
-        spawnParticles(hiddenSpringBlock.x + 18, hiddenSpringBlock.y, '#22c55e', 14);
-        showBanner('🌱 頂出弟弟專屬「隱藏超級彈簧磚」！跳上去吧！');
-      } else {
-        showBanner('⚠️ 隱藏空氣磚塊只有「弟弟 (LUIGI)」蹲跳能頂出來！');
-        player.y = hiddenSpringBlock.y + hiddenSpringBlock.h;
-        player.vy = 2;
-      }
-    }
-  } else {
-    // 已顯現的隱藏彈簧磚：踩上去直接給超大向上彈力越過高牆！
-    if (rectOverlap(player.x, player.y, player.w, player.h, hiddenSpringBlock.x, hiddenSpringBlock.y, hiddenSpringBlock.w, hiddenSpringBlock.h)) {
-      if (player.vy >= 0 && player.y + player.h - player.vy <= hiddenSpringBlock.y + 12) {
-        player.y = hiddenSpringBlock.y - player.h;
-        player.vy = -16.8; // 超級大彈跳直接飛過高牆
-        player.onGround = false;
-        hiddenSpringBlock.bounceAnim = 10;
-        spawnParticles(hiddenSpringBlock.x + 18, hiddenSpringBlock.y, '#facc15', 10);
-      } else if (player.vy < 0 && player.y > hiddenSpringBlock.y) {
-        player.y = hiddenSpringBlock.y + hiddenSpringBlock.h;
-        player.vy = 2;
-      }
-    }
-  }
-
-  // 垂直碰撞：水管與高牆頂端
-  for (const obs of obstacles) {
-    if (obs === hiddenSpringBlock) continue;
-    if (rectOverlap(player.x, player.y, player.w, player.h, obs.x, obs.y, obs.w, obs.h)) {
-      if (player.vy >= 0 && player.y + player.h - player.vy <= obs.y + 12) {
-        player.y = obs.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
-        player.crouchesWhenJumped = false;
-      }
-    }
-  }
-
-  // 檢查是否摸到右側終點旗桿
-  if (player.x + player.w >= flagpole.x - 4 && player.x <= flagpole.x + 16) {
-    triggerWin(selectedChar === 'mario' ? '透過【哥哥路線】奪旗' : '透過【弟弟路線】奪旗');
-  }
-}
-
-function triggerWin(methodDesc) {
-  if (gameCleared) return;
-  gameCleared = true;
-  showBanner('🎉 恭喜過關！正在為您開啟網站大門...');
-  document.getElementById('pass-msg').textContent = `認證通過（${methodDesc}）！歡迎進入系統。`;
-
-  // 降旗與解鎖動畫
-  const flagInterval = setInterval(() => {
-    if (flagpole.flagY < GROUND_Y - 45) flagpole.flagY += 5;
-  }, 20);
-
-  setTimeout(() => {
-    clearInterval(flagInterval);
-    sessionStorage.setItem('mario_gate_passed', 'true');
-    document.getElementById('mario-gatekeeper').classList.add('unlocked');
-    setTimeout(() => {
+  // 檢查是否已經通關過 (加 try-catch 防止部分瀏覽器封鎖 sessionStorage 導致腳本中斷)
+  try {
+    if (sessionStorage.getItem('mario_gate_passed') === 'true') {
       document.getElementById('mario-gatekeeper').style.display = 'none';
-    }, 700);
-  }, 1100);
-}
+    }
+  } catch (e) {}
 
-function rectOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
-  return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2;
-}
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
 
-// ==================== 畫面渲染繪製 ====================
-function drawScene() {
-  // 1. 經典瑪利歐藍天背景
-  ctx.fillStyle = '#5c94fc';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // 遊戲常數與狀態
+  const GROUND_Y = 380;
+  let selectedChar = 'mario'; // 'mario' | 'luigi'
+  let gameRunning = false;
+  let gameCleared = false;
+  let bannerText = '';
+  let bannerTimer = 0;
 
-  // 白雲朵裝飾
-  drawCloud(90, 75, 1);
-  drawCloud(370, 55, 1.2);
-  drawCloud(670, 80, 0.9);
+  const keys = {};
+  let pipeKeyBuffer = [];
 
-  // 地面草叢 (特別在 x:420 隱藏磚塊正下方放一叢小草當作給知情者的視覺暗號標記)
-  drawBush(70, GROUND_Y);
-  drawBush(412, GROUND_Y, true); // 路線 3 暗號位置定位草叢
+  // =========================================================================
+  // 2. 綁定按鈕事件（修正點擊開始沒反應的問題）
+  // =========================================================================
+  function selectCharacter(charName) {
+    selectedChar = charName;
+    document.getElementById('btn-mario').classList.toggle('active', charName === 'mario');
+    document.getElementById('btn-luigi').classList.toggle('active', charName === 'luigi');
+    document.getElementById('preview-mario').classList.toggle('selected', charName === 'mario');
+    document.getElementById('preview-luigi').classList.toggle('selected', charName === 'luigi');
+    if (gameRunning) {
+      initLevel();
+      canvas.focus();
+    }
+  }
 
-  // 2. 繪製問號磚塊 [?][?][?]
-  qBlocks.forEach((b, idx) => {
-    const by = b.y - b.bounce;
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillRect(b.x, by, b.w, b.h);
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(b.x, by, b.w, b.h);
+  function startGame() {
+    const overlay = document.getElementById('standby-overlay');
+    if (overlay) overlay.style.display = 'none';
+    document.getElementById('btn-start').textContent = '↻ 重新開始 (RESET)';
+    gameRunning = true;
+    initLevel();
+    window.focus();
+    canvas.focus();
+  }
 
-    ctx.fillStyle = '#fffbeb';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('?', b.x + b.w / 2, by + 25);
+  document.getElementById('btn-mario').addEventListener('click', () => selectCharacter('mario'));
+  document.getElementById('btn-luigi').addEventListener('click', () => selectCharacter('luigi'));
+  document.getElementById('btn-start').addEventListener('click', startGame);
+  document.getElementById('btn-overlay-start').addEventListener('click', (e) => {
+    e.stopPropagation();
+    startGame();
+  });
+  document.getElementById('standby-overlay').addEventListener('click', startGame);
+
+  document.getElementById('btn-reset-gate').addEventListener('click', () => {
+    try { sessionStorage.removeItem('mario_gate_passed'); } catch (e) {}
+    const gate = document.getElementById('mario-gatekeeper');
+    gate.style.display = 'flex';
+    gate.classList.remove('unlocked');
+    startGame();
   });
 
-  // 3. 繪製隱藏彈簧磚塊 (只有被弟弟頂出來後才看得到)
-  if (hiddenSpringBlock.revealed) {
-    const hy = hiddenSpringBlock.y - hiddenSpringBlock.bounceAnim;
-    ctx.fillStyle = '#10b981';
-    ctx.fillRect(hiddenSpringBlock.x, hy, hiddenSpringBlock.w, hiddenSpringBlock.h);
-    ctx.strokeStyle = '#064e3b';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(hiddenSpringBlock.x, hy, hiddenSpringBlock.w, hiddenSpringBlock.h);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('⏫', hiddenSpringBlock.x + 18, hy + 24);
+  // 鍵盤操作監聽
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) {
+      e.preventDefault();
+    }
+
+    // 如果還沒按開始，按 Enter 或空白鍵也能直接開始遊戲
+    if (!gameRunning && (e.key === 'Enter' || e.key === ' ')) {
+      startGame();
+      return;
+    }
+
+    if (!keys[k] && gameRunning && !gameCleared) {
+      if (k === ' ' || k === 'arrowup') {
+        handleJumpPress();
+      }
+      // 路線 2：站在水管上輸入 ↓ ↓ ↑ Z
+      if (isStandingOnPipe()) {
+        const codeMap = { 'arrowdown': 40, 'arrowup': 38, 'z': 90 };
+        if (codeMap[k]) {
+          pipeKeyBuffer.push(codeMap[k]);
+          if (pipeKeyBuffer.length > 4) pipeKeyBuffer.shift();
+          checkPipeCombo();
+        }
+      }
+    }
+    keys[k] = true;
+  });
+
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  // =========================================================================
+  // 3. 角色與關卡機關設定
+  // =========================================================================
+  const player = {
+    x: 60, y: GROUND_Y - 52,
+    w: 38, h: 52,
+    vx: 0, vy: 0,
+    dir: 1,
+    onGround: true,
+    crouching: false,
+    crouchesWhenJumped: false,
+    backWallCharge: 0,
+    enteringPipe: false,
+    pipeAnimY: 0
+  };
+
+  let qBlocks = [];
+  let blockHitHistory = [];
+  const pipe = { x: 310, y: GROUND_Y - 72, w: 60, h: 72 };
+  const hiddenSpringBlock = { x: 420, y: 240, w: 38, h: 38, revealed: false, bounceAnim: 0 };
+  const greatWall = { x: 530, y: 60, w: 48, h: GROUND_Y - 60, targetY: 60 };
+  const flagpole = { x: 650, y: 90, h: GROUND_Y - 90, flagY: 110 };
+  const particles = [];
+
+  function initLevel() {
+    gameCleared = false;
+    pipeKeyBuffer = [];
+    blockHitHistory = [];
+    
+    player.x = 60;
+    player.y = GROUND_Y - player.h;
+    player.vx = 0;
+    player.vy = 0;
+    player.dir = 1;
+    player.onGround = true;
+    player.crouching = false;
+    player.crouchesWhenJumped = false;
+    player.backWallCharge = 0;
+    player.enteringPipe = false;
+    player.pipeAnimY = 0;
+
+    qBlocks = [
+      { id: 1, x: 115, y: 230, w: 38, h: 38, bounce: 0 },
+      { id: 2, x: 168, y: 230, w: 38, h: 38, bounce: 0 },
+      { id: 3, x: 221, y: 230, w: 38, h: 38, bounce: 0 }
+    ];
+
+    hiddenSpringBlock.revealed = false;
+    hiddenSpringBlock.bounceAnim = 0;
+    greatWall.y = 60;
+    greatWall.targetY = 60;
+    flagpole.flagY = 110;
+
+    showBanner(selectedChar === 'mario' ? '當前角色：哥哥 MARIO (請使出專屬暗號過關)' : '當前角色：弟弟 LUIGI (請使出專屬暗號過關)');
   }
 
-  // 4. 繪製超高實心磚牆
-  if (greatWall.y < GROUND_Y) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(greatWall.x, greatWall.y, greatWall.w, GROUND_Y - greatWall.y);
-    ctx.clip();
+  function showBanner(msg) {
+    bannerText = msg;
+    bannerTimer = 130;
+  }
 
-    ctx.fillStyle = '#b45309';
-    ctx.fillRect(greatWall.x, greatWall.y, greatWall.w, GROUND_Y - greatWall.y);
-    ctx.strokeStyle = '#451a03';
+  function spawnParticles(x, y, color, count = 8) {
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 7,
+        vy: -Math.random() * 6 - 2,
+        color,
+        life: 28
+      });
+    }
+  }
+
+  function isStandingOnPipe() {
+    return player.onGround &&
+           Math.abs((player.y + player.h) - pipe.y) < 4 &&
+           player.x + player.w > pipe.x + 4 &&
+           player.x < pipe.x + pipe.w - 4;
+  }
+
+  // 【路線 2：哥哥限定水管搓招 ↓ ↓ ↑ Z】
+  function checkPipeCombo() {
+    if (pipeKeyBuffer.length === 4) {
+      const hash = pipeKeyBuffer[0]*1 + pipeKeyBuffer[1]*3 + pipeKeyBuffer[2]*7 + pipeKeyBuffer[3]*13;
+      if (hash === 1596 && pipeKeyBuffer[0] === 40 && pipeKeyBuffer[3] === 90) {
+        if (selectedChar === 'mario') {
+          player.enteringPipe = true;
+          showBanner('✨ 觸發哥哥專屬密技：水管祕道傳送！');
+        } else {
+          showBanner('⚠️ 此水管密技僅限「哥哥 (MARIO)」使用！');
+          pipeKeyBuffer = [];
+        }
+      }
+    }
+  }
+
+  // 跳躍與【路線 4：弟弟限定倒車穿牆術】
+  function handleJumpPress() {
+    if (!player.onGround || player.enteringPipe) return;
+
+    if (player.backWallCharge >= 85 && selectedChar === 'luigi') {
+      player.x = greatWall.x + greatWall.w + 10;
+      player.vy = -8.5;
+      player.onGround = false;
+      player.backWallCharge = 0;
+      spawnParticles(greatWall.x + greatWall.w / 2, player.y + 20, '#a855f7', 18);
+      showBanner('⚡ 觸發弟弟專屬密技：Speedrun 倒車穿牆術！');
+      return;
+    }
+
+    const jumpForce = (selectedChar === 'luigi') ? -11.8 : -11.0;
+    player.vy = jumpForce;
+    player.onGround = false;
+    player.crouchesWhenJumped = player.crouching;
+  }
+
+  // 【路線 1：哥哥限定頂磚塊 2-1-3】
+  function onHitQuestionBlock(block) {
+    block.bounce = 8;
+    spawnParticles(block.x + 19, block.y - 6, '#facc15', 6);
+
+    blockHitHistory.push(block.id);
+    if (blockHitHistory.length > 3) blockHitHistory.shift();
+
+    if (blockHitHistory.length === 3) {
+      const seqCode = blockHitHistory[0] * 100 + blockHitHistory[1] * 10 + blockHitHistory[2];
+      if (seqCode === 213) {
+        if (selectedChar === 'mario') {
+          greatWall.targetY = GROUND_Y;
+          spawnParticles(greatWall.x + 24, GROUND_Y - 30, '#f97316', 20);
+          showBanner('🎵 音律暗號正確！高牆已為哥哥降下！');
+        } else {
+          showBanner('⚠️ 音律磚塊暗號僅限「哥哥 (MARIO)」觸發！');
+        }
+      }
+    }
+  }
+
+  function updatePhysics() {
+    if (!gameRunning || gameCleared) return;
+
+    if (player.enteringPipe) {
+      player.pipeAnimY += 2.4;
+      if (player.pipeAnimY > player.h + 10) {
+        triggerWin('透過【路線 2：哥哥專屬水管搓招】');
+      }
+      return;
+    }
+
+    if (greatWall.y < greatWall.targetY) {
+      greatWall.y = Math.min(greatWall.targetY, greatWall.y + 4);
+    }
+
+    player.crouching = player.onGround && !!keys['arrowdown'];
+
+    const moveSpeed = (selectedChar === 'luigi') ? 4.4 : 4.1;
+    if (keys['arrowleft']) {
+      player.dir = -1;
+      if (!player.crouching) player.vx = -moveSpeed;
+    } else if (keys['arrowright']) {
+      player.dir = 1;
+      if (!player.crouching) player.vx = moveSpeed;
+    } else {
+      player.vx *= 0.75;
+      if (Math.abs(player.vx) < 0.1) player.vx = 0;
+    }
+
+    if (player.crouching) player.vx = 0;
+
+    // 【路線 4】緊貼高牆左側 + 背對高牆(面向左) + 蹲下維持 1.5 秒
+    const touchingWallLeft = Math.abs((player.x + player.w) - greatWall.x) <= 5 && greatWall.y < GROUND_Y - 20;
+    if (touchingWallLeft && player.dir === -1 && player.crouching) {
+      player.backWallCharge++;
+      if (player.backWallCharge === 85) {
+        if (selectedChar === 'luigi') {
+          showBanner('⚡ 穿牆蓄力完成！保持蹲下並按【空白鍵】向後穿牆！');
+        } else {
+          showBanner('⚠️ 背對穿牆術僅限「弟弟 (LUIGI)」使用！');
+        }
+      }
+    } else {
+      player.backWallCharge = 0;
+    }
+
+    player.x += player.vx;
+    if (player.x < 10) player.x = 10;
+    if (player.x + player.w > canvas.width - 10) player.x = canvas.width - 10 - player.w;
+
+    const obstacles = [pipe];
+    if (greatWall.y < GROUND_Y - 5) {
+      obstacles.push({ x: greatWall.x, y: greatWall.y, w: greatWall.w, h: GROUND_Y - greatWall.y });
+    }
+    if (hiddenSpringBlock.revealed) {
+      obstacles.push(hiddenSpringBlock);
+    }
+
+    for (const obs of obstacles) {
+      if (rectOverlap(player.x, player.y, player.w, player.h, obs.x, obs.y, obs.w, obs.h)) {
+        if (player.vx > 0) player.x = obs.x - player.w;
+        else if (player.vx < 0) player.x = obs.x + obs.w;
+        player.vx = 0;
+      }
+    }
+
+    player.vy += 0.52;
+    player.y += player.vy;
+    player.onGround = false;
+
+    if (player.y + player.h >= GROUND_Y) {
+      player.y = GROUND_Y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+      player.crouchesWhenJumped = false;
+    }
+
+    for (const b of qBlocks) {
+      if (b.bounce > 0) b.bounce--;
+      if (rectOverlap(player.x, player.y, player.w, player.h, b.x, b.y, b.w, b.h)) {
+        if (player.vy < 0 && player.y > b.y) {
+          player.y = b.y + b.h;
+          player.vy = 1.5;
+          onHitQuestionBlock(b);
+        } else if (player.vy >= 0 && player.y + player.h - player.vy <= b.y + 10) {
+          player.y = b.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+        }
+      }
+    }
+
+    // 【路線 3：弟弟限定蹲跳頂出隱藏空氣磚塊】
+    if (hiddenSpringBlock.bounceAnim > 0) hiddenSpringBlock.bounceAnim--;
+    if (!hiddenSpringBlock.revealed) {
+      if (player.vy < 0 && player.crouchesWhenJumped &&
+          rectOverlap(player.x, player.y, player.w, player.h, hiddenSpringBlock.x, hiddenSpringBlock.y, hiddenSpringBlock.w, hiddenSpringBlock.h)) {
+        if (selectedChar === 'luigi') {
+          hiddenSpringBlock.revealed = true;
+          hiddenSpringBlock.bounceAnim = 10;
+          player.y = hiddenSpringBlock.y + hiddenSpringBlock.h;
+          player.vy = 2;
+          spawnParticles(hiddenSpringBlock.x + 19, hiddenSpringBlock.y, '#22c55e', 14);
+          showBanner('🌱 頂出弟弟專屬「隱藏超級彈簧磚」！跳上去吧！');
+        } else {
+          showBanner('⚠️ 隱藏空氣磚塊只有「弟弟 (LUIGI)」蹲跳能頂出來！');
+          player.y = hiddenSpringBlock.y + hiddenSpringBlock.h;
+          player.vy = 2;
+        }
+      }
+    } else {
+      if (rectOverlap(player.x, player.y, player.w, player.h, hiddenSpringBlock.x, hiddenSpringBlock.y, hiddenSpringBlock.w, hiddenSpringBlock.h)) {
+        if (player.vy >= 0 && player.y + player.h - player.vy <= hiddenSpringBlock.y + 12) {
+          player.y = hiddenSpringBlock.y - player.h;
+          player.vy = -17.2;
+          player.onGround = false;
+          hiddenSpringBlock.bounceAnim = 10;
+          spawnParticles(hiddenSpringBlock.x + 19, hiddenSpringBlock.y, '#facc15', 10);
+        } else if (player.vy < 0 && player.y > hiddenSpringBlock.y) {
+          player.y = hiddenSpringBlock.y + hiddenSpringBlock.h;
+          player.vy = 2;
+        }
+      }
+    }
+
+    for (const obs of obstacles) {
+      if (obs === hiddenSpringBlock) continue;
+      if (rectOverlap(player.x, player.y, player.w, player.h, obs.x, obs.y, obs.w, obs.h)) {
+        if (player.vy >= 0 && player.y + player.h - player.vy <= obs.y + 12) {
+          player.y = obs.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+          player.crouchesWhenJumped = false;
+        }
+      }
+    }
+
+    if (player.x + player.w >= flagpole.x - 4 && player.x <= flagpole.x + 16) {
+      triggerWin(selectedChar === 'mario' ? '透過【哥哥路線】奪旗' : '透過【弟弟路線】奪旗');
+    }
+  }
+
+  function triggerWin(methodDesc) {
+    if (gameCleared) return;
+    gameCleared = true;
+    showBanner('🎉 恭喜過關！正在開啟網站大門...');
+    document.getElementById('pass-msg').textContent = `認證通過（${methodDesc}）！歡迎進入系統。`;
+
+    const flagInterval = setInterval(() => {
+      if (flagpole.flagY < GROUND_Y - 45) flagpole.flagY += 5;
+    }, 20);
+
+    setTimeout(() => {
+      clearInterval(flagInterval);
+      try { sessionStorage.setItem('mario_gate_passed', 'true'); } catch (e) {}
+      document.getElementById('mario-gatekeeper').classList.add('unlocked');
+      setTimeout(() => {
+        document.getElementById('mario-gatekeeper').style.display = 'none';
+      }, 650);
+    }, 1000);
+  }
+
+  function rectOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
+    return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2;
+  }
+
+  // =========================================================================
+  // 4. 畫面與人物圖片渲染
+  // =========================================================================
+  function drawScene() {
+    ctx.fillStyle = '#5c94fc';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawCloud(90, 75, 1);
+    drawCloud(370, 55, 1.2);
+    drawCloud(670, 80, 0.9);
+
+    drawBush(70, GROUND_Y);
+    drawBush(414, GROUND_Y, true); // 隱藏磚塊正下方的淺綠色定位小草叢
+
+    // 問號磚塊
+    qBlocks.forEach(b => {
+      const by = b.y - b.bounce;
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(b.x, by, b.w, b.h);
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(b.x, by, b.w, b.h);
+      ctx.fillStyle = '#fffbeb';
+      ctx.font = 'bold 20px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('?', b.x + b.w / 2, by + 26);
+    });
+
+    // 隱藏彈簧磚塊
+    if (hiddenSpringBlock.revealed) {
+      const hy = hiddenSpringBlock.y - hiddenSpringBlock.bounceAnim;
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(hiddenSpringBlock.x, hy, hiddenSpringBlock.w, hiddenSpringBlock.h);
+      ctx.strokeStyle = '#064e3b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(hiddenSpringBlock.x, hy, hiddenSpringBlock.w, hiddenSpringBlock.h);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('⏫', hiddenSpringBlock.x + 19, hy + 25);
+    }
+
+    // 超高實心磚牆
+    if (greatWall.y < GROUND_Y) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(greatWall.x, greatWall.y, greatWall.w, GROUND_Y - greatWall.y);
+      ctx.clip();
+      ctx.fillStyle = '#b45309';
+      ctx.fillRect(greatWall.x, greatWall.y, greatWall.w, GROUND_Y - greatWall.y);
+      ctx.strokeStyle = '#451a03';
+      ctx.lineWidth = 2;
+      for (let y = greatWall.y; y < GROUND_Y; y += 20) {
+        ctx.strokeRect(greatWall.x, y, greatWall.w / 2, 20);
+        ctx.strokeRect(greatWall.x + greatWall.w / 2, y, greatWall.w / 2, 20);
+      }
+      ctx.restore();
+    }
+
+    // 終點城堡與旗桿
+    drawCastle(695, GROUND_Y - 95);
+    ctx.fillStyle = '#d97706';
+    ctx.fillRect(flagpole.x - 8, GROUND_Y - 20, 20, 20);
+    ctx.fillStyle = '#fde047';
+    ctx.fillRect(flagpole.x, flagpole.y, 4, flagpole.h);
+    ctx.beginPath();
+    ctx.arc(flagpole.x + 2, flagpole.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.moveTo(flagpole.x, flagpole.flagY);
+    ctx.lineTo(flagpole.x - 34, flagpole.flagY + 14);
+    ctx.lineTo(flagpole.x, flagpole.flagY + 28);
+    ctx.fill();
+
+    // 繪製人物圖片 (含鑽水管裁切遮罩)
+    ctx.save();
+    if (player.enteringPipe) {
+      ctx.beginPath();
+      ctx.rect(0, 0, canvas.width, pipe.y);
+      ctx.clip();
+    }
+    drawPlayerSprite();
+    ctx.restore();
+
+    // 綠色水管
+    drawPipe(pipe.x, pipe.y, pipe.w, pipe.h);
+
+    // 紅磚地板
+    ctx.fillStyle = '#c2410c';
+    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+    ctx.strokeStyle = '#7c2d12';
     ctx.lineWidth = 2;
-    for (let y = greatWall.y; y < GROUND_Y; y += 20) {
-      ctx.strokeRect(greatWall.x, y, greatWall.w / 2, 20);
-      ctx.strokeRect(greatWall.x + greatWall.w / 2, y, greatWall.w / 2, 20);
+    for (let x = 0; x < canvas.width; x += 32) {
+      ctx.strokeRect(x, GROUND_Y, 32, 30);
+      ctx.strokeRect(x - 16, GROUND_Y + 30, 32, 30);
+    }
+
+    // 特效粒子
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.3;
+      p.life--;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, 6, 6);
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // 頂部提示橫幅
+    if (bannerTimer > 0) {
+      bannerTimer--;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.fillRect(150, 14, 500, 34);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.strokeRect(150, 14, 500, 34);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(bannerText, canvas.width / 2, 36);
+    }
+  }
+
+  // 使用 Image 圖片物件繪製哥哥與弟弟
+  function drawPlayerSprite() {
+    const activeImg = (selectedChar === 'mario') ? marioImg : luigiImg;
+    const scaleY = player.crouching ? 0.68 : 1.0;
+    const drawW = 46;
+    const drawH = player.h * scaleY;
+    const drawY = player.y + (player.h - drawH) + player.pipeAnimY;
+
+    // 走路時輕微上下擺動
+    const walkBob = (player.onGround && Math.abs(player.vx) > 0.3) ? Math.abs(Math.sin(Date.now() * 0.02)) * 4 : 0;
+
+    ctx.save();
+    ctx.translate(player.x + player.w / 2, drawY + drawH / 2 - walkBob);
+
+    // 蓄力穿牆閃爍白光特效
+    if (player.backWallCharge > 20 && Math.floor(Date.now() / 60) % 2 === 0) {
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 18;
+    }
+
+    // 根據面向方向左右翻轉圖片
+    ctx.scale(player.dir, 1);
+
+    if (activeImg.complete) {
+      ctx.drawImage(activeImg, -drawW / 2, -drawH / 2, drawW, drawH);
     }
     ctx.restore();
   }
 
-  // 5. 繪製終點旗桿與小城堡
-  drawCastle(695, GROUND_Y - 95);
-  // 旗桿底座與桿子
-  ctx.fillStyle = '#d97706';
-  ctx.fillRect(flagpole.x - 8, GROUND_Y - 20, 20, 20);
-  ctx.fillStyle = '#fde047';
-  ctx.fillRect(flagpole.x, flagpole.y, 4, flagpole.h);
-  ctx.beginPath();
-  ctx.arc(flagpole.x + 2, flagpole.y, 7, 0, Math.PI * 2);
-  ctx.fill();
-  // 旗幟
-  ctx.fillStyle = '#22c55e';
-  ctx.beginPath();
-  ctx.moveTo(flagpole.x, flagpole.flagY);
-  ctx.lineTo(flagpole.x - 34, flagpole.flagY + 14);
-  ctx.lineTo(flagpole.x, flagpole.flagY + 28);
-  ctx.fill();
+  function drawPipe(x, y, w, h) {
+    ctx.fillStyle = '#16a34a';
+    ctx.fillRect(x + 4, y + 22, w - 8, h - 22);
+    ctx.strokeStyle = '#052e16';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 4, y + 22, w - 8, h - 22);
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(x, y, w, 22);
+    ctx.strokeRect(x, y, w, 22);
+    ctx.fillStyle = '#86efac';
+    ctx.fillRect(x + 10, y + 2, 6, 18);
+    ctx.fillRect(x + 12, y + 24, 6, h - 26);
+  }
 
-  // 6. 繪製玩家角色 (若正在鑽水管，會被水管遮罩裁切)
-  ctx.save();
-  if (player.enteringPipe) {
+  function drawCloud(x, y, scale) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, pipe.y);
-    ctx.clip();
-  }
-  drawPlayer();
-  ctx.restore();
-
-  // 7. 繪製中場綠色水管 (畫在角色之後，讓鑽水管有縮進去的效果)
-  drawPipe(pipe.x, pipe.y, pipe.w, pipe.h);
-
-  // 8. 繪製底部紅磚地板
-  ctx.fillStyle = '#c2410c';
-  ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
-  ctx.strokeStyle = '#7c2d12';
-  ctx.lineWidth = 2;
-  for (let x = 0; x < canvas.width; x += 32) {
-    ctx.strokeRect(x, GROUND_Y, 32, 30);
-    ctx.strokeRect(x - 16, GROUND_Y + 30, 32, 30);
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.arc(16, -6, 22, 0, Math.PI * 2);
+    ctx.arc(34, 0, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
-  // 9. 繪製粒子特效
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vy += 0.3;
-    p.life--;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x, p.y, 6, 6);
-    if (p.life <= 0) particles.splice(i, 1);
+  function drawBush(x, y, isSecretMarker = false) {
+    ctx.fillStyle = isSecretMarker ? '#4ade80' : '#15803d';
+    ctx.beginPath();
+    ctx.arc(x, y - 8, 12, 0, Math.PI * 2);
+    ctx.arc(x + 14, y - 12, 15, 0, Math.PI * 2);
+    ctx.arc(x + 28, y - 8, 12, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  // 10. 頂部提示訊息橫幅
-  if (bannerTimer > 0) {
-    bannerTimer--;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.fillRect(180, 14, 440, 34);
-    ctx.strokeStyle = '#38bdf8';
-    ctx.strokeRect(180, 14, 440, 34);
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(bannerText, canvas.width / 2, 36);
-  }
-}
-
-function drawPlayer() {
-  const isMario = (selectedChar === 'mario');
-  const mainColor = isMario ? '#ef4444' : '#22c55e'; // 紅帽紅衣 vs 綠帽綠衣
-  const overallsColor = '#1d4ed8'; // 經典藍色吊帶褲
-
-  ctx.save();
-  const drawH = player.crouching ? 28 : player.h;
-  const drawY = player.y + (player.h - drawH) + player.pipeAnimY;
-
-  ctx.translate(player.x + player.w / 2, drawY + drawH / 2);
-
-  // 若正在蓄力穿牆 (路線 4)，身上發光閃爍
-  if (player.backWallCharge > 20 && Math.floor(Date.now() / 60) % 2 === 0) {
-    ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 15;
+  function drawCastle(x, y) {
+    ctx.fillStyle = '#9a3412';
+    ctx.fillRect(x, y + 30, 80, 65);
+    ctx.fillRect(x + 15, y, 50, 35);
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.arc(x + 40, y + 95, 16, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(x + 24, y + 75, 32, 20);
   }
 
-  ctx.scale(player.dir, 1);
+  function gameLoop() {
+    updatePhysics();
+    drawScene();
+    requestAnimationFrame(gameLoop);
+  }
 
-  // 吊帶褲與身體
-  ctx.fillStyle = mainColor;
-  ctx.fillRect(-12, -4, 24, drawH / 2);
-  ctx.fillStyle = overallsColor;
-  ctx.fillRect(-10, 4, 20, drawH / 2 - 4);
-
-  // 臉部與帽子
-  ctx.fillStyle = '#fed7aa';
-  ctx.fillRect(-10, -drawH / 2 + 4, 20, 14);
-  ctx.fillStyle = mainColor;
-  ctx.fillRect(-12, -drawH / 2, 26, 7); // 帽沿朝前
-
-  // 眼睛與招牌小鬍子
-  ctx.fillStyle = '#000';
-  ctx.fillRect(4, -drawH / 2 + 7, 3, 4);
-  ctx.fillRect(2, -drawH / 2 + 13, 9, 3);
-
-  ctx.restore();
-}
-
-function drawPipe(x, y, w, h) {
-  ctx.fillStyle = '#16a34a';
-  ctx.fillRect(x + 4, y + 22, w - 8, h - 22);
-  ctx.strokeStyle = '#052e16';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x + 4, y + 22, w - 8, h - 22);
-
-  // 水管口寬邊
-  ctx.fillStyle = '#22c55e';
-  ctx.fillRect(x, y, w, 22);
-  ctx.strokeRect(x, y, w, 22);
-
-  // 高光條紋
-  ctx.fillStyle = '#86efac';
-  ctx.fillRect(x + 10, y + 2, 6, 18);
-  ctx.fillRect(x + 12, y + 24, 6, h - 26);
-}
-
-function drawCloud(x, y, scale) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-  ctx.beginPath();
-  ctx.arc(0, 0, 18, 0, Math.PI * 2);
-  ctx.arc(16, -6, 22, 0, Math.PI * 2);
-  ctx.arc(34, 0, 16, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawBush(x, y, isSecretMarker = false) {
-  ctx.fillStyle = isSecretMarker ? '#4ade80' : '#15803d';
-  ctx.beginPath();
-  ctx.arc(x, y - 8, 12, 0, Math.PI * 2);
-  ctx.arc(x + 14, y - 12, 15, 0, Math.PI * 2);
-  ctx.arc(x + 28, y - 8, 12, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawCastle(x, y) {
-  ctx.fillStyle = '#9a3412';
-  ctx.fillRect(x, y + 30, 80, 65);
-  ctx.fillRect(x + 15, y, 50, 35);
-  // 城門
-  ctx.fillStyle = '#1c1917';
-  ctx.beginPath();
-  ctx.arc(x + 40, y + 95, 16, Math.PI, 0);
-  ctx.fill();
-  ctx.fillRect(x + 24, y + 75, 32, 20);
-}
-
-function gameLoop() {
-  updatePhysics();
-  drawScene();
+  initLevel();
   requestAnimationFrame(gameLoop);
-}
-
-initLevel();
-requestAnimationFrame(gameLoop);
+})();
 </script>
 </body>
 </html>
