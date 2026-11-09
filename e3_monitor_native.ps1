@@ -1626,6 +1626,38 @@ function Connect-CdpPage([int]$port, [ref]$commandId, [switch]$NewTab) {
 
 
 
+# 背景 (headless) Edge 的 User-Agent 帶有 Headless 字樣，有些網站 (含 Teams) 會視為不支援的瀏覽器；改回一般 Edge 的字串。
+# 只作用於目前連線的分頁，換分頁 (Connect-CdpPage -NewTab) 後要再呼叫一次。
+function Set-NormalUserAgent($ws, [ref]$commandId) {
+    $id = $commandId.Value; $commandId.Value++
+    $ver = Invoke-CdpCommand $ws $id 'Browser.getVersion'
+    $ua = ([string]$ver.result.userAgent) -replace 'HeadlessEdg', 'Edg' -replace 'HeadlessChrome', 'Chrome'
+    $id = $commandId.Value; $commandId.Value++
+    Invoke-CdpCommand $ws $id 'Emulation.setUserAgentOverride' @{ userAgent = $ua; acceptLanguage = 'zh-TW,zh;q=0.9,en;q=0.8' } | Out-Null
+}
+
+
+
+# 啟動專用 Edge 並連上除錯埠 (截圖與 CDP 背景傳送共用)。
+# 偶爾除錯埠不會在時限內開啟：防毒掃描讓 Edge 啟動很慢，或新程序併入了正在結束的舊程序後自行退出。
+# 第一次連不上時關閉這個專用 Edge、等 3 秒再啟動一次；第二次仍失敗才回報錯誤。
+function Start-ProfileEdgeCdp([string]$argList, [int]$port, [ref]$commandId, [switch]$Hidden) {
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if ($Hidden) { Start-Process -FilePath (Get-BrowserPath) -ArgumentList $argList -WindowStyle Hidden | Out-Null }
+        else { Start-Process -FilePath (Get-BrowserPath) -ArgumentList $argList | Out-Null }
+        try {
+            return (Connect-CdpPage $port $commandId)
+        } catch {
+            if ($attempt -eq 2) { throw }
+            Write-Host "  ⚠️ 專用 Edge 啟動後連不上除錯埠（$($_.Exception.Message)），關閉後重新啟動一次" -ForegroundColor Yellow
+            Stop-ProfileEdge
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
+
+
 
 
 # 開啟網址；連線失敗 (DNS、拒絕連線、逾時等) 時 Page.navigate 會回傳 errorText，此時 Edge 顯示的是錯誤頁
@@ -1716,18 +1748,13 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
     # Translate (Chromium) / msEdgeTranslate (Edge)：停用翻譯提示，避免詢問中文是否轉英文。
     $argList = "--remote-debugging-port=$debugPort --user-data-dir=`"$profileDir`" --disable-features=Translate,msEdgeTranslate --window-size=1920,1080 --force-device-scale-factor=1 --hide-crash-restore-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding about:blank"
     if ($Headless) { $argList += ' --headless=new' }
-    $proc = Start-Process -FilePath $browserExe -ArgumentList $argList -WindowStyle Hidden -PassThru
-
-
-
-
-
     $capturedMap = @{}
     $failures = [ordered]@{}
     $ws = $null
     try {
         $cmdId = 1
-        $ws = Connect-CdpPage $debugPort ([ref]$cmdId)
+        $ws = Start-ProfileEdgeCdp $argList $debugPort ([ref]$cmdId) -Hidden
+        if ($Headless) { Set-NormalUserAgent $ws ([ref]$cmdId) }
 
 
 
@@ -1744,6 +1771,7 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
                 Write-Host "  🔄 重新連線到專用 Edge (開新分頁)..." -ForegroundColor Yellow
                 $ws.Dispose()
                 $ws = Connect-CdpPage $debugPort ([ref]$cmdId) -NewTab
+                if ($Headless) { Set-NormalUserAgent $ws ([ref]$cmdId) }
             }
             $pageZoom = Get-BrowserZoom $p
             # 此時仍可能是上一個網站；儲存的 viewport 留待導航到目標網站後才還原。
@@ -2607,7 +2635,8 @@ if ($PreviewCapture) {
             crop_region = [pscustomobject]@{ enabled = $false }
         }
         $tmpDir = Join-Path $env:TEMP "e3_preview_capture"
-        $capture = Capture-PagesNative @($previewPage) $config.auth $tmpDir -Interactive:$InteractiveCapture
+        # 互動抓圖要讓使用者捲動，需顯示視窗；不需互動的預覽與排程相同，以背景 Edge 擷取
+        $capture = Capture-PagesNative @($previewPage) $config.auth $tmpDir -Interactive:$InteractiveCapture -Headless:(-not $InteractiveCapture)
         if ($capture.Failures.Contains($PageId)) { throw $capture.Failures[$PageId] }
         $shot = $capture.Files[$PageId]
         if (-not $shot -or -not (Test-Path $shot)) { throw "沒有擷取到畫面" }
@@ -2751,13 +2780,10 @@ if ($TestSample) {
     # 同一天多個排程分開存放：captures\<日期>\<排程id>_<HHmm>\
     $outDir = Join-Path $PSScriptRoot ("captures\{0}\{1}_{2}" -f (Get-Date -Format "yyyy-MM-dd"), $runTag, (Get-Date -Format "HHmm"))
     try {
-        $backgroundCapture = $false
-        if ($runSchedule) {
-            $desktopReason = Get-DesktopBlockReason
-            $backgroundCapture = -not [string]::IsNullOrEmpty($desktopReason)
-            if ($backgroundCapture) { Write-Host '🌐 桌面不可用，使用背景 Edge 擷取，保留已存的縮放與位置' -ForegroundColor Yellow }
-        }
-        $capture = Capture-PagesNative $enabledPages $config.auth $outDir -Headless:$backgroundCapture
+        # 排程與手動執行都不需要看畫面，一律以背景 (headless) Edge 擷取：螢幕關閉 (未鎖定) 時有畫面的 Edge 不會產生畫格，
+        # Page.captureScreenshot 會卡到逾時；headless 與有畫面時的結果逐像素相同 (保留已存的縮放、捲動與裁切)
+        Write-Host '🌐 使用背景 Edge 擷取（不顯示視窗；鎖定或螢幕關閉時也能截圖）' -ForegroundColor Gray
+        $capture = Capture-PagesNative $enabledPages $config.auth $outDir -Headless
         $capturedFiles = $capture.Files
         $captureFailures = $capture.Failures
     } catch {

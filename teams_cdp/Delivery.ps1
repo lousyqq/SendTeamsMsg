@@ -95,6 +95,14 @@ window.__e3t = {
   },
   listTop() { const tree = document.querySelector('[role="tree"]'); let s = tree; while (s && s.scrollHeight <= s.clientHeight + 2) s = s.parentElement; if (s && s !== document.documentElement) s.scrollTop = 0; return 'OK'; },
   focusEnd() { const c = compose(); if (!c) return 'NO_COMPOSE'; caretEnd(c); return document.activeElement === c || c.contains(document.activeElement) ? 'OK' : 'NO_FOCUS'; },
+  // 選取輸入框全部內容 (之後以 CDP 按 Backspace 刪除，讓編輯器自己處理)
+  selectAll() {
+    const c = compose(); if (!c) return 'NO_COMPOSE';
+    c.focus();
+    const sel = getSelection(), r = document.createRange();
+    r.selectNodeContents(c); sel.removeAllRanges(); sel.addRange(r);
+    return 'OK';
+  },
   // 以 DataTransfer 模擬貼上 (不經系統剪貼簿)；list = [{ name, b64 }]
   paste(list) {
     const c = compose(); if (!c) return 'NO_COMPOSE';
@@ -135,19 +143,19 @@ function Start-TeamsCdpBrowser($teamsCfg, [switch]$Visible) {
     Stop-ProfileEdge
     $argList = "--remote-debugging-port=$CdpTeamsPort --user-data-dir=`"$profileDir`" --no-first-run --disable-features=Translate,msEdgeTranslate --hide-crash-restore-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --window-size=1600,1000"
     if ($headless) { $argList += ' --headless=new' }
-    $proc = Start-Process -FilePath (Get-BrowserPath) -ArgumentList "$argList about:blank" -PassThru
-    $ctx = @{ Proc = $proc; Headless = $headless; Id = 1; Ws = $null }
+    $ctx = @{ Headless = $headless; Id = 1; Ws = $null }
     $idRef = [ref]$ctx.Id
-    $ctx.Ws = Connect-CdpPage $CdpTeamsPort $idRef
+    # 背景模式隱藏啟動；顯示模式 (登入設定) 要讓使用者看到視窗
+    $ctx.Ws = Start-ProfileEdgeCdp "$argList about:blank" $CdpTeamsPort $idRef -Hidden:$headless
     $ctx.Id = $idRef.Value
     # 只需要 Runtime.evaluate；關閉 Runtime 事件，避免 Teams 大量 console 訊息拖慢 CDP 讀取
     Invoke-TeamsCdp $ctx 'Runtime.disable' | Out-Null
     try { Invoke-TeamsCdp $ctx 'Emulation.setFocusEmulationEnabled' @{ enabled = $true } | Out-Null } catch {}
     if ($headless) {
         # 背景 Edge 的 User-Agent 帶有 Headless，Teams 可能視為不支援的瀏覽器；改回一般 Edge 的字串
-        $ver = Invoke-TeamsCdp $ctx 'Browser.getVersion'
-        $ua = ([string]$ver.result.userAgent) -replace 'HeadlessEdg', 'Edg' -replace 'HeadlessChrome', 'Chrome'
-        Invoke-TeamsCdp $ctx 'Emulation.setUserAgentOverride' @{ userAgent = $ua; acceptLanguage = 'zh-TW,zh;q=0.9,en;q=0.8' } | Out-Null
+        $idRef = [ref]$ctx.Id
+        Set-NormalUserAgent $ctx.Ws $idRef
+        $ctx.Id = $idRef.Value
     }
     Write-Host "🌐 [CDP] 已啟動$(if ($headless) { '背景 (不顯示視窗)' } else { '' }) Edge，準備開啟 Teams 網頁版" -ForegroundColor Gray
     return $ctx
@@ -297,6 +305,24 @@ function Add-TeamsTextCdp($ctx, [string]$text) {
 
 
 
+# 清空目標對話的輸入框：選取全部內容後以 CDP 按 Backspace (由 Teams 編輯器自己刪除)，最多試 3 次。
+# 先確認仍在目標對話，不會清到別的對話；回傳是否已清空。
+function Clear-TeamsComposeCdp($ctx, $chat) {
+    for ($try = 0; $try -lt 3; $try++) {
+        $st = Confirm-TeamsChatCdp $ctx $chat
+        if ($st.compose.images -eq 0 -and $st.compose.text -eq 0) { return $true }
+        if ((Invoke-TeamsJs $ctx 'selectAll()') -ne 'OK') { return $false }
+        foreach ($type in 'keyDown', 'keyUp') {
+            Invoke-TeamsCdp $ctx 'Input.dispatchKeyEvent' @{ type = $type; key = 'Backspace'; code = 'Backspace'; windowsVirtualKeyCode = 8; nativeVirtualKeyCode = 8 } | Out-Null
+        }
+        Start-Sleep -Milliseconds 800
+    }
+    $st = Confirm-TeamsChatCdp $ctx $chat
+    return ($st.compose.images -eq 0 -and $st.compose.text -eq 0)
+}
+
+
+
 function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [string]$messageText, $teamsCfg, [bool]$isDryRun) {
     if ([string]::IsNullOrWhiteSpace($messageText)) { throw "總結文字是空的，未貼上任何內容" }
     $chat = Resolve-ChatTarget $targetChatName
@@ -317,14 +343,27 @@ function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [s
         Open-TeamsChatCdp $ctx $chat
         $st = Wait-TeamsCompose $ctx $chat
         Write-Host "💬 [CDP] 已開啟對話：$($chat.Name)（網頁標題：$($st.title)）" -ForegroundColor Cyan
+        # 專用 Edge 只有本程式使用，輸入框裡的內容是先前傳送中斷留下的 (不在使用者平常的 Teams，關掉重開 Teams 也不會消失)。
+        # 正式傳送前先清除，再送這次的圖文 (不會重送舊內容)；測試模式只回報、不清除。
         if ($st.compose.images -gt 0 -or $st.compose.text -gt 0) {
-            throw "「$($chat.Name)」的輸入框裡已經有還沒送出的內容 (草稿)，為避免一起送出已停止，請先到 Teams 處理"
+            $left = "$($st.compose.images) 張圖片、$($st.compose.text) 個字"
+            if ($isDryRun) {
+                Write-Host "⚠️ [CDP -> $($chat.Name)] 輸入框有上次中斷留下的內容（$left），正式傳送時會先清除" -ForegroundColor Yellow
+            } else {
+                Write-Host "🧹 [CDP -> $($chat.Name)] 輸入框有上次中斷留下的內容（$left），先清除再傳送這次的圖文" -ForegroundColor Yellow
+                if (-not (Clear-TeamsComposeCdp $ctx $chat)) {
+                    throw "「$($chat.Name)」的輸入框有上次中斷留下的內容，無法自動清除：請按「🔐 登入並檢查 CDP 傳送」，在開啟的 Edge 進入該對話刪除輸入框內容後再試"
+                }
+            }
         }
         if ($isDryRun) {
             Write-Host "⏸️ [CDP -> $($chat.Name)] 已確認對話與輸入框（共 $($entries.Count) 張圖、$($plan.Count) 批），測試模式不貼上、不送出" -ForegroundColor Yellow
             return
         }
 
+        # $dirty：本次已貼上、尚未送出的內容；$sendPressed：已按傳送但還沒確認輸入框清空
+        $dirty = $false; $sendPressed = $false
+        try {
         for ($b = 0; $b -lt $plan.Count; $b++) {
             $batch = @($plan[$b].Items)
             $batchText = Get-TeamsBatchText $messageText ($b + 1) $plan.Count
@@ -334,10 +373,11 @@ function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [s
                 $want = $st.compose.images + 1
                 $payload = ConvertTo-Json @(@{ name = [IO.Path]::GetFileName($img.path); b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($img.path)) }) -Compress
                 Write-Host "📋 [CDP -> $($chat.Name)] 正在貼上圖片: $([IO.Path]::GetFileName($img.path))" -ForegroundColor Gray
+                $dirty = $true
                 if ((Invoke-TeamsJs $ctx "paste($payload)") -ne 'OK') { throw "找不到 Teams 輸入框，無法貼上圖片" }
                 $deadline = (Get-Date).AddSeconds(60)
                 do { Start-Sleep -Milliseconds 700; $st = Confirm-TeamsChatCdp $ctx $chat } while ($st.compose.images -lt $want -and (Get-Date) -lt $deadline)
-                if ($st.compose.images -lt $want) { throw "圖片 $([IO.Path]::GetFileName($img.path)) 60 秒內沒有出現在 Teams 輸入框，已停止 (內容留在輸入框，未送出)" }
+                if ($st.compose.images -lt $want) { throw "圖片 $([IO.Path]::GetFileName($img.path)) 60 秒內沒有出現在 Teams 輸入框，已停止 (未送出)" }
             }
             # 等這一批圖片都載入完成 (連續 3 次確認)，Teams 上傳中就送出會變成破圖
             $stable = 0; $deadline = (Get-Date).AddSeconds(90)
@@ -346,7 +386,7 @@ function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [s
                 $st = Confirm-TeamsChatCdp $ctx $chat
                 if ($st.compose.images -eq $batch.Count -and $st.compose.loaded -eq $batch.Count) { $stable++ } else { $stable = 0 }
             }
-            if ($stable -lt 3) { throw "90 秒內只有 $($st.compose.loaded)/$($batch.Count) 張圖片載入完成，已停止 (內容留在輸入框，未送出)" }
+            if ($stable -lt 3) { throw "90 秒內只有 $($st.compose.loaded)/$($batch.Count) 張圖片載入完成，已停止 (未送出)" }
 
             Add-TeamsTextCdp $ctx $batchText
             Start-Sleep -Milliseconds 500
@@ -355,11 +395,13 @@ function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [s
             Write-Host "🔎 [CDP] 輸入框已有 $($st.compose.images) 張圖片與總結文字" -ForegroundColor DarkGray
 
             if ($teamsCfg.auto_press_enter -eq $false) {
-                Write-Host "⏸️ [CDP -> $($chat.Name)] auto_press_enter=false：已貼上圖文但不送出；背景 Edge 關閉後內容會留在 Teams 的草稿" -ForegroundColor Yellow
+                Write-Host "⏸️ [CDP -> $($chat.Name)] auto_press_enter=false：已貼上圖文但不送出；內容留在專用 Edge 的 Teams 輸入框，下次傳送時會先清除" -ForegroundColor Yellow
+                $dirty = $false
                 return
             }
             $firstLine = (($batchText -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1)
             $before = [int](Invoke-TeamsJs $ctx "count($(ConvertTo-Json ([string]$firstLine) -Compress))")
+            $sendPressed = $true
             $click = Invoke-TeamsJs $ctx 'clickSend()'
             if ($click -ne 'CLICKED') {
                 # 找不到或按鈕停用時改按 Ctrl+Enter (Teams 的送出快捷鍵)
@@ -374,6 +416,7 @@ function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [s
                 $sent = $st.compose.found -and $st.compose.images -eq 0 -and $st.compose.text -eq 0
             }
             if (-not $sent) { throw "按下傳送後 Teams 輸入框沒有清空，訊息可能沒有送出，請到 Teams 確認（不會自動重送）" }
+            $dirty = $false; $sendPressed = $false
             $confirmed = $false
             for ($i = 0; $i -lt 15 -and -not $confirmed; $i++) {
                 $confirmed = [int](Invoke-TeamsJs $ctx "count($(ConvertTo-Json ([string]$firstLine) -Compress))") -gt $before
@@ -382,6 +425,17 @@ function Send-GroupToTeamsCdp([string]$targetChatName, [string[]]$imageFiles, [s
             $note = if ($confirmed) { '（已在聊天記錄看到這則訊息）' } else { '（輸入框已清空；聊天記錄未讀到新訊息，請到 Teams 確認）' }
             Write-Host "✅ [CDP -> $($chat.Name)] 已送出第 $($b + 1)/$($plan.Count) 則訊息 $note" -ForegroundColor Green
             Start-Sleep -Seconds 2
+        }
+        } catch {
+            # 還沒按傳送就失敗：清掉本次貼上的內容，下次排程才不會因殘留內容停住。
+            # 已按傳送但無法確認時不動 (可能正在送出)，下次傳送開始時會再清除。
+            if ($dirty -and -not $sendPressed) {
+                try {
+                    if (Clear-TeamsComposeCdp $ctx $chat) { Write-Host "🧹 [CDP -> $($chat.Name)] 已清除本次未送出的內容" -ForegroundColor DarkGray }
+                    else { Write-Host "⚠️ [CDP -> $($chat.Name)] 無法清除本次未送出的內容，下次傳送時會再清除" -ForegroundColor Yellow }
+                } catch { Write-Host "⚠️ [CDP -> $($chat.Name)] 無法清除本次未送出的內容（$($_.Exception.Message)），下次傳送時會再清除" -ForegroundColor Yellow }
+            }
+            throw
         }
     } finally {
         Close-TeamsCdpBrowser $ctx
@@ -409,7 +463,7 @@ function Test-TeamsTargetsCdp($ctx, $cfg) {
             $chat = Resolve-ChatTarget $t
             Open-TeamsChatCdp $ctx $chat
             $st = Wait-TeamsCompose $ctx $chat
-            $draft = if ($st.compose.images -gt 0 -or $st.compose.text -gt 0) { '⚠️ 輸入框有草稿，傳送前請清除' } else { '輸入框空白' }
+            $draft = if ($st.compose.images -gt 0 -or $st.compose.text -gt 0) { '⚠️ 輸入框有上次中斷留下的內容，下次傳送時會自動清除' } else { '輸入框空白' }
             $out += "  ✅ 發送對象「$($chat.Name)」：找到對話（標題：$(Get-ChatNameFromTitle $st.title)）、$draft"
         } catch {
             $out += "  ❌ 發送對象「$t」：$($_.Exception.Message)"
