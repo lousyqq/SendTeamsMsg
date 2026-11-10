@@ -75,6 +75,7 @@
       gap: 6px;
       transition: all 0.15s;
     }
+    [hidden] { display: none !important; }
     button:hover, .btn-label:hover {
       border-color: var(--accent);
       background: #2d3e5a;
@@ -175,6 +176,28 @@
       gap: 3px;
       cursor: pointer;
     }
+    .page-category-actions, .page-list-pager { display:flex; gap:5px; align-items:center; margin:6px 0; }
+    .page-category-actions button, .page-list-pager button { padding:3px 7px; font-size:11.5px; }
+    .page-list-pager span { flex:1; font-size:11px; color:var(--muted); text-align:center; }
+    .page-tab { overflow-wrap:anywhere; }
+    .schedule-page-row { display:flex; gap:6px; align-items:flex-start; padding:7px 0; border-bottom:1px solid var(--border); }
+    .schedule-page-name { flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; line-height:1.6; font-size:12px; }
+    .schedule-page-actions { display:flex; gap:3px; flex-shrink:0; }
+    .schedule-page-actions button { padding:2px 6px; font-size:11px; }
+    .schedule-page-list { max-height:340px; overflow:auto; }
+    .section-box { flex-shrink:0; }
+    details.panel-fold > summary { cursor:pointer; color:var(--accent); font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+    details.panel-fold > summary .fold-meta { display:block; color:var(--muted); font-size:11px; font-weight:400; margin:5px 0 0 14px; }
+    details.panel-fold[open] > summary { margin-bottom:10px; }
+    .inner-fold { border:1px solid var(--border); border-radius:6px; padding:8px; margin-bottom:10px; }
+    .preview-controls { position:sticky; top:0; z-index:3; background:var(--panel); }
+    #allPagesStatusSummary { max-height:260px; overflow:auto; overflow-wrap:anywhere; }
+    .preview-group { margin:10px 0; }
+    .preview-more { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+    #scheduleSearchInput { margin-bottom:8px; }
+    #scheduleSearchCount { font-size:11px; color:var(--muted); margin-bottom:8px; }
+    .sched-row [data-k="rowName"] { white-space:normal !important; overflow-wrap:anywhere; }
+    .sidebar.no-page-selection .section-box[data-page-editor] { display:none; }
     .field {
       margin-bottom: 8px;
     }
@@ -188,6 +211,10 @@
     .field input[type="number"],
     .field input[type="password"],
     .field input[type="time"],
+    .field input[type="search"],
+    #pageSearchInput,
+    #scheduleSearchInput,
+    #pageCategoryFilter,
     .field select,
     .field textarea {
       width: 100%;
@@ -203,6 +230,8 @@
       resize: vertical;
       min-height: 50px;
     }
+    #pageCategoryFilter, #pageSearchInput { margin:5px 0; }
+    button:disabled { opacity:0.45; cursor:not-allowed; }
     .grid-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -416,23 +445,28 @@
       color: #fbbf24;
     }
     .sched-row {
-      display: flex;
+      display: grid;
+      grid-template-columns:18px auto minmax(0,1fr) 14px;
       align-items: center;
       gap: 8px;
       cursor: pointer;
       font-size: 12.5px;
     }
     .sched-row .sched-time {
+      white-space:nowrap;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       color: #e9d5ff;
     }
     .sched-row .sched-meta {
-      margin-left: auto;
+      grid-column:2 / 5;
+      grid-row:2;
+      margin-left: 0;
       color: var(--muted);
       font-size: 11px;
-      white-space: nowrap;
+      white-space: normal;
     }
+    .sched-row > span:last-child { grid-column:4; grid-row:1; }
     .sched-body {
       margin-top: 8px;
       padding-top: 8px;
@@ -519,6 +553,13 @@
       line-height: 1.6;
       margin-bottom: 8px;
     }
+    .receiver-status { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+    .receiver-status .row { display: flex; gap: 6px; }
+    .receiver-status .label { color: var(--muted); flex: 0 0 64px; }
+    .receiver-status .warn { color: #fbbf24; }
+    .receiver-status .bad { color: #f87171; }
+    .receiver-status .good { color: #4ade80; }
+    .receiver-status ul { margin: 2px 0 0; padding-left: 16px; }
     .detect-report {
       margin: 6px 0 0;
       padding: 6px 8px;
@@ -547,6 +588,14 @@
       font-size: 12px;
       padding: 6px 4px;
     }
+    .hover-help { margin-top:6px; }
+    .hover-help > button { padding:0; border:0; background:none; color:var(--accent); font-size:12px; text-decoration:underline dotted; text-underline-offset:3px; }
+    .hover-help [role="tooltip"] { display:none; margin-top:6px; padding:8px; border:1px solid var(--border); border-radius:6px; color:var(--muted); font-size:12px; line-height:1.6; }
+    .hover-help:hover [role="tooltip"], .hover-help:focus-within [role="tooltip"] { display:block; }
+    #scheduleList { max-height:420px; overflow-y:auto; }
+    .schedule-actions { display:flex; justify-content:space-between; gap:8px; margin:8px 0; }
+    .schedule-actions button { padding:3px 8px; font-size:12px; }
+    .sync-row button { flex-shrink:0; white-space:nowrap; }
     .chk-row {
       display: flex;
       align-items: center;
@@ -570,7 +619,8 @@
       <a class="btn-label" href="/USER_MANUAL.html" target="_blank" rel="noopener" style="text-decoration:none;">📖 使用手冊</a>
     </div>
   </header>
-
+ 
+ 
   <div class="workspace">
     <!-- 左側設定面板 -->
     <div class="sidebar" data-active-tab="pages">
@@ -579,12 +629,7 @@
         <button data-tab="send">📅 排程與發送</button>
         <button data-tab="global">⚙️ 全域設定</button>
       </div>
-
-
-
-
-
-      <!-- ===== 分頁：頁面與警戒線 ===== -->
+<!-- ===== 分頁：頁面與警戒線 ===== -->
       <div class="section-box" data-tab="pages">
         <div class="section-title">
           <span>擷取頁面</span>
@@ -593,13 +638,22 @@
             <button id="deletePageBtn" style="padding:2px 8px;font-size:11.5px;color:#f87171;">🗑️ 刪除</button>
           </div>
         </div>
+        <label for="pageCategoryFilter" style="font-size:12px;">分類</label>
+        <select id="pageCategoryFilter" aria-label="顯示的頁面分類"></select>
+        <details class="panel-fold inner-fold" id="categoryManageFold">
+          <summary>管理分類</summary>
+        <div class="page-category-actions">
+          <button id="addCategoryBtn">＋ 新增分類</button>
+          <button id="renameCategoryBtn">重新命名</button>
+          <button id="deleteCategoryBtn">刪除分類</button>
+        </div>
+        </details>
+        <input id="pageSearchInput" type="search" placeholder="搜尋此分類的頁面名稱" aria-label="搜尋此分類的頁面" />
         <div class="page-tabs" id="pageTabs"></div>
+        <div class="page-list-pager"><button id="pageListPrev">上一頁</button><span id="pageListCount"></span><button id="pageListNext">下一頁</button></div>
       </div>
-
-
-
-
-
+ 
+ 
       <div class="section-box" data-tab="pages">
         <div class="section-title">
           <span>此頁面設定</span>
@@ -616,6 +670,7 @@
           <label>頁面名稱</label>
           <input type="text" id="pageNameInput" />
         </div>
+        <div class="field"><label for="pageCategoryInput">所屬分類（變更即可移動頁面）</label><select id="pageCategoryInput"></select></div>
         <div class="field">
           <label>網址（按 Enter 或「抓圖」更新中間畫面）</label>
           <div style="display:flex;gap:5px;">
@@ -625,7 +680,19 @@
             </button>
           </div>
         </div>
-        <div class="field">
+        <details class="panel-fold inner-fold" id="pageLoginFold">
+          <summary>網站登入<span class="fold-meta" id="pageLoginSummary"></span></summary>
+          <label><input type="checkbox" id="pageAuthEnabledChk" /> 使用帳密自動登入</label>
+          <div id="pageAuthFields" hidden>
+            <div class="grid-2">
+              <div class="field"><label for="pageAuthUserInput">此頁帳號</label><input type="text" id="pageAuthUserInput" autocomplete="off" /></div>
+              <div class="field"><label for="pageAuthPassInput">此頁密碼</label><input type="password" id="pageAuthPassInput" autocomplete="new-password" /></div>
+            </div>
+          </div>
+          <div id="pageAuthHelp" style="font-size:11px;color:var(--muted);line-height:1.5;"></div>
+        </details>
+        <details class="panel-fold inner-fold" id="pageZoomFold">
+          <summary>網頁縮放<span class="fold-meta" id="pageZoomSummary"></span></summary>
           <label for="pageBrowserZoom">網頁縮放（50～200 的整數 %；小於 100 一次看到較大範圍，大於 100 放大文字與圖表）</label>
           <div class="zoom-input-row">
             <input type="number" id="pageBrowserZoom" min="50" max="200" step="1" inputmode="numeric" />
@@ -640,8 +707,14 @@
             <button type="button" data-zoom="200">200</button>
           </div>
           <div style="font-size:11px;color:#94a3b8;line-height:1.5;margin-top:5px;">按「抓圖」開啟 Edge → 捲到要的位置 → 按「擷取目前畫面」→ 回來框選。排程會還原縮放與捲動位置；變更後請確認警戒線。</div>
-        </div>
+        </details>
         <div class="effective-target" id="cropSummary" style="margin-top:0;margin-bottom:8px;"></div>
+        <details class="panel-fold inner-fold" id="pageTimeFold" hidden>
+          <summary>圖表時間區間<span class="fold-meta" id="pageTimeSummary"></span></summary>
+          <label><input type="checkbox" id="pageTimeNowChk" /> 擷取前先切到 NOW</label>
+          <div class="field" style="margin-top:8px;"><label for="pageTimeRange">到 NOW 後的區間</label><select id="pageTimeRange"><option value="7d">7d（最近七天）</option><option value="3d">3d（最近三天）</option><option value="keep">只切 NOW，不點選區間</option></select></div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.6;">只套用此頁的 Zabbix 圖表。取消勾選就不調整時間；抓圖與排程共用此設定。更改區間後請重新抓圖並確認警戒線，Y 軸刻度可能改變。</div>
+        </details>
         <details class="advanced">
           <summary>進階：擷取範圍數值、載入等待秒數</summary>
           <div class="field" style="margin-top:8px;">
@@ -660,31 +733,35 @@
         </details>
         <div class="effective-target" id="pageEffectiveTarget"></div>
       </div>
-
-
-
-
-
+ 
+ 
       <!-- 警戒線清單與編輯區 -->
       <div class="section-box" id="rulesSection" data-tab="pages">
         <div class="section-title">
-          <span>警戒線（昨日區間）</span>
+          <span>監測項目（警戒線／數值門檻）</span>
         </div>
         <div class="rule-hint" id="ruleHint">
           在中間圖上用 <b>📏 警戒線</b> 模式：<b>拖曳</b>框出圖表最右邊「昨日」那一段 → 新增一條；
           <b>拖曳紅線</b>調整高度；拖曳框內可移動。沒有任何警戒線＝只截圖。
         </div>
         <div id="rulesList"></div>
-
-
-
-
-
+ 
+ 
         <div id="ruleEditor" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
           <label class="chk-row">
             <input type="checkbox" id="ruleEnabledChk" checked />
-            <strong>啟用此警戒線</strong>
+            <strong>啟用此監測項目</strong>
           </label>
+          <div class="field"><label for="measureModeSelect">判定方式</label><select id="measureModeSelect"><option value="pixel">警戒線（固定像素高度）</option><option value="numeric">數值門檻（辨識左側 Y 軸）</option></select></div>
+          <div id="numericEditor" hidden>
+            <div class="field"><label for="valueThresholdInput">藍色最高值超過多少才示警</label><input id="valueThresholdInput" type="number" step="any" placeholder="例如 30" /></div>
+            <button id="selectAxisBtn" type="button">框選左側 Y 軸刻度</button>
+            <p class="rule-hint">監測框只框要比較的藍色曲線，包含完整高度。另框左側至少三個刻度數字，勿含座標軸線、標題或右側秒數；兩個框都必須保留在擷取範圍內。僅支援線性刻度，K／M／G／T 以千進位換算，門檻填換算後數值。</p>
+            <div class="field"><label>左側刻度框（X、Y、寬、高）</label><div class="grid-4"><input id="axisX" type="number" aria-label="刻度框 X" placeholder="X" /><input id="axisY" type="number" aria-label="刻度框 Y" placeholder="Y" /><input id="axisW" type="number" aria-label="刻度框寬" placeholder="寬" /><input id="axisH" type="number" aria-label="刻度框高" placeholder="高" /></div></div>
+            <button id="numericPreviewBtn" type="button" style="margin-top:8px;">讀取刻度並試算</button>
+            <p id="numericResult" class="rule-hint" aria-live="polite"></p>
+            <p class="rule-hint">排程每次截圖重新辨識，不沿用預覽數值。峰值落在辨識誤差內、刻度不清或找不到藍色時，回報「無法判定」。請先用下方「從圖上取色」指定藍色。</p>
+          </div>
           <div class="field">
             <label>圖表名稱</label>
             <input type="text" id="ruleNameInput" />
@@ -730,23 +807,33 @@
             <button id="pickColorBtn" style="padding:2px 8px;font-size:11.5px;" title="下一次點擊圖上的曲線即取用該顏色">💧 從圖上取色</button>
           </details>
           <div style="display:flex;justify-content:space-between;gap:6px;">
-            <button id="deleteRuleBtn" style="color:#f87171;border-color:#7f1d1d;">🗑️ 刪除此警戒線</button>
+            <button id="deleteRuleBtn" style="color:#f87171;border-color:#7f1d1d;">🗑️ 刪除監測項目</button>
             <span id="ruleLiveMetrics" style="font-size:11.5px;color:var(--muted);align-self:center;"></span>
           </div>
         </div>
       </div>
-
-
-
-
-
+ 
+ 
       <!-- ===== 分頁：排程與發送 ===== -->
       <div class="section-box" data-tab="send" style="border-color:#38bdf8;">
-        <div class="section-title"><span>預設發送對象</span></div>
+        <div class="section-title"><span>預覽與測試</span></div>
         <div class="field">
-          <label>Teams 對話名稱（與聊天清單上顯示的一模一樣；排程沒指定時使用）</label>
+          <div id="selfTestScheduleHint" style="font-size:12px;color:#93c5fd;margin-top:4px;"></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px">
+            <button id="sendToSelfBtn" style="min-width:0;padding:5px;font-size:12px;white-space:normal" title="將目前預覽傳給所選 Teams 中的登入者本人；忽略所有收件人設定，核對確認後才送出">📨 將目前預覽傳給自己</button>
+            <button id="runScheduleToSelfBtn" style="min-width:0;padding:5px;font-size:12px;white-space:normal" title="依右上「預覽哪個排程」選定的排程重新擷取網站、執行警戒線判定，再核對傳給自己；原排程收件人不變">▶ 執行排程傳給自己</button>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:5px;">只測試右上「預覽哪個排程」選定的一個排程；確認本人對話後才送出。</div>
+          <details class="panel-fold" id="selfHelpFold" style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.6;"><summary>使用說明</summary><p>預覽使用目前圖片；執行排程重新擷取與判定，正常也會傳給自己，忽略正式收件人。下方勾選框控制自動排程；勾選時同步選中供測試，多個勾選不會合併測試。</p></details>
+          <button id="selfTestRefreshBtn" hidden style="margin-top:6px;padding:3px 10px;font-size:12px;" title="只查詢原測試，不建立新傳送">🔄 重新查詢測試狀態</button>
+          <div id="selfTestStatus" role="status" style="font-size:12px;line-height:1.6;margin-top:6px;white-space:pre-wrap;"></div>
+        </div>
+      </div>
+      <details class="section-box panel-fold" data-tab="send" id="teamsSettingsFold" style="border-color:#38bdf8;">
+        <summary>Teams 傳送設定<span class="fold-meta" id="teamsSettingsSummary"></span></summary>
+        <div class="field">
+          <label>預設 Teams 對話名稱（排程沒指定時使用）</label>
           <input type="text" id="defaultChatInput" placeholder="例如：E3 乖乖_2026APM" />
-          <button id="sendToSelfBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" title="把發送對象設成自己跟自己的個人對話">📨 先傳給自己測試</button>
         </div>
         <div class="field" style="margin-bottom:0;">
           <label>使用哪個 Teams</label>
@@ -755,77 +842,85 @@
             <option value="pwa">只用 Teams 應用程式 (PWA)</option>
             <option value="edge-tab">只用 Edge 分頁（teams.cloud.microsoft）</option>
             <option value="desktop">只用桌面版 Teams</option>
-            <option value="cdp">CDP 背景傳送（鎖定、螢幕關閉也能傳；需先登入）</option>
+            <option value="cdp">CDP 背景傳送（可鎖定，需先設定對象）</option>
           </select>
-          <div id="teamsWindowHelp" style="font-size:11px;color:var(--muted);margin-top:4px;">程式會用您已經開著、已經登入的 Teams，不需另外登入。發送前請先開好 Teams；同時開著好幾種時，選「只用…」指定。</div>
+          <div id="teamsWindowHelp" style="font-size:11px;color:var(--muted);margin-top:4px;">使用已登入的 Teams；正式傳送會先核對對話並清除舊草稿。多種 Teams 同時開著時，請選「只用…」指定。</div>
           <button id="detectTeamsBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" title="列出開著的 Teams、發送時會用哪一個、能否找到發送對象；不會切換或貼上">🔍 偵測 Teams 視窗</button>
-          <button id="cdpSetupBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" hidden>🔐 登入並檢查 CDP 傳送</button>
-          <div id="cdpHelp" style="font-size:12px;color:var(--muted);margin-top:6px;" hidden>排程時在背景（不顯示視窗）開啟專用 Edge 的 Teams 網頁版傳送，不用開著 Teams、不用剪貼簿與滑鼠，Windows 鎖定或螢幕關閉時也能傳；不可登出、睡眠。第一次使用請按上方按鈕，在 Edge 登入 Teams 網頁版（之後登入過期再按一次）。發送對象與其他模式相同：填 Teams 聊天清單上的名稱，標題完全相同才貼上。每批最多 4 張圖片＋一段文字（合計最多 25 MiB），超過時分批；任何確認失敗即停止，不重送。</div>
-          <pre id="detectTeamsResult" class="detect-report" hidden></pre>
+          <button id="cdpSetupBtn" style="margin-top:6px;padding:3px 10px;font-size:12px;" hidden>設定 CDP 收件對象</button>
+          <pre id="detectTeamsResult" class="detect-report" aria-label="Teams 檢查結果" aria-live="polite" hidden></pre>
+          <div id="cdpBindingsBox" hidden style="margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;"><b id="cdpBindingsTitle">已設定的 CDP 對象</b><button id="cdpBindingsRefresh" type="button" style="font-size:11px;padding:2px 6px;">重新整理</button></div>
+            <div id="cdpBindingsDefault" style="margin-top:5px;overflow-wrap:anywhere;"></div>
+            <div id="cdpBindingsList" style="max-height:140px;overflow:auto;overflow-wrap:anywhere;" aria-live="polite"></div>
+            <div style="color:var(--muted);font-size:11px;margin-top:5px;">此處顯示已儲存的綁定；登入及連線狀態請按「檢查 CDP 連線」。</div>
+          </div>
+          <label id="cdpHeadlessRow" style="font-size:12px;margin-top:6px;" hidden><input id="cdpHeadlessChk" type="checkbox" checked> 無 Edge 視窗（排程截圖與 Teams 傳送都在背景）</label>
+          <div id="cdpHelpWrap" class="hover-help" hidden>
+            <button type="button" aria-describedby="cdpHelp">使用說明 ⓘ</button>
+            <div id="cdpHelp" role="tooltip" hidden></div>
+          </div>
         </div>
-      </div>
-
-
-
+      </details>
+      <details class="section-box panel-fold" data-tab="send" id="receiverFold" style="border-color:#22c55e;">
+        <summary>手機遙控（@日管）<span class="fold-meta" id="receiverSummary">讀取中…</span></summary>
+        <div id="receiverStatus" class="receiver-status" aria-live="polite"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+          <button id="receiverRefreshBtn" type="button" style="padding:3px 10px;font-size:12px;">重新整理</button>
+          <button id="receiverRegisterBtn" type="button" style="padding:3px 10px;font-size:12px;" title="建立「E3 日管接收監看」與「E3 日管接收端」兩個 Windows 工作排程">註冊離線通知與開機自動啟動</button>
+        </div>
+        <div id="receiverRegisterResult" role="status" style="font-size:12px;margin-top:6px;white-space:pre-wrap;"></div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;">第一次使用先雙擊 <code>setup_teams_receiver.bat</code> 選擇要接收指令的對話，再雙擊 <code>start_teams_receiver.bat</code> 開始接收。手機在該對話輸入 <code>@日管 狀態</code> 即可測試。</div>
+      </details>
 
 
       <div class="section-box" data-tab="send" style="border-color:#a855f7;">
-        <div class="section-title">
-          <span>排程時段</span>
-          <button id="addScheduleBtn" style="padding:2px 8px;font-size:11.5px;">➕ 新增</button>
-        </div>
+        <details id="schedulesFold" class="panel-fold">
+          <summary>排程時段<span id="schedulesFoldSummary" class="fold-meta"></span></summary>
+          <div class="schedule-actions">
+            <button id="addScheduleBtn" type="button">➕ 新增</button>
+            <button id="collapseSchedulesBtn" type="button">全部收合</button>
+          </div>
+        <input id="scheduleSearchInput" type="search" placeholder="搜尋排程名稱或時間" aria-label="搜尋排程名稱或時間" />
+        <div id="scheduleSearchCount"></div>
         <div id="scheduleList"></div>
-        <p id="scheduleRunHint" style="font-size:11px;color:var(--muted);line-height:1.6;">排程要求喚醒、錯過後補跑；喚醒受主機電源政策限制。需保持 Windows 登入；桌面不可用時先背景擷取，等待解鎖後再操作 Teams，最多等 30 分鐘。Teams 開著仍須解鎖才能貼圖。</p>
+        <details class="panel-fold" id="scheduleHelpFold" style="margin:8px 0;font-size:11px;color:var(--muted);"><summary>排程執行說明</summary><p id="scheduleRunHint" style="line-height:1.6;">桌面模式需解鎖才能操作 Teams；鎖定時最多等待解鎖 30 秒，逾時結束本次傳送，截圖保留。</p></details>
+        </details>
         <div class="sync-row">
           <span id="scheduleSyncStatus">⏳ 讀取 Windows 排程狀態...</span>
           <button id="registerSchedulesBtn" style="padding:2px 8px;font-size:11.5px;" title="重新把排程寫入 Windows 工作排程器">🔄 重新套用</button>
         </div>
         <pre id="registerReport" style="display:none;white-space:pre-wrap;font-size:11px;margin:8px 0 0;color:var(--muted);"></pre>
       </div>
-
-
-
-
-
-      <div class="section-box" data-tab="send">
-        <div class="section-title"><span>訊息文字</span></div>
+ 
+ 
+      <details class="section-box panel-fold" data-tab="global" id="messageFold">
+        <summary>手動全部頁面的訊息文字<span class="fold-meta" id="messageFoldSummary"></span></summary>
+        <p style="font-size:12px;color:var(--muted);">只供「全部啟用頁面」手動傳送使用。各排程請展開該排程的「訊息文字」分別設定。</p>
         <div class="field">
-          <label>全部正常時</label>
-          <input type="text" id="normalSummaryInput" />
+          <label>預設訊息內容（選填，每次都加入）</label>
+          <textarea id="defaultMessageInput" placeholder="留空不加入訊息文字"></textarea>
+        </div>
+        <div class="field">
+          <label>全部正常時的訊息（選填）</label>
+          <textarea id="normalSummaryInput" placeholder="留空不加入正常訊息"></textarea>
         </div>
         <div class="field" style="margin-bottom:0;">
-          <label>有異常時的開頭</label>
-          <input type="text" id="abnormalHeaderInput" />
+          <label>有異常時的訊息（選填）</label>
+          <textarea id="abnormalHeaderInput" placeholder="留空不加入異常開頭"></textarea>
         </div>
-      </div>
-
-
-
-
-
+        <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;">順序：排程訊息開頭 → 預設訊息內容 → 正常／異常訊息。留空就略過，全部留空可只傳圖片。超標明細及截圖／登入失敗原因仍會附上。</div>
+      </details>
+ 
+ 
       <!-- ===== 分頁：全域設定 ===== -->
       <div class="section-box" data-tab="global">
         <div class="section-title"><span>監控網站登入</span></div>
         <button id="loginSetupBtn" class="primary" style="width:100%;justify-content:center;margin-bottom:6px;" title="開啟專用 Edge，手動登入各監控網站一次">🔐 登入監控網站</button>
         <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">會開啟一個 Edge 視窗，裡面是所有啟用頁面的網址。逐一登入（可勾「記住我」）後<b>直接關閉該視窗</b>即可。第一次使用、登入過期或抓圖抓到登入畫面時使用。</div>
-        <div style="font-size:11.5px;color:var(--muted);margin-bottom:4px;">或填入帳密，讓程式在出現登入畫面時自動填入（選填）：</div>
-        <div class="grid-2">
-          <div class="field">
-            <label>帳號</label>
-            <input type="text" id="authUserInput" />
-          </div>
-          <div class="field">
-            <label>密碼</label>
-            <input type="password" id="authPassInput" />
-          </div>
-        </div>
-        <div style="font-size:11px;color:var(--muted);">頁面出現密碼框，或只有 Login / 登入 按鈕（例如 Zabbix「You are not logged in」）時，會自動點選並填入；已用「🔐 登入監控網站」登入過可留空。</div>
+        <div style="font-size:11.5px;color:var(--muted);">各網站的帳密請到「📄 頁面與警戒線」，選擇頁面後勾選「使用帳密自動登入」。每頁可使用不同帳密；需要 MFA／驗證碼的網站請先在此手動登入。</div>
       </div>
-
-
-
-
-
+ 
+ 
       <div class="section-box" data-tab="global">
         <div class="section-title"><span>Teams 發送安全</span></div>
         <label class="chk-row" style="margin-bottom:0;">
@@ -834,11 +929,8 @@
         </label>
       </div>
     </div>
-
-
-
-
-
+ 
+ 
     <!-- 中間視覺化畫布區 -->
     <div class="center-stage">
       <div class="canvas-toolbar">
@@ -860,43 +952,39 @@
           </div>
         </div>
       </div>
-
-
-
-
-
+ 
+ 
       <div class="canvas-scroll">
         <div class="canvas-wrapper">
           <canvas id="mainCanvas"></canvas>
         </div>
       </div>
     </div>
-
-
-
-
-
+ 
+ 
     <!-- 右側即時檢測結果與依 Teams 群組分流的預覽 -->
     <div class="right-panel">
-      <div class="section-box">
+      <div class="section-box preview-controls">
         <div class="section-title" style="margin-bottom:6px;"><span>👁 預覽哪個排程</span></div>
         <select id="previewScheduleSelect" class="preview-select"></select>
         <div class="test-actions">
           <button id="testPreviewBtn" title="用範例圖貼到 Teams，但不按 Enter，由您確認後自己送出">🧪 測試貼上（不送出）</button>
           <button id="testSendNowBtn" style="color:#fca5a5;border-color:#7f1d1d;" title="用範例圖直接送出到 Teams">🚀 正式送出…</button>
         </div>
+      </div>
+      <div class="section-box">
         <div class="section-title" style="margin-bottom:6px;">
           <span>⚡ 警戒線判定</span>
           <span id="overallBadge" class="status-pill status-ok">全部正常</span>
         </div>
-        <div id="allPagesStatusSummary" style="font-size:12px;line-height:1.6;"></div>
+        <details class="panel-fold" id="alertDetailsFold">
+          <summary>頁面判定明細<span class="fold-meta" id="alertDetailsSummary"></span></summary>
+          <div id="allPagesStatusSummary" style="font-size:12px;line-height:1.6;"></div>
+        </details>
       </div>
-
-
-
-
-
-      <div class="section-box" style="flex:1;display:flex;flex-direction:column;">
+ 
+ 
+      <div class="section-box">
         <div class="section-title">
           <span>💬 Teams 訊息預覽</span>
         </div>
@@ -904,11 +992,8 @@
       </div>
     </div>
   </div>
-
-
-
-
-
+ 
+ 
   <script>
     const DEFAULT_CONFIG = {
       schedules: [
@@ -925,8 +1010,9 @@
       teams: {
         prefer_window: "",
         target_chat_name: "",
-        normal_summary: "目前E3系統正常",
-        abnormal_header: "⚠️ E3系統監控異常通知（昨日圖示超過警戒線，請相關人員協助查詢）：",
+        default_message: "",
+        normal_summary: "",
+        abnormal_header: "",
         attach_annotated_image_on_alert: false,
         auto_press_enter: true
       },
@@ -1064,12 +1150,10 @@
         }
       ]
     };
-
-
-
-
-
+ 
+ 
     let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    const cdpBindingsState = {targets:null,error:'',loading:false,loadedAt:0};
     let currentPageIdx = 0;
     let selectedRuleIdx = 0;
     let currentTool = "rule";   // "crop" = ✂️ 擷取範圍、"rule" = 📏 警戒線、"pick_color" = 💧 取色 (點一次後回到 rule)
@@ -1082,45 +1166,33 @@
     let isCropDragging = false;
     let isDragging = false;
     let dragStart = { x: 0, y: 0 };
-
-
-
-
-
+ 
+ 
     const mainCanvas = document.getElementById("mainCanvas");
     const ctx = mainCanvas.getContext("2d");
     const loupeCanvas = document.getElementById("loupeCanvas");
     const loupeCtx = loupeCanvas.getContext("2d");
  
-
+ 
     function hexToRgb(hex) {
       const clean = (hex || "#000000").replace("#", "");
       const num = parseInt(clean, 16);
       return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
     }
-
-
-
-
-
+ 
+ 
     function rgbToHex(r, g, b) {
       return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
     }
-
-
-
-
-
+ 
+ 
     function isCurvePixel(r, g, b, rule) {
       const maxC = Math.max(r, g, b);
       const minC = Math.min(r, g, b);
       const saturation = maxC - minC;
       const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-
-
-
-
+ 
+ 
       if (rule.color_mode === "custom") {
         const target = hexToRgb(rule.target_color || "#2e34c6");
         const dist = Math.sqrt(
@@ -1130,25 +1202,120 @@
         );
         return dist <= (rule.color_tolerance || 48);
       }
-
-
-
-
-
+ 
+ 
       if (lum > 206 && saturation < 28) return false;
       if (r > 200 && (r - g) > 15 && g > 160 && b > 160) return false;
       return lum < 192 || saturation >= 30;
     }
 
-
-
-
-
+const numericCache = new WeakMap();
+    const numericPending = new WeakSet();
+    let numericAutoEnabled = false, numericRunning = false, numericAutoTimer = null;
+    function queueNumericPreviews() {
+      if (!numericAutoEnabled || numericAutoTimer !== null || numericRunning) return;
+      numericAutoTimer = setTimeout(async () => {
+        numericAutoTimer = null;
+        if (!numericAutoEnabled || numericRunning) return;
+        if (isDragging || isCropDragging || ruleDrag || captureCommitInFlight || captureCommitUncertain) {
+          queueNumericPreviews(); return;
+        }
+        // One OCR request at a time, including pages not currently selected.
+        for (const page of config.pages) {
+          const canvas = pageImageCanvases[page.id];
+          if (!canvas || canvas.isPlaceholder) continue;
+          for (const rule of page.rules || []) {
+            if (rule.enabled === false || rule.measure_mode !== 'numeric') continue;
+            const stored = numericCache.get(rule);
+            if (stored && stored.canvas === canvas && stored.key === numericKey(rule)) continue;
+            await runNumericPreview(page, rule);
+            return;
+          }
+        }
+      }, 500);
+    }
+    function numericKey(rule) {
+      return JSON.stringify([rule.roi,rule.axis_roi,rule.value_threshold,rule.color_mode,rule.target_color,rule.color_tolerance]);
+    }
+    function numericEvaluation(pageId, rule) {
+      const stored=numericCache.get(rule), canvas=pageImageCanvases[pageId];
+      if (stored && stored.canvas===canvas && stored.key===numericKey(rule)) return stored.result;
+      const ready=canvas && !canvas.isPlaceholder;
+      if (ready) queueNumericPreviews();
+      const pending=numericPending.has(rule) || (!!ready && numericAutoEnabled);
+      return {unknown:true, pending, exceeded:false, count:0, hitPoints:[], reason:numericPending.has(rule)?'正在辨識刻度…':!ready?'請先抓圖，再試算數值門檻':numericAutoEnabled?'等待自動辨識刻度…':'請啟動設定工具，或按「讀取刻度並試算」'};
+    }
+    function numericDescription(result) {
+      return (result.pending?'⏳ '+result.reason:result.unknown?'⚠️ 無法判定：'+result.reason:result.exceeded?'🚨 超標':'✅ 正常')+(result.detail?'；'+result.detail:'');
+    }
+    function ruleProblem(page, rule, result) {
+      return rule.measure_mode==='numeric' ? `⚠️ ${page.name}／${rule.name}：數值門檻${numericDescription(result)}` : `⚠️ ${page.name}／${rule.name}：警戒線無法判定（範圍或高度無效），請重新框選`;
+    }
+    function ruleAlert(page, rule, result) {
+      const text=(rule.alert_message||'').trim() || `🚨 ${page.name}／${rule.name}：超過${rule.measure_mode==='numeric'?'數值門檻':'警戒線'}`;
+      return text+(rule.measure_mode==='numeric'&&result.detail?`（${result.detail}）`:'');
+    }
+    async function runNumericPreview(page=config.pages[currentPageIdx], rule=page?.rules?.[selectedRuleIdx]) {
+      const canvas=pageImageCanvases[page?.id];
+      if(!rule || rule.measure_mode!=='numeric' || numericRunning)return;
+      if(!canvas||canvas.isPlaceholder){showSaveToast('請先抓圖，再試算數值門檻',true);return;}
+      const key=numericKey(rule);
+      numericRunning=true;numericPending.add(rule);renderAll();
+      const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),60000);
+      try {
+        const body=JSON.stringify({rule:JSON.parse(JSON.stringify(rule)),image:canvas.toDataURL('image/png')});
+        const response=await fetch('http://127.0.0.1:8765/api/numeric-preview',{method:'POST',headers:{'Content-Type':'application/json'},body,signal:controller.signal});
+        const data=await response.json();if(!response.ok)throw new Error(data.error||'本機辨識服務失敗');
+        if (!['normal','exceeded','unknown'].includes(data.status))throw new Error('本機辨識結果格式不正確');
+        numericCache.set(rule,{canvas,key,result:{...data,unknown:data.status==='unknown',count:0,hitPoints:[]}});
+      } catch(error) {
+        numericCache.set(rule,{canvas,key,result:{unknown:true,exceeded:false,count:0,hitPoints:[],reason:error.name==='AbortError'?'辨識逾時，請重新試算':error.message}});
+      } finally {clearTimeout(timeout);numericPending.delete(rule);numericRunning=false;renderAll();queueNumericPreviews();}
+    }
+    function renderNumericEditor(page, rule) {
+      const numeric=rule.measure_mode==='numeric';
+      document.getElementById('measureModeSelect').value=numeric?'numeric':'pixel';
+      document.getElementById('numericEditor').hidden=!numeric;
+      document.getElementById('thresholdYSlider').closest('.field').hidden=numeric;
+      document.getElementById('colorModeSelect').disabled=numeric;
+      document.getElementById('valueThresholdInput').value=rule.value_threshold??'';
+      for(const [id,key] of [['axisX','x'],['axisY','y'],['axisW','w'],['axisH','h']])document.getElementById(id).value=rule.axis_roi?.[key]??'';
+      document.getElementById('numericPreviewBtn').disabled=numericRunning;
+      document.getElementById('numericResult').textContent=numeric?numericDescription(numericEvaluation(page.id,rule)):'';
+      document.getElementById('selectAxisBtn').textContent=currentTool==='axis'?'請在圖上拖曳刻度範圍…':'框選左側 Y 軸刻度';
+    }
+    document.getElementById('measureModeSelect').onchange=e=>{
+      const r=config.pages[currentPageIdx]?.rules?.[selectedRuleIdx];if(!r)return;
+      r.measure_mode=e.target.value;
+      if(r.measure_mode==='numeric'){
+        r.color_mode='custom';if(!r.axis_roi)r.target_color='#6666ff';
+        if(r.value_threshold==null)r.value_threshold=30;
+        if(/^⚠️ \[.*昨日圖示超過警戒線/.test(r.alert_message||''))r.alert_message='';
+      }
+      setToolMode('rule');renderAll();
+    };
+    document.getElementById('valueThresholdInput').oninput=e=>{
+      const r=config.pages[currentPageIdx]?.rules?.[selectedRuleIdx];if(!r)return;
+      r.value_threshold=e.target.value===''?null:Number(e.target.value);renderCanvas();renderTeamsPreview();
+      document.getElementById('numericResult').textContent=numericDescription(numericEvaluation(config.pages[currentPageIdx].id,r));
+    };
+    for(const [id,key] of [['axisX','x'],['axisY','y'],['axisW','w'],['axisH','h']])document.getElementById(id).onchange=e=>{
+      const r=config.pages[currentPageIdx]?.rules?.[selectedRuleIdx];if(!r)return;r.axis_roi??={x:0,y:0,w:0,h:0};r.axis_roi[key]=e.target.value===''?null:Number(e.target.value);renderAll();
+    };
+    document.getElementById('selectAxisBtn').onclick=()=>{setToolMode(currentTool==='axis'?'rule':'axis');renderAll();};
+    document.getElementById('numericPreviewBtn').onclick=()=>runNumericPreview();
     function evaluateRule(pageId, rule) {
       if (rule.enabled === false) return { exceeded: false, count: 0, hitPoints: [] };
+      if (rule.measure_mode === 'numeric') return numericEvaluation(pageId, rule);
       const offCanvas = pageImageCanvases[pageId];
       if (!offCanvas || offCanvas.isPlaceholder) return { exceeded: false, count: 0, hitPoints: [] };
       const offCtx = offCanvas.getContext("2d");
+      if (!rule.roi || ![rule.roi.x, rule.roi.y, rule.roi.w, rule.roi.h, rule.threshold_y].every(v => typeof v === 'number' && Number.isFinite(v)) ||
+          rule.roi.x < 0 || rule.roi.y < 0 || rule.roi.w <= 0 || rule.roi.h <= 0 ||
+          rule.roi.x + rule.roi.w > offCanvas.width || rule.roi.y + rule.roi.h > offCanvas.height ||
+          rule.threshold_y < rule.roi.y || rule.threshold_y > rule.roi.y + rule.roi.h) {
+        return { exceeded: false, outOfRange: true, count: 0, hitPoints: [] };
+      }
       const rx = Math.max(0, Math.round(rule.roi.x));
       const ry = Math.max(0, Math.round(rule.roi.y));
       // 警戒線框落在圖外 (例如縮小擷取範圍後)：圖外像素會讀成黑色而誤判超標，改標示「超出範圍」(與引擎一致：略過不判定)
@@ -1158,18 +1325,12 @@
       const rw = Math.max(1, Math.min(offCanvas.width - rx, Math.round(rule.roi.w)));
       const rh = Math.max(1, Math.min(offCanvas.height - ry, Math.round(rule.roi.h)));
       const threshY = Math.round(rule.threshold_y);
-
-
-
-
-
+ 
+ 
       const imgData = offCtx.getImageData(rx, ry, rw, rh).data;
       const hitPoints = [];
-
-
-
-
-
+ 
+ 
       for (let dy = 0; dy < rh; dy++) {
         const absY = ry + dy;
         if (absY > threshY) continue;
@@ -1180,11 +1341,8 @@
           }
         }
       }
-
-
-
-
-
+ 
+ 
       const minPx = rule.min_pixels || 2;
       return {
         exceeded: hitPoints.length >= minPx,
@@ -1202,20 +1360,14 @@
       c.getContext("2d").drawImage(img, 0, 0);
       return c;
     }
-
-
-
-
-
+ 
+ 
     function setCroppedCanvas(pageId, canvas) {
       pageImageCanvases[pageId] = canvas;
       pageImages[pageId] = canvas;
     }
-
-
-
-
-
+ 
+ 
     function clampCrop(page, full) {
       const c = page.crop_region || (page.crop_region = { enabled: true, x: 0, y: 0, w: full.width, h: full.height });
       c.enabled = true;
@@ -1224,11 +1376,8 @@
       c.w = Math.max(1, Math.min(full.width - c.x, Math.round(c.w || full.width)));
       c.h = Math.max(1, Math.min(full.height - c.y, Math.round(c.h || full.height)));
     }
-
-
-
-
-
+ 
+ 
     // 擷取範圍不在整頁圖內 (例如新頁面或網頁版面變了) 時，改成整頁
     function fitCropToFull(page, full) {
       const c = page.crop_region;
@@ -1236,11 +1385,8 @@
         page.crop_region = { enabled: true, x: 0, y: 0, w: full.width, h: full.height };
       }
     }
-
-
-
-
-
+ 
+ 
     function rebuildCropped(page, persist) {
       const full = fullImages[page.id];
       if (!full) return;
@@ -1253,18 +1399,15 @@
       setCroppedCanvas(page.id, off);
       if (persist) scheduleSampleSave(page.id, "crop");
     }
-
-
-
-
-
+ 
+ 
     const sampleSaveTimers = {};
-    function scheduleSampleSave(pageId, kind) {
+    function scheduleSampleSave(pageId, kind, immediate = false) {
       const key = `${pageId}:${kind}`;
       clearTimeout(sampleSaveTimers[key]);
-      sampleSaveTimers[key] = setTimeout(async () => {
+      const save = async () => {
         const canvas = kind === "full" ? fullImages[pageId] : pageImageCanvases[pageId];
-        if (!canvas) return;
+        if (!canvas) return false;
         try {
           const resp = await fetch("http://127.0.0.1:8765/api/save-sample", {
             method: "POST",
@@ -1272,17 +1415,18 @@
             body: JSON.stringify({ pageId, kind, dataUrl: canvas.toDataURL("image/png") })
           });
           if (!resp.ok) throw new Error(resp.status);
+          return true;
         } catch (e) {
           showSaveToast("❌ 截圖沒有存到 sample_images（本機服務沒有回應）", true);
           showServiceBanner("⚠️ 本機服務沒有回應，截圖與設定都沒有存檔。請雙擊 open_calibrator.bat 重新開啟後再操作一次。");
+          return false;
         }
-      }, 600);
+      };
+      if (immediate) return save();
+      sampleSaveTimers[key] = setTimeout(save, 600);
     }
-
-
-
-
-
+ 
+ 
     function loadImage(src) {
       return new Promise((resolve, reject) => {
         const img = new Image();
@@ -1291,11 +1435,8 @@
         img.src = src;
       });
     }
-
-
-
-
-
+ 
+ 
     async function ensurePageImage(pageObj, callback) {
       if (pageImages[pageObj.id]) {
         if (callback) callback();
@@ -1313,9 +1454,11 @@
           return;
         } catch (e) {}
       }
-      // 2. 沒有整頁原圖 (舊資料)：直接用裁切後的範例圖 (只用同一頁的圖，不拿別頁代替)
+      // 2. 沒有整頁原圖 (舊資料)：直接用同一頁已存的裁切圖，不拿別頁代替。
+      //    經本機服務開啟時只用 sample_images 的實際截圖；sample_data.js 的內建範例圖
+      //    (page1～page4) 只供直接開啟 HTML 的離線示範，避免同 id 的頁面把舊範例當成實際畫面。
       const candidates = viaServer
-        ? [`/sample_images/${pageObj.id}.png?t=${Date.now()}`, sources[pageObj.id]]
+        ? [`/sample_images/${pageObj.id}.png?t=${Date.now()}`]
         : [sources[pageObj.id]];
       for (const src of candidates.filter(Boolean)) {
         try {
@@ -1327,11 +1470,8 @@
       if (!pageImageCanvases[pageObj.id]) setCroppedCanvas(pageObj.id, makePlaceholderCanvas());
       if (callback) callback();
     }
-
-
-
-
-
+ 
+ 
     function makePlaceholderCanvas() {
       const c = document.createElement("canvas");
       c.width = 960;
@@ -1353,11 +1493,8 @@
       g.fillText("請在左側「網址」填入網址後按 📸 抓圖", c.width / 2, 225);
       return c;
     }
-
-
-
-
-
+ 
+ 
     function loadSampleImages() {
       let loaded = 0;
       config.pages.forEach(p => {
@@ -1367,15 +1504,54 @@
         });
       });
     }
-
-
-
-
-
+ 
+ 
+    let selectedPageCategory = null, pageListOffset = 0;
+    const PAGE_LIST_SIZE = 20;
+    function getPageCategories() {
+      const seen = new Set(['']);
+      return [{id:'', name:'未分類'}, ...(Array.isArray(config.page_categories) ? config.page_categories : []).filter(c => {
+        if (!c || typeof c.id !== 'string' || !c.id || seen.has(c.id) || typeof c.name !== 'string') return false;
+        seen.add(c.id); return true;
+      })];
+    }
+    function pageCategoryId(page) { return getPageCategories().some(c => c.id === page?.category_id) ? page.category_id : ''; }
+    function filteredCapturePages() {
+      const term = document.getElementById('pageSearchInput').value.trim().toLocaleLowerCase();
+      return config.pages.filter(p => pageCategoryId(p) === selectedPageCategory && (!term || (p.name || '').toLocaleLowerCase().includes(term)));
+    }
+    function selectCategoryPage() {
+      const pages = filteredCapturePages();
+      if (pages.length && !pages.includes(config.pages[currentPageIdx])) { currentPageIdx = config.pages.indexOf(pages[0]); selectedRuleIdx = 0; }
+      pageListOffset = 0;
+      const current = config.pages[currentPageIdx];
+      if (pages.includes(current)) ensurePageImage(current, () => renderAll());
+      renderAll();
+    }
     function renderPageTabs() {
       const container = document.getElementById("pageTabs");
       container.innerHTML = "";
-      config.pages.forEach((p, i) => {
+      const categories = getPageCategories();
+      if (selectedPageCategory === null) selectedPageCategory = pageCategoryId(config.pages[currentPageIdx]);
+      if (!categories.some(c => c.id === selectedPageCategory)) selectedPageCategory = '';
+      const categorySelect = document.getElementById('pageCategoryFilter');
+      categorySelect.replaceChildren(...categories.map(c => new Option(`${c.name}（${config.pages.filter(p => pageCategoryId(p) === c.id).length}）`, c.id)));
+      categorySelect.value = selectedPageCategory;
+      document.getElementById('renameCategoryBtn').disabled = !selectedPageCategory;
+      document.getElementById('deleteCategoryBtn').disabled = !selectedPageCategory;
+      const pages = filteredCapturePages();
+      pageListOffset = Math.min(pageListOffset, Math.max(0, Math.floor((pages.length - 1) / PAGE_LIST_SIZE) * PAGE_LIST_SIZE));
+      const currentVisible = pages.includes(config.pages[currentPageIdx]);
+      document.querySelectorAll('.section-box[data-tab="pages"]').forEach((box, index) => { if (index) box.dataset.pageEditor = ''; });
+      document.querySelector('.sidebar').classList.toggle('no-page-selection', !currentVisible);
+      document.getElementById('deletePageBtn').disabled = !currentVisible;
+      mainCanvas.hidden = !currentVisible;
+      document.querySelector('.canvas-toolbar').inert = !currentVisible;
+      document.getElementById('pageListCount').textContent = pages.length ? `${pageListOffset + 1}–${Math.min(pageListOffset + PAGE_LIST_SIZE, pages.length)} / ${pages.length} 頁面` : '沒有符合的頁面，可在此分類新增';
+      document.getElementById('pageListPrev').disabled = pageListOffset === 0;
+      document.getElementById('pageListNext').disabled = pageListOffset + PAGE_LIST_SIZE >= pages.length;
+      pages.slice(pageListOffset, pageListOffset + PAGE_LIST_SIZE).forEach(p => {
+        const i = config.pages.indexOf(p);
         const div = document.createElement("div");
         const isEnabled = p.enabled !== false;
         div.className = "page-tab" + (i === currentPageIdx ? " active" : "") + (!isEnabled ? " disabled-page" : "");
@@ -1385,7 +1561,9 @@
           : activeRulesCount === 0
           ? "📸 只截圖"
           : `警戒線 (${activeRulesCount})`;
-        div.innerHTML = `<div style="font-weight:700;">#${i + 1} ${p.name.slice(0, 10)}</div><div style="color:var(--muted);font-size:11px;">${modeTag}</div>`;
+        const name = document.createElement('div'); name.style.fontWeight = '700'; name.textContent = `#${i + 1} ${p.name}`;
+        const detail = document.createElement('div'); detail.style.cssText = 'color:var(--muted);font-size:11px;'; detail.textContent = modeTag;
+        div.append(name, detail); div.title = p.name;
         div.onclick = () => {
           currentPageIdx = i;
           selectedRuleIdx = 0;
@@ -1399,11 +1577,7 @@
       });
     }
 
-
-
-
-
-    function renderCropFields() {
+function renderCropFields() {
       const page = config.pages[currentPageIdx];
       if (!page) return;
       const c = page.crop_region || {};
@@ -1424,44 +1598,36 @@
         el.append("擷取範圍：", strong);
       }
     }
-
-
-
-
-
+ 
+ 
     function renderSidebarInputs() {
       const page = config.pages[currentPageIdx];
       if (!page) return;
       document.getElementById("pageEnabledChk").checked = page.enabled !== false;
       document.getElementById("pageNameInput").value = page.name || "";
+      const categoryInput = document.getElementById('pageCategoryInput');
+      categoryInput.replaceChildren(...getPageCategories().map(c => new Option(c.name, c.id)));
+      categoryInput.value = pageCategoryId(page);
       document.getElementById("pageUrlInput").value = page.url || "";
       document.getElementById("pageWaitInput").value = page.wait_seconds || 5;
       renderBrowserZoom(page);
-
-
-
-
-
+      renderPageAuth(page);
+      renderPageTime(page);
+ 
+ 
       renderCropFields();
-
-
-
-
-
+ 
+ 
       document.getElementById("teamsWindowSelect").value = config.teams.prefer_window || "";
       renderCdpMode();
       document.getElementById("autoPressEnterChk").checked = config.teams.auto_press_enter !== false;
       const defTarget = config.teams.target_chat_name;
       document.getElementById("defaultChatInput").value = !isTargetSet(defTarget) ? "" : isSelfTarget(defTarget) ? SELF_TARGET : defTarget;
-      document.getElementById("normalSummaryInput").value = config.teams.normal_summary || "目前E3系統正常";
+      document.getElementById("defaultMessageInput").value = config.teams.default_message || "";
+      document.getElementById("normalSummaryInput").value = config.teams.normal_summary || "";
       document.getElementById("abnormalHeaderInput").value = config.teams.abnormal_header || "";
-      document.getElementById("authUserInput").value = config.auth.username || "";
-      document.getElementById("authPassInput").value = config.auth.password || "";
-
-
-
-
-
+ 
+ 
       const rulesList = document.getElementById("rulesList");
       rulesList.innerHTML = "";
       (page.rules || []).forEach((r, idx) => {
@@ -1469,15 +1635,15 @@
         const card = document.createElement("div");
         card.className = "rule-card" + (idx === selectedRuleIdx ? " selected" : "");
         const isRuleOn = r.enabled !== false;
-        const badgeClass = !isRuleOn ? "" : res.exceeded || res.outOfRange ? "status-alert" : "status-ok";
-        const badgeText = !isRuleOn ? "⏸️ 停用" : res.outOfRange ? "⚠️ 超出圖片範圍" : res.exceeded ? `🚨 超標 (${res.count} px)` : "✅ 正常";
+        const badgeClass = !isRuleOn ? "" : res.exceeded || res.outOfRange || res.unknown ? "status-alert" : "status-ok";
+        const badgeText = !isRuleOn ? "⏸️ 停用" : res.pending ? '⏳ 辨識中' : res.unknown ? '⚠️ 無法判定' : res.outOfRange ? "⚠️ 超出圖片範圍" : res.exceeded ? (r.measure_mode==='numeric'?'🚨 數值超標':`🚨 超標 (${res.count} px)`) : "✅ 正常";
         card.innerHTML = `
           <div class="rule-header">
             <span>${r.name}</span>
             <span class="status-pill ${badgeClass}">${badgeText}</span>
           </div>
           <div style="font-size:11px;color:var(--muted);">
-            昨日框: (${r.roi.x}, ${r.roi.y}, ${r.roi.w}x${r.roi.h}) | 警戒線 Y=${r.threshold_y}
+            監測框: (${r.roi.x}, ${r.roi.y}, ${r.roi.w}x${r.roi.h}) | ${r.measure_mode==='numeric'?'數值門檻':'警戒線 Y='+r.threshold_y}
           </div>
         `;
         card.onclick = () => {
@@ -1486,11 +1652,8 @@
         };
         rulesList.appendChild(card);
       });
-
-
-
-
-
+ 
+ 
       const editor = document.getElementById("ruleEditor");
       const rule = (page.rules || [])[selectedRuleIdx];
       if (rule) {
@@ -1501,33 +1664,25 @@
         document.getElementById("roiY").value = rule.roi.y;
         document.getElementById("roiW").value = rule.roi.w;
         document.getElementById("roiH").value = rule.roi.h;
-
-
-
-
-
+ 
+ 
         const slider = document.getElementById("thresholdYSlider");
         slider.min = rule.roi.y;
         slider.max = rule.roi.y + rule.roi.h;
         slider.value = rule.threshold_y;
         document.getElementById("thresholdYLabel").textContent = `Y = ${rule.threshold_y} px`;
-
-
-
-
-
+ 
+ 
         document.getElementById("colorModeSelect").value = rule.color_mode || "auto";
         document.getElementById("targetColorPicker").value = rule.target_color || "#2e34c6";
         document.getElementById("colorToleranceInput").value = rule.color_tolerance || 48;
         document.getElementById("ruleAlertMsgInput").value = rule.alert_message || "";
-
-
-
-
-
+        renderNumericEditor(page,rule);
+ 
+ 
         const evalRes = evaluateRule(page.id, rule);
         document.getElementById("ruleLiveMetrics").textContent =
-          evalRes.outOfRange
+          rule.measure_mode==='numeric' ? '' : evalRes.outOfRange
             ? "⚠️ 框在圖片範圍外，請刪除後在圖上重新拖曳"
             : evalRes.exceeded
             ? `🚨 偵測到 ${evalRes.count} 個像素越線！`
@@ -1536,31 +1691,22 @@
         editor.style.display = "none";
       }
     }
-
-
-
-
-
+ 
+ 
     // ✂️ 擷取範圍工具時顯示整頁原圖 + 擷取框；其他工具顯示裁切後的圖 (警戒線座標以裁切後的圖為準)
     function isCropView(page) {
       return currentTool === "crop" && !!fullImages[page.id];
     }
-
-
-
-
-
+ 
+ 
     function renderCanvas() {
       const page = config.pages[currentPageIdx];
       if (!page) return;
       const cropView = isCropView(page);
       const img = cropView ? fullImages[page.id] : pageImages[page.id];
       if (!img) return;
-
-
-
-
-
+ 
+ 
       // 「符合寬度」：依中間區域寬度自動縮放，筆電小螢幕也不用左右捲動
       if (zoomMode === "fit") {
         const avail = document.querySelector(".canvas-scroll").clientWidth - 40;
@@ -1570,27 +1716,18 @@
         zoomLevel = parseFloat(zoomMode);
       }
       document.querySelectorAll(".zoom-btn").forEach(b => b.classList.toggle("active-mode", b.dataset.zoom === zoomMode));
-
-
-
-
-
+ 
+ 
       mainCanvas.width = img.width;
       mainCanvas.height = img.height;
       mainCanvas.style.width = `${Math.round(img.width * zoomLevel)}px`;
       mainCanvas.style.height = `${Math.round(img.height * zoomLevel)}px`;
-
-
-
-
-
+ 
+ 
       ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
       ctx.drawImage(img, 0, 0);
-
-
-
-
-
+ 
+ 
       if (cropView) {
         const c = page.crop_region;
         ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
@@ -1614,39 +1751,44 @@
         ctx.fillText(label, c.x + 5 / zoomLevel, ly + th - 5 / zoomLevel);
         return;
       }
-
-
-
-
-
+ 
+ 
       {
         (page.rules || []).forEach((r, idx) => {
           if (r.enabled === false) return;
           const isSelected = idx === selectedRuleIdx;
           const res = evaluateRule(page.id, r);
-
-
-
-
-
+          if(r.measure_mode==='numeric'){
+            ctx.lineWidth=isSelected?2:1;
+            ctx.strokeStyle=res.unknown?'#f59e0b':res.exceeded?'#ef4444':'#22c55e';
+            ctx.strokeRect(r.roi.x,r.roi.y,r.roi.w,r.roi.h);
+            if(isSelected&&r.axis_roi){ctx.save();ctx.setLineDash([5,3]);ctx.strokeStyle='#a78bfa';const a=r.axis_roi;ctx.strokeRect(a.x,a.y,a.w,a.h);ctx.restore();}
+            if(Number.isFinite(res.threshold_y)&&res.threshold_y>=r.roi.y&&res.threshold_y<=r.roi.y+r.roi.h){
+              ctx.save();ctx.setLineDash([6,3]);ctx.strokeStyle='#e11d48';ctx.lineWidth=1.5;
+              ctx.beginPath();ctx.moveTo(r.roi.x,res.threshold_y);ctx.lineTo(r.roi.x+r.roi.w,res.threshold_y);ctx.stroke();
+              ctx.setLineDash([]);ctx.font='bold 11px sans-serif';ctx.fillStyle='#be123c';
+              ctx.fillText(`門檻 ${r.value_threshold}（左軸）`,r.roi.x+3,Math.max(r.roi.y+11,res.threshold_y-4));ctx.restore();
+            }
+            if(Number.isFinite(res.peak_y)){ctx.beginPath();ctx.arc(res.peak_x,res.peak_y,4,0,Math.PI*2);ctx.stroke();}
+            ctx.font='bold 11px sans-serif';ctx.fillStyle=res.unknown?'#b45309':res.exceeded?'#dc2626':'#15803d';
+            const tag=`${idx+1}.數值門檻 ${res.unknown?'待確認':res.exceeded?'超標':'正常'}`;
+            ctx.fillRect(r.roi.x,Math.max(0,r.roi.y-15),ctx.measureText(tag).width+6,14);ctx.fillStyle='#fff';ctx.fillText(tag,r.roi.x+3,Math.max(11,r.roi.y-4));
+            return;
+          }
+ 
+ 
           const dangerHeight = Math.max(0, r.threshold_y - r.roi.y);
           ctx.fillStyle = res.exceeded
             ? "rgba(239, 68, 68, 0.28)"
             : "rgba(56, 189, 248, 0.15)";
           ctx.fillRect(r.roi.x, r.roi.y, r.roi.w, dangerHeight);
-
-
-
-
-
+ 
+ 
           ctx.lineWidth = isSelected ? 2 : 1.2;
           ctx.strokeStyle = res.exceeded ? "#ef4444" : isSelected ? "#38bdf8" : "#22c55e";
           ctx.strokeRect(r.roi.x, r.roi.y, r.roi.w, r.roi.h);
-
-
-
-
-
+ 
+ 
           ctx.beginPath();
           ctx.moveTo(r.roi.x - 6, r.threshold_y);
           ctx.lineTo(r.roi.x + r.roi.w + 6, r.threshold_y);
@@ -1660,20 +1802,14 @@
             ctx.fillRect(r.roi.x - 6 - hs, r.threshold_y - hs, hs * 2, hs * 2);
             ctx.fillRect(r.roi.x + r.roi.w + 6 - hs, r.threshold_y - hs, hs * 2, hs * 2);
           }
-
-
-
-
-
+ 
+ 
           if (res.exceeded) {
             ctx.fillStyle = "#fde047";
             res.hitPoints.forEach(pt => ctx.fillRect(pt.x, pt.y, 1, 1));
           }
-
-
-
-
-
+ 
+ 
           ctx.font = "bold 10px sans-serif";
           const tagText = `${idx + 1}.${res.exceeded ? "🚨超標" : "✅正常"}`;
           const tw = ctx.measureText(tagText).width + 6;
@@ -1684,50 +1820,117 @@
         });
       }
     }
-
-// 頁面有啟用中的警戒線 = 判定；沒有 = 只截圖 (不再需要手動選「處理模式」)
+ 
+ 
+    // 頁面有啟用中的警戒線 = 判定；沒有 = 只截圖 (不再需要手動選「處理模式」)
     function hasActiveRules(p) {
       return (p.rules || []).some(r => r.enabled !== false);
     }
-
-
-
-
-
+ 
+ 
     // 存檔前把 mode 同步成與警戒線一致，讓引擎與舊版設定都看得懂
     function normalizePageModes() {
       config.pages.forEach(p => { p.mode = hasActiveRules(p) ? "threshold_check" : "capture_only"; });
     }
-
-
-
-
-
+ 
+ 
     // ===== 發送對象與排程共用工具 =====
     const PLACEHOLDER_TARGET = /請將.*連結|貼在這裡|預設Teams群組/;
     // 發送對象填 Teams 聊天清單上的對話名稱；「自己」= 自己跟自己的個人對話 (舊設定的 48:notes 連結也視為自己)
     const SELF_TARGET = "自己";
     const ALL_PAGES_KEY = "__all__";
     let previewScheduleId = null;   // null = 第一個啟用的排程；ALL_PAGES_KEY = 全部啟用頁面
+    const PANEL_LAYOUT_KEY = 'e3PanelLayout.v1';
+    function readPanelLayout() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(PANEL_LAYOUT_KEY) || '{}');
+        return {folds:saved?.folds && typeof saved.folds === 'object' ? saved.folds : {}, expanded:typeof saved?.expanded === 'string' ? saved.expanded : ''};
+      } catch { return {folds:{}, expanded:''}; }
+    }
+    let panelLayout = readPanelLayout();
+    const previewBatchLimits = new Map();
+    let pendingExpandedScheduleId = panelLayout.expanded;
+    function savePanelLayout() { try { localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(panelLayout)); } catch {} }
+    function rememberScheduleExpansion(id) { pendingExpandedScheduleId = ''; panelLayout.expanded = id || ''; savePanelLayout(); }
+    function bindPanelFold(details, key, defaultOpen, onOpen) {
+      if (typeof panelLayout.folds[key] !== 'boolean') panelLayout.folds[key] = !!defaultOpen;
+      details.open = panelLayout.folds[key];
+      details.querySelector('summary').onclick = e => {
+        e.preventDefault(); details.open = !details.open;
+        panelLayout.folds[key] = details.open; savePanelLayout();
+        if (details.open && onOpen) onOpen();
+      };
+      if (details.open && onOpen) onOpen();
+    }
+    function refreshPanelSummaries(pageCount) {
+      refreshSidebarFolds();
+      const fields = [['預設',config.teams.default_message],['正常',config.teams.normal_summary],['異常',config.teams.abnormal_header]];
+      const filled = fields.filter(([,value]) => String(value || '').trim()).map(([label]) => label);
+      document.getElementById('messageFoldSummary').textContent = filled.length ? `已填：${filled.join('、')}` : '全部留空（可只傳圖片）';
+      bindPanelFold(document.getElementById('messageFold'), 'messages', false);
+      document.getElementById('alertDetailsSummary').textContent = `共 ${pageCount} 頁；展開查看逐頁結果`;
+      bindPanelFold(document.getElementById('alertDetailsFold'), 'alerts', pageCount <= 8);
+    }
     let expandedScheduleIdx = -1;
-
-
-
-
-
+    function refreshSidebarFolds() {
+      const page=config.pages[currentPageIdx];
+      const ids=['categoryManageFold','teamsSettingsFold','selfHelpFold','scheduleHelpFold','receiverFold'];
+      for(const id of ids) bindPanelFold(document.getElementById(id),'sidebar:'+id,false);
+      // 排程時段是排程分頁的主要編輯區：預設展開。換新的記憶鍵，讓先前記住「收合」的使用者也先看到展開。
+      bindPanelFold(document.getElementById('schedulesFold'),'sidebar:schedulesFold:v2',true);
+      if(page){
+        bindPanelFold(document.getElementById('pageLoginFold'),JSON.stringify(['sidebarLogin',page.id]),false);
+        bindPanelFold(document.getElementById('pageZoomFold'),JSON.stringify(['sidebarZoom',page.id]),false);
+        bindPanelFold(document.getElementById('pageTimeFold'),JSON.stringify(['sidebarTime',page.id]),false);
+      }
+      const mode=config.teams.prefer_window || 'auto';
+      const names={auto:'自動',pwa:'Teams 應用程式',desktop:'桌面版','edge-tab':'Edge 分頁',cdp:'CDP'};
+      const suffix=mode==='cdp' ? (config.teams.cdp_headless !== false ? '｜無 Edge 視窗' : '｜保留 Edge 視窗') : '';
+      document.getElementById('teamsSettingsSummary').textContent=`${shortText(targetDisplayName(config.teams.target_chat_name)) || '尚未指定對象'}｜${names[mode] || mode}${suffix}`;
+    }
+ 
+ 
     function isTargetSet(t) {
       return !!(t && t.trim() && !PLACEHOLDER_TARGET.test(t));
     }
-
-
-
+ 
     function isSelfTarget(t) {
       const s = (t || "").trim();
       return /48(:|%3A)notes/i.test(s) || s === SELF_TARGET || s.toLowerCase() === "self";
     }
-
-
-
+ 
+ 
+    // 畫面顯示用：舊版「自己」連結 (含 48:notes 與組織帳號識別) 一律顯示成「自己」，不顯示原始網址
+    function targetDisplayName(t) {
+      if (!isTargetSet(t)) return "";
+      return isSelfTarget(t) ? SELF_TARGET : t.trim();
+    }
+    function shortText(s, max = 40) {
+      const chars = [...String(s || "")];
+      return chars.length > max ? chars.slice(0, max - 1).join("") + "…" : chars.join("");
+    }
+    // 舊版設定把「自己」存成 Teams 連結；引擎本來就視為「自己」。載入時改存成「自己」並移除空白收件項目，
+    // 讓 config、CDP 綁定名稱與畫面一致 (回傳是否有變更，交給自動儲存寫回)。
+    function normalizeLegacySelfTargets() {
+      const fix = v => (typeof v === "string" && /48(:|%3A)notes/i.test(v) && v.trim() !== SELF_TARGET) ? SELF_TARGET : v;
+      let changed = false;
+      const set = (obj, key) => { if (obj && typeof obj[key] === "string") { const n = fix(obj[key]); if (n !== obj[key]) { obj[key] = n; changed = true; } } };
+      set(config.teams, "target_chat_name");
+      for (const p of config.pages || []) set(p, "target_chat_name");
+      for (const s of config.schedules || []) {
+        set(s, "target_chat_name");
+        if (Array.isArray(s.target_chat_names)) {
+          // 同時移除空白項目 (引擎本來就略過，留著只會在畫面多一行空白)；全部空白時為 []，沿用頁面／預設對象
+          const next = [];
+          for (const name of s.target_chat_names.map(fix)) {
+            if (typeof name === "string" && !name.trim()) continue;
+            if (!next.includes(name)) next.push(name);
+          }
+          if (JSON.stringify(next) !== JSON.stringify(s.target_chat_names)) { s.target_chat_names = next; changed = true; }
+        }
+      }
+      return changed;
+    }
 
 
     // 引擎不接受的寫法 (與 e3_monitor_native.ps1 Resolve-ChatTarget 相同)；可用時回傳空字串
@@ -1739,50 +1942,74 @@
       if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) return "⚠️ Email 無法使用，請改填對話名稱";
       return "";
     }
-
-
-
-
-
+ 
+ 
     function isTargetUsable(t) {
       return isTargetSet(t) && !targetProblem(t);
     }
-
-
-
-
-
+ 
+ 
     function describeTarget(t) {
       if (!isTargetSet(t)) return "⚠️ 尚未設定";
       if (isSelfTarget(t)) return "👤 自己（個人對話）";
       return targetProblem(t) || `💬 ${t.trim()}`;
     }
-
-
-
-
-
+ 
+ 
     // 發送對象優先順序：排程 > 頁面 > 預設 (與 e3_monitor_native.ps1 相同)
+    function getScheduleTargets(sched) {
+      if (!sched) return [];
+      const names = Object.prototype.hasOwnProperty.call(sched, 'target_chat_names')
+        ? (Array.isArray(sched.target_chat_names) ? sched.target_chat_names : []) : [sched.target_chat_name];
+      return [...new Set(names.filter(name => typeof name === 'string').map(name => name.trim()).filter(Boolean))];
+    }
+    function resolveTargets(page, sched) {
+      const targets = getScheduleTargets(sched);
+      if (targets.length) return targets.map(target => ({target, source: '排程指定'}));
+      if (page && isTargetSet(page.target_chat_name)) return [{target:page.target_chat_name.trim(), source:'頁面指定'}];
+      return [{target:(config.teams.target_chat_name || '').trim(), source:'預設對象'}];
+    }
     function resolveTarget(page, sched) {
-      if (sched && isTargetSet(sched.target_chat_name)) return { target: sched.target_chat_name.trim(), source: "排程指定" };
-      if (page && isTargetSet(page.target_chat_name)) return { target: page.target_chat_name.trim(), source: "頁面指定" };
-      return { target: (config.teams.target_chat_name || "").trim(), source: "預設對象" };
+      return resolveTargets(page, sched)[0];
     }
 
-
-
-
-
-    function daysText(s) {
+function daysText(s) {
       const days = s.days || [];
       if (!days.length) return "每天";
       return "週" + WEEK_DAYS.filter(d => days.includes(d[0])).map(d => d[1]).join("");
     }
-
-
-
-
-
+ 
+    function scheduleRepeatMinutes(s) {
+      return s.repeat?.enabled === true ? Number(s.repeat.every) * (s.repeat.unit === 'hours' ? 60 : 1) : 0;
+    }
+    function scheduleTimingError(s) {
+      const validTime = t => /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(t || ''));
+      if (!validTime(s.time)) return '請填寫有效的開始時間。';
+      if (s.repeat?.enabled !== true) return '';
+      const r=s.repeat, minutes=scheduleRepeatMinutes(s);
+      if (!/^[1-9]\d{0,3}$/.test(String(r.every)) || !['minutes','hours'].includes(r.unit) || minutes > 1440) return '間隔請填正整數，最多 24 小時。';
+      if (!validTime(r.end_time)) return '請填寫有效的結束時間。';
+      const toMinutes = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
+      const span=(toMinutes(r.end_time)-toMinutes(s.time)+1440)%1440;
+      if (!span) return '開始與結束時間不可相同。';
+      if (minutes >= span) return '重複間隔必須小於執行時段長度。';
+      return '';
+    }
+    function scheduleTimingText(s) {
+      if (s.repeat?.enabled !== true) return s.time || '--:--';
+      const next=String(s.repeat.end_time).padStart(5,'0') < String(s.time).padStart(5,'0') ? '隔天 ' : '';
+      return `${s.time}～${next}${s.repeat.end_time} · 每 ${s.repeat.every} ${s.repeat.unit === 'hours' ? '小時' : '分鐘'}`;
+    }
+    function validateScheduleTiming() {
+      const invalid=(config.schedules || []).find(s => s.enabled !== false && scheduleTimingError(s));
+      if (!invalid) return true;
+      const message=`排程「${invalid.name || invalid.id}」：${scheduleTimingError(invalid)} 尚未儲存或同步。`;
+      setAutoSaveStatus('error',message);
+      document.getElementById('scheduleSyncStatus').textContent=message;
+      return false;
+    }
+ 
+ 
     function getPreviewSchedule() {
       ensureSchedules();
       if (previewScheduleId === ALL_PAGES_KEY) return null;
@@ -1791,11 +2018,8 @@
       previewScheduleId = s ? s.id : ALL_PAGES_KEY;
       return s;
     }
-
-
-
-
-
+ 
+ 
     // 與引擎相同：依排程 pages 順序，略過不存在或停用的頁面；sched 為 null 時 = 全部啟用頁面
     function pagesForSchedule(sched) {
       if (!sched) return config.pages.filter(p => p.enabled !== false);
@@ -1803,32 +2027,31 @@
         .map(id => config.pages.find(p => p.id === id))
         .filter(p => p && p.enabled !== false);
     }
-
-
-
-
-
+ 
+ 
     function renderPreviewSelect() {
       const sel = document.getElementById("previewScheduleSelect");
       const current = getPreviewSchedule();
       sel.innerHTML = "";
+      // 唯一的排程選單：右側預覽與左側「傳給自己」兩個測試按鈕共用 previewScheduleId
       config.schedules.forEach(s => {
         const opt = document.createElement("option");
         opt.value = s.id;
-        opt.textContent = `${s.time || "--:--"} ${s.name || s.id}${s.enabled === false ? "（停用）" : ""}`;
+        opt.textContent = `${scheduleTimingText(s)} ${s.name || s.id} · ${pagesForSchedule(s).length} 張${s.enabled === false ? "（自動停用，可手動測試）" : ""}`;
         sel.appendChild(opt);
       });
       const optAll = document.createElement("option");
       optAll.value = ALL_PAGES_KEY;
-      optAll.textContent = "全部啟用頁面";
+      optAll.textContent = "全部啟用頁面（僅供預覽圖片測試）";
       sel.appendChild(optAll);
       sel.value = current ? current.id : ALL_PAGES_KEY;
+      sel.disabled = selfTestStarting;
+      document.getElementById('selfTestScheduleHint').textContent=current
+        ? `本次測試：${current.name || current.id}，預計擷取 ${pagesForSchedule(current).length} 張（在右上「預覽哪個排程」切換）。`
+        : '目前預覽「全部啟用頁面」，只能用「將目前預覽傳給自己」；要執行排程測試，請在右上「預覽哪個排程」選一個排程。';
     }
-
-
-
-
-
+ 
+ 
     // 頁面表單下方顯示「實際會送到哪」，並列出會改送他處的排程
     function renderPageEffectiveTarget() {
       const el = document.getElementById("pageEffectiveTarget");
@@ -1849,16 +2072,39 @@
         el.appendChild(hint);
       }
       (config.schedules || [])
-        .filter(s => s.enabled !== false && (s.pages || []).includes(page.id) && isTargetSet(s.target_chat_name))
+        .filter(s => s.enabled !== false && (s.pages || []).includes(page.id) && getScheduleTargets(s).length)
         .forEach(s => {
           const o = document.createElement("div");
-          o.textContent = `↳ ${s.time} ${s.name || s.id}：改送到 ${describeTarget(s.target_chat_name)}`;
+          o.textContent = `↳ ${scheduleTimingText(s)} ${s.name || s.id}：發送到 ${getScheduleTargets(s).map(describeTarget).join('、')}`;
           el.appendChild(o);
         });
     }
-
-
-
+ 
+    // Preview current PNGs; a later scheduled capture can have a different compressed size.
+    function getTeamsPreviewImage(page) {
+      const image = pageImages[page.id];
+      if (!image || image.isPlaceholder) return {page, size:null, error:'尚未抓圖，請先抓圖後確認'};
+      try {
+        const canvas = typeof image.toDataURL === 'function' ? image : imageToCanvas(image);
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+        const size = base64.length * 3 / 4 - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
+        if (size > 10 * 1024 * 1024) return {page, size:null, error:'目前預覽圖超過單張 10 MiB，請縮小擷取範圍後重抓'};
+        return {page, size, dataUrl};
+      } catch (error) { return {page, size:null, error:'預覽圖無法讀取，請重新抓圖'}; }
+    }
+    function splitTeamsPreviewBatches(entries) {
+      const batches = []; let current = [], bytes = 0;
+      for (const entry of entries) {
+        const size = entry.size || 0;
+        if (current.length && (current.length >= 4 || bytes + size > 25 * 1024 * 1024)) {
+          batches.push(current); current = []; bytes = 0;
+        }
+        current.push(entry); bytes += size;
+      }
+      if (current.length || !batches.length) batches.push(current);
+      return batches;
+    }
 function renderTeamsPreview() {
       renderPageEffectiveTarget();
       renderPreviewSelect();
@@ -1867,29 +2113,22 @@ function renderTeamsPreview() {
       const summaryEl = document.getElementById("allPagesStatusSummary");
       const overallBadge = document.getElementById("overallBadge");
       const container = document.getElementById("teamsGroupsContainer");
-
-
-
-
-
+ 
+ 
       let totalAlerts = 0;
+      let totalProblems = 0;
       const groups = new Map();
+      const previewEntries = new Map();
       summaryEl.innerHTML = "";
-
-
-
-
-
+ 
+ 
       pages.forEach(p => {
         const { target, source } = resolveTarget(p, sched);
-        if (!groups.has(target)) groups.set(target, { source, pages: [], alerts: [] });
+        if (!groups.has(target)) groups.set(target, { source, pages: [], alerts: [], problems: [] });
         const grp = groups.get(target);
         grp.pages.push(p);
-
-
-
-
-
+ 
+ 
         const line = document.createElement("div");
         const pageNo = config.pages.indexOf(p) + 1;
         if (!hasActiveRules(p)) {
@@ -1897,49 +2136,93 @@ function renderTeamsPreview() {
         } else {
           const active = (p.rules || []).filter(r => r.enabled !== false);
           const hits = active.filter(r => evaluateRule(p.id, r).exceeded);
-          const outside = active.filter(r => evaluateRule(p.id, r).outOfRange);
-          hits.forEach(r => grp.alerts.push(r.alert_message));
+          const outside = active.filter(r => {const result=evaluateRule(p.id,r);return result.outOfRange||result.unknown;});
+          hits.forEach(r => grp.alerts.push(ruleAlert(p,r,evaluateRule(p.id,r))));
+          outside.forEach(r => grp.problems.push(ruleProblem(p,r,evaluateRule(p.id,r))));
+          totalProblems += outside.length;
           totalAlerts += hits.length;
           line.textContent = hits.length ? `🚨 #${pageNo} ${p.name}：${hits.length} 項超標` : `✅ #${pageNo} ${p.name}：正常`;
-          if (outside.length) line.textContent += `（⚠️ ${outside.length} 條警戒線超出圖片範圍，請重新框選）`;
+          if (outside.length) line.textContent = `⚠️ #${pageNo} ${p.name}：${outside.length} 條警戒線無法判定` + (hits.length ? `，${hits.length} 項超標` : '');
           if (hits.length || outside.length) line.style.color = hits.length ? "#f87171" : "#fbbf24";
+        }
+        const previewImage = getTeamsPreviewImage(p);
+        previewEntries.set(p.id, previewImage);
+        if (previewImage.error) {
+          totalProblems++;
+          grp.problems.push(`⚠️ ${p.name}：預覽圖待確認（${previewImage.error}）`);
+          line.textContent = `⚠️ #${pageNo} ${p.name}：預覽圖待確認`;
+          line.style.color = '#fbbf24';
         }
         summaryEl.appendChild(line);
       });
-
-
-
-
-
-      if (!pages.length) summaryEl.textContent = "此排程沒有可傳送的頁面（請到「排程與發送」勾選頁面）。";
-      overallBadge.className = "status-pill " + (totalAlerts ? "status-alert" : "status-ok");
-      overallBadge.textContent = totalAlerts ? `${totalAlerts} 項超標` : "全部正常";
-
-
-
-
-
+ 
+ 
+      const scheduleTargets = getScheduleTargets(sched);
+      const missingPages = sched ? (sched.pages || []).filter(id => !config.pages.some(p => p.id === id)) : [];
+      if (missingPages.length) {
+        const problems = missingPages.map(id => `⚠️ 排程指定的頁面「${id}」不存在，本頁圖片未附上，請修正排程設定`);
+        totalProblems += problems.length;
+        problems.forEach(message => {
+          const line = document.createElement('div'); line.textContent = message; line.style.color = '#fbbf24'; summaryEl.appendChild(line);
+        });
+        if (!groups.size) {
+          const {target, source} = resolveTarget({}, sched);
+          groups.set(target, {source, pages:[], alerts:[], problems:[]});
+        }
+        groups.forEach(group => group.problems.push(...problems));
+      }
+      if (groups.size && scheduleTargets.length > 1) {
+        const shared = groups.get(scheduleTargets[0]);
+        scheduleTargets.slice(1).forEach(target => groups.set(target, {...shared, pages:[...shared.pages], alerts:[...shared.alerts], problems:[...shared.problems]}));
+      }
+      if (!pages.length && !missingPages.length) summaryEl.textContent = "此排程沒有可傳送的頁面（請到「排程與發送」勾選頁面）。";
+      overallBadge.className = "status-pill " + (totalAlerts || totalProblems ? "status-alert" : "status-ok");
+      overallBadge.textContent = totalProblems ? `${totalAlerts} 項超標／${totalProblems} 項待確認` : totalAlerts ? `${totalAlerts} 項超標` : "未偵測到超標";
+      refreshPanelSummaries(pages.length + missingPages.length);
+ 
+ 
       container.innerHTML = "";
+      if (sched && sched.alert_only === true && (pages.length || missingPages.length)) {
+        const notice = document.createElement('div');
+        notice.id = 'alertOnlyPreviewNotice';
+        notice.style.cssText = 'font-size:12px;color:#93c5fd;margin-bottom:10px;line-height:1.6;';
+        const suppressed = !totalAlerts && !totalProblems;
+        notice.textContent = suppressed
+          ? '🔕 僅異常時發送：依目前預覽圖，本次不發送 Teams。排程仍會截圖並保留紀錄；實際依當次截圖判定。'
+          : '🔔 僅異常時發送：目前有超標或待確認項目。實際排程若超標、截圖／登入失敗或警戒線無法判定，會依原收件設定發送提醒與可用截圖。';
+        if (!pages.some(hasActiveRules)) notice.textContent += ' 此排程沒有啟用的警戒線，只有監控失敗時才會提醒。';
+        container.appendChild(notice);
+        if (suppressed) return;
+      }
+      if (groups.size) {
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:11.5px;color:var(--muted);margin-bottom:8px;';
+        note.textContent = '每則最多 4 張、合計 25 MiB；以下依目前預覽圖估算，實際依當次截圖大小與成功頁面分批。';
+        container.appendChild(note);
+      }
       groups.forEach((grp, target) => {
-        // 留空 (含只有空白) 時與引擎相同，使用預設文字
-        let msgText = grp.alerts.length === 0
-          ? ((config.teams.normal_summary || "").trim() ? config.teams.normal_summary : "目前E3系統正常")
-          : ((config.teams.abnormal_header || "").trim() ? config.teams.abnormal_header : "⚠️ 系統異常通知：") + "\n" + grp.alerts.join("\n");
-        if (sched && sched.title) msgText = sched.title + "\n" + msgText;
-
-
-
-
-
-        // 與引擎 (teams_delivery.ps1) 相同：每 4 張圖片＋同一段文字為一則訊息，按一次送出；超過 4 張才分批，
-        // 每批文字後加「（第 N/M 批）」。所有傳送方式 (PWA / Edge 分頁 / 桌面版 / CDP) 都一樣。
-        const when = sched ? `${daysText(sched)} ${sched.time}` : "手動執行";
-        const chunks = [];
-        for (let i = 0; i < grp.pages.length; i += 4) chunks.push(grp.pages.slice(i, i + 4));
-        if (!chunks.length) chunks.push([]);
-        chunks.forEach((chunk, ci) => {
-          const box = document.createElement("div");
-          box.className = "teams-preview";
+        const problems = [...grp.alerts, ...grp.problems];
+        const msgText = composeTeamsMessage(sched, problems);
+ 
+ 
+        const chunks = splitTeamsPreviewBatches(grp.pages.map(p => previewEntries.get(p.id)));
+        const when = sched ? `${daysText(sched)} ${scheduleTimingText(sched)}` : '手動執行';
+        const group = document.createElement('details'); group.className = 'panel-fold inner-fold preview-group';
+        const heading = document.createElement('summary');
+        heading.textContent = `發送到：${describeTarget(target)}`;
+        heading.style.color = isTargetUsable(target) ? '#93c5fd' : '#fbbf24';
+        const meta = document.createElement('span'); meta.className = 'fold-meta';
+        meta.textContent = `${grp.pages.length} 頁 · ${chunks.length} 則訊息${problems.length ? ` · ⚠️ ${problems.length} 項異常／待確認` : ''}`;
+        heading.appendChild(meta); group.appendChild(heading);
+        const body = document.createElement('div'); group.appendChild(body); container.appendChild(group);
+        const foldKey = JSON.stringify(['preview', sched?.id || ALL_PAGES_KEY, target]);
+        const renderGroup = () => {
+          body.replaceChildren();
+          const limit = Math.max(1, previewBatchLimits.get(foldKey) || 1);
+          chunks.slice(0, limit).forEach((chunk, index) => {
+          const box = document.createElement('div');
+          box.className = 'teams-preview';
+          box.dataset.batch = index + 1;
           box.innerHTML = `
             <div class="teams-header">
               <div class="teams-avatar">T</div>
@@ -1949,46 +2232,59 @@ function renderTeamsPreview() {
               </div>
             </div>
             <div class="teams-imgs"></div>
-            <div class="teams-text ${grp.alerts.length > 0 ? "has-alert" : ""}"></div>
-          `;
-          const targetEl = box.querySelector(".tp-target");
+            <div class="teams-text ${problems.length > 0 ? 'has-alert' : ''}"></div>`;
+          const targetEl = box.querySelector('.tp-target');
           targetEl.textContent = `發送到：${describeTarget(target)}`;
-          targetEl.style.color = isTargetUsable(target) ? "#93c5fd" : "#fbbf24";
-          box.querySelector(".tp-meta").textContent =
-            `${grp.source} · ${chunks.length > 1 ? `第 ${ci + 1}/${chunks.length} 則 · ` : ""}${chunk.length} 張圖片＋文字，一次送出 · ${when}`;
-          const imgsDiv = box.querySelector(".teams-imgs");
-          chunk.forEach(p => {
-            const img = pageImages[p.id];
-            if (img && img.isPlaceholder) {
-              const note = document.createElement("div");
-              note.style.cssText = "font-size:11.5px;color:#fbbf24;";
-              note.textContent = `⚠️ ${p.name}：還沒抓圖，測試與排程前請先 📸 抓圖`;
+          targetEl.style.color = isTargetUsable(target) ? '#93c5fd' : '#fbbf24';
+          const totalBytes = chunk.reduce((total, entry) => total + (entry.size || 0), 0);
+          const sizeText = chunk.every(entry => entry.size !== null) ? `${(totalBytes / 1048576).toFixed(2)} MiB` : '圖片尚待確認';
+          box.querySelector('.tp-meta').textContent = `${grp.source} · 第 ${index + 1}/${chunks.length} 則 · ${chunk.length} 張${msgText ? '＋文字' : '（只傳圖片）'} · ${sizeText} · ${when}`;
+          const imgsDiv = box.querySelector('.teams-imgs');
+          chunk.forEach(entry => {
+            if (entry.error) {
+              const note = document.createElement('div');
+              note.style.cssText = 'font-size:11.5px;color:#fbbf24;';
+              note.textContent = `⚠️ ${entry.page.name}：${entry.error}`;
               imgsDiv.appendChild(note);
-            } else if (img) {
-              const thumb = document.createElement("img");
-              thumb.src = img.src || img.toDataURL("image/png");
+            } else {
+              const thumb = document.createElement('img');
+              thumb.src = entry.dataUrl; thumb.alt = entry.page.name;
+              thumb.dataset.pageId = entry.page.id;
               imgsDiv.appendChild(thumb);
             }
           });
-          box.querySelector(".teams-text").textContent = chunks.length > 1 ? `${msgText}\n（第 ${ci + 1}/${chunks.length} 批）` : msgText;
-          container.appendChild(box);
+          box.querySelector('.teams-text').textContent = previewBatchText(msgText, index + 1, chunks.length);
+          box.querySelector('.teams-text').hidden = !msgText;
+          body.appendChild(box);
         });
+          if (chunks.length > 1) {
+            const actions = document.createElement('div'); actions.className = 'preview-more';
+            if (limit < chunks.length) {
+              const more = document.createElement('button'); more.type = 'button'; more.dataset.action = 'more-preview';
+              const remaining = chunks.slice(limit).reduce((sum, part) => sum + part.length, 0);
+              more.textContent = `顯示更多（還有 ${remaining} 張／${chunks.length - limit} 則）`;
+              more.onclick = () => { previewBatchLimits.set(foldKey, limit + 1); renderGroup(); };
+              actions.appendChild(more);
+            }
+            if (limit > 1) {
+              const less = document.createElement('button'); less.type = 'button'; less.textContent = '收起額外預覽';
+              less.onclick = () => { previewBatchLimits.set(foldKey, 1); renderGroup(); };
+              actions.appendChild(less);
+            }
+            body.appendChild(actions);
+          }
+        };
+        bindPanelFold(group, foldKey, groups.size <= 3 || target === groups.keys().next().value, renderGroup);
       });
     }
-
-
-
-
-
+ 
+ 
     document.getElementById("previewScheduleSelect").onchange = e => {
       previewScheduleId = e.target.value;
       renderTeamsPreview();
     };
-
-
-
-
-
+ 
+ 
     // 舊版設定只有 schedule_time 時，轉成一個包含所有頁面的排程
     function ensureSchedules() {
       if (Array.isArray(config.schedules)) return;
@@ -2004,44 +2300,88 @@ function renderTeamsPreview() {
       }];
       delete config.schedule_time;
     }
-
-
-
-
-
+    function initializeScheduleMessages() {
+      ensureSchedules();
+      for (const s of config.schedules) {
+        const previous=s.messages || {};
+        s.messages=Object.fromEntries(['default_message','normal_summary','abnormal_header'].map(k=>[k,
+          Object.prototype.hasOwnProperty.call(previous,k) ? String(previous[k] ?? '') : String(config.teams[k] ?? '')]));
+      }
+    }
+ 
+ 
     const WEEK_DAYS = [["MON", "一"], ["TUE", "二"], ["WED", "三"], ["THU", "四"], ["FRI", "五"], ["SAT", "六"], ["SUN", "日"]];
-
-
-
-
-
+ 
+ 
     // 排程卡片：預設收合成一行摘要，點開才編輯 (同時只展開一張)
     function renderSchedules() {
-      ensureSchedules();
+      initializeScheduleMessages();
+      const enabledCount=config.schedules.filter(s=>s.enabled!==false).length;
+      const listed=config.schedules.slice(0,3).map(s=>`${scheduleTimingText(s)} ${s.name || s.id}${s.enabled===false?'（停用）':''}`);
+      const more=config.schedules.length>3?` 等 ${config.schedules.length} 個`:'';
+      document.getElementById('schedulesFoldSummary').textContent=`${config.schedules.length} 個 · 啟用 ${enabledCount} 個${listed.length?'｜'+listed.join('、')+more:''}`;
       const list = document.getElementById("scheduleList");
       list.innerHTML = "";
+      if (expandedScheduleIdx < 0 && pendingExpandedScheduleId) {
+        expandedScheduleIdx = config.schedules.findIndex(s => s.id === pendingExpandedScheduleId);
+        if (expandedScheduleIdx >= 0) pendingExpandedScheduleId = '';
+      }
+      const term = document.getElementById('scheduleSearchInput').value.trim().toLocaleLowerCase();
+      const matches = s => !term || `${s.name || s.id} ${scheduleTimingText(s)}`.toLocaleLowerCase().includes(term);
+      document.getElementById('scheduleSearchCount').textContent = `顯示 ${config.schedules.filter(matches).length}／${config.schedules.length} 個排程`;
       config.schedules.forEach((s, si) => {
+        if (!matches(s)) return;
         const card = document.createElement("div");
+        card.dataset.scheduleId = s.id;
         card.className = "sched-card" + (s.enabled === false ? " disabled-sched" : "");
         const expanded = si === expandedScheduleIdx;
         card.innerHTML = `
-          <div class="sched-row">
+          <div class="sched-row" role="button" tabindex="0" aria-expanded="${expanded}">
             <input type="checkbox" data-k="enabled" title="啟用 / 停用此排程" />
             <span class="sched-time" data-k="rowTime"></span>
-            <span data-k="rowName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            <span data-k="rowName" style="min-width:0;overflow-wrap:anywhere;"></span>
             <span class="sched-meta" data-k="rowMeta"></span>
             <span style="color:var(--muted);">${expanded ? "▾" : "▸"}</span>
           </div>
           ${expanded ? `
           <div class="sched-body">
+            <div class="field"><label>執行方式</label><select data-k="repeatMode"><option value="fixed">固定時間執行一次</option><option value="repeat">時段內重複執行</option></select></div>
             <div class="grid-2">
-              <div class="field"><label>時間</label><input type="time" data-k="time" /></div>
+              <div class="field"><label>${s.repeat?.enabled === true ? '開始時間' : '時間'}</label><input type="time" data-k="time" /></div>
               <div class="field"><label>名稱</label><input type="text" data-k="name" /></div>
             </div>
+            <div data-k="repeatFields" ${s.repeat?.enabled === true ? '' : 'hidden'}>
+              <div class="field"><label>結束時間（此時間起不再啟動）</label><input type="time" data-k="endTime" /></div>
+              <div class="field"><label>每隔多久執行</label><div class="grid-2"><input type="number" min="1" max="1440" step="1" data-k="repeatEvery" aria-label="重複間隔" /><select data-k="repeatUnit" aria-label="間隔單位"><option value="minutes">分鐘</option><option value="hours">小時</option></select></div></div>
+              <div data-k="repeatSummary" style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:8px;"></div>
+              <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:8px;">從開始時間起算；結束時間較早表示隔天。星期以開始當天為準。已開始的工作會完成，同一任務尚未完成時略過下一輪。</div>
+            </div>
+            <div data-k="timingError" role="alert" style="font-size:12px;color:#f87171;"></div>
             <div class="field"><label>星期（全不勾 = 每天）</label><div class="sched-pages" data-k="days"></div></div>
-            <div class="field"><label>要傳的頁面（順序同頁面清單）</label><div class="sched-pages" data-k="pages"></div></div>
-            <div class="field"><label>訊息開頭（選填）</label><input type="text" data-k="title" placeholder="例如【08:00 早班巡檢】" /></div>
-            <div class="field"><label>改送到其他對象（選填）</label><input type="text" data-k="target_chat_name" placeholder="對話名稱；留空 = 預設對象" /></div>
+            <details class="panel-fold inner-fold field" data-k="pagesFold"><summary>要傳的頁面<span class="fold-meta" data-k="pagesSummary"></span></summary>
+              <input type="search" data-k="pageSearch" placeholder="搜尋頁面名稱或分類" aria-label="搜尋可加入排程的頁面" />
+              <div style="display:flex;gap:5px;margin:5px 0;"><select data-k="pagePicker" aria-label="選擇要加入排程的頁面" style="min-width:0;flex:1;"></select><button type="button" data-k="addPage" style="white-space:nowrap;">加入</button></div>
+              <div class="schedule-page-list" data-k="pages"></div>
+            </details>
+            <details class="panel-fold inner-fold field" data-k="messagesFold">
+              <summary>訊息文字<span class="fold-meta" data-k="messagesSummary"></span></summary>
+              <div style="font-size:11px;color:var(--muted);margin:6px 0;">只套用此排程，修改不影響其他排程。</div>
+              <div class="field"><label>訊息開頭（選填）</label><input type="text" data-k="title" placeholder="例如【08:00 早班巡檢】" /></div>
+              <div class="field"><label>每次都加入的訊息（選填）</label><textarea data-k="default_message" placeholder="留空就略過"></textarea></div>
+              <div class="field"><label>全部正常時的訊息（選填）</label><textarea data-k="normal_summary" placeholder="留空就略過"></textarea></div>
+              <div class="field"><label>有異常時的訊息（選填）</label><textarea data-k="abnormal_header" placeholder="留空就略過"></textarea></div>
+              <div style="font-size:11px;color:var(--muted);line-height:1.6;">順序：訊息開頭 → 每次訊息 → 正常／異常訊息。全部留空可只傳圖片；異常明細及失敗原因仍會附上。</div>
+            </details>
+            <details class="panel-fold inner-fold field" data-k="targetsFold">
+              <summary>排程收件對象<span class="fold-meta" data-k="targetsSummary"></span></summary>
+              <div data-k="targetRows"></div>
+              <button type="button" data-k="addTarget" style="padding:3px 8px;font-size:11.5px;margin-top:5px;">➕ 新增收件對象</button>
+              <div data-k="targetHelp" style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:5px;"></div>
+            </details>
+            <div class="field">
+              <label><input type="checkbox" data-k="alert_only" /> 僅異常時發送</label>
+              <div style="font-size:11px;color:var(--muted);line-height:1.6;">正常時只保留截圖與紀錄；任一頁超標、截圖／登入失敗或警戒線無法判定時，依原收件設定發送提醒與可用截圖。持續超標每次排程都提醒。</div>
+            </div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:8px;" data-k="taskInfo"></div>
             <div style="display:flex;justify-content:space-between;gap:6px;">
               <button data-k="delete" style="color:#f87171;border-color:#7f1d1d;padding:2px 8px;font-size:11.5px;">🗑️ 刪除</button>
@@ -2054,18 +2394,87 @@ function renderTeamsPreview() {
         q("rowName").textContent = s.name || s.id;
         const task = scheduleTaskInfo[s.id];
         q("rowMeta").textContent = `${pagesForSchedule(s).length} 張 · ${daysText(s)}` +
+          (s.repeat?.enabled === true ? ` · ${scheduleTimingText(s)}` : '') +
+          (s.alert_only === true ? " · 僅異常" : "") +
           (s.enabled === false ? "" : task ? (task.next ? ` · 下次 ${task.next}` : "") : " · ⚠️ 未寫入");
         q("enabled").checked = s.enabled !== false;
         q("enabled").onclick = e => e.stopPropagation();
-        q("enabled").onchange = e => { s.enabled = e.target.checked; renderSchedules(); renderTeamsPreview(); };
+        q("enabled").onchange = e => {
+          s.enabled = e.target.checked;
+          if(s.enabled) previewScheduleId=s.id;
+          else if(previewScheduleId===s.id) previewScheduleId=config.schedules.find(other=>other.enabled !== false)?.id || ALL_PAGES_KEY;
+          renderSchedules(); renderTeamsPreview();
+        };
         card.querySelector(".sched-row").onclick = () => {
           expandedScheduleIdx = expanded ? -1 : si;
+          rememberScheduleExpansion(expanded ? '' : s.id);
           if (!expanded) previewScheduleId = s.id;
           renderSchedules();
           renderTeamsPreview();
         };
+        card.querySelector('.sched-row').onkeydown = e => {
+          if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.currentTarget.click(); }
+        };
         if (expanded) {
-          ["time", "name", "title", "target_chat_name"].forEach(k => {
+          const updateMessageSummary=()=>{
+            const filled=[['開頭',s.title],['每次',s.messages.default_message],['正常',s.messages.normal_summary],['異常',s.messages.abnormal_header]].filter(([,v])=>String(v || '').trim()).map(([k])=>k);
+            q('messagesSummary').textContent=filled.length ? `已填：${filled.join('、')}` : '全部留空（可只傳圖片）';
+          };
+          updateMessageSummary();
+          bindPanelFold(q('messagesFold'),JSON.stringify(['messages',s.id]),false);
+          for(const key of ['default_message','normal_summary','abnormal_header']){
+            q(key).value=s.messages[key];
+            q(key).oninput=e=>{s.messages[key]=e.target.value;updateMessageSummary();renderTeamsPreview();};
+          }
+          q('repeatMode').value=s.repeat?.enabled === true ? 'repeat' : 'fixed';
+          q('repeatMode').onchange=e=>{
+            if (!s.repeat) s.repeat={enabled:false,every:30,unit:'minutes',end_time:`${String((Number((s.time || '08:00').split(':')[0])+8)%24).padStart(2,'0')}:${(s.time || '08:00').split(':')[1]}`};
+            s.repeat.enabled=e.target.value==='repeat'; renderSchedules(); renderTeamsPreview();
+          };
+          q('endTime').value=s.repeat?.end_time || '';
+          q('repeatEvery').value=s.repeat?.every ?? 30;
+          q('repeatUnit').value=s.repeat?.unit || 'minutes';
+          q('repeatEvery').max=s.repeat?.unit === 'hours' ? '24' : '1440';
+          for (const [key,field] of [['endTime','end_time'],['repeatEvery','every'],['repeatUnit','unit']]) {
+            q(key).onchange=e=>{s.repeat[field]=key==='repeatEvery' ? Number(e.target.value) : e.target.value;renderSchedules();renderTeamsPreview();};
+          }
+          q('repeatSummary').textContent=s.repeat?.enabled === true ? scheduleTimingText(s) : '';
+          q('timingError').textContent=scheduleTimingError(s);
+          const missing = (s.pages || []).filter(id => !config.pages.some(p => p.id === id)).length;
+          q('pagesSummary').textContent = `已選 ${(s.pages || []).length} 頁（依清單順序傳送）${missing ? ` · ⚠️ ${missing} 頁不存在` : ''}`;
+          bindPanelFold(q('pagesFold'), JSON.stringify(['pages',s.id]), false);
+          const refreshTargetSummary = () => {
+            const count = getScheduleTargets(s).length;
+            const invalid = getScheduleTargets(s).map(targetProblem).filter(Boolean).length;
+            q('targetsSummary').textContent = count ? `${count} 個收件對象${invalid ? ` · ⚠️ ${invalid} 項待確認` : ''}` : '沿用頁面／預設收件人';
+          };
+          refreshTargetSummary();
+          bindPanelFold(q('targetsFold'), JSON.stringify(['targets',s.id]), false);
+          q('alert_only').checked = s.alert_only === true;
+          q('alert_only').onchange = e => { s.alert_only = e.target.checked; renderSchedules(); renderTeamsPreview(); };
+          const rows = Array.isArray(s.target_chat_names) ? [...s.target_chat_names] : getScheduleTargets(s);
+          if (!rows.length) rows.push('');
+          const updateTargets = () => {
+            s.target_chat_names = [...rows];
+            s.target_chat_name = '';
+            refreshTargetSummary();
+            const invalid = getScheduleTargets(s).map(targetProblem).filter(Boolean);
+            q('targetHelp').textContent = invalid.length ? invalid.join('；') : '每列填一個對話名稱；相同名稱只發送一次。清單留空沿用原頁面／預設對象。CDP 需分別綁定各對象；同一批截圖會依序發送。';
+            q('targetHelp').style.color = invalid.length ? '#fbbf24' : 'var(--muted)';
+            renderTeamsPreview();
+          };
+          rows.forEach((name, index) => {
+            const row = document.createElement('div');row.style.cssText='display:flex;gap:5px;margin-bottom:5px;';
+            const input = document.createElement('input');input.type='text';input.value=name || '';input.placeholder='Teams 對話名稱或「自己」';input.style.minWidth='0';input.dataset.targetIndex=index;
+            input.setAttribute('aria-label', `收件對象 ${index+1}`);
+            input.oninput=()=>{rows[index]=input.value;updateTargets();};
+            const remove = document.createElement('button');remove.type='button';remove.textContent='移除';remove.style.cssText='white-space:nowrap;padding:3px 8px;';
+            remove.onclick=()=>{rows.splice(index,1);updateTargets();renderSchedules();};
+            row.append(input,remove);q('targetRows').appendChild(row);
+          });
+          q('targetHelp').textContent='每列填一個對話名稱；相同名稱只發送一次。清單留空沿用原頁面／預設對象。CDP 需分別綁定各對象；同一批截圖會依序發送。';
+          q('addTarget').onclick=()=>{rows.push('');updateTargets();renderSchedules();const inputs=list.querySelectorAll('[data-target-index]');inputs[inputs.length-1]?.focus();};
+          ["time", "name", "title"].forEach(k => {
             q(k).value = s[k] || "";
             q(k).onchange = e => {
               s[k] = e.target.value;
@@ -2073,13 +2482,12 @@ function renderTeamsPreview() {
               renderTeamsPreview();
             };
           });
-          q("taskInfo").textContent = `Windows 任務：E3_Monitor_${s.id}`;
+          const actualTask = scheduleTaskInfo[s.id];
+          const expectedName = scheduleTaskName(s);
+          q("taskInfo").textContent = `Windows 任務：${expectedName}` + (actualTask && actualTask.task_name !== expectedName ? `（目前：${actualTask.task_name || '舊版名稱'}；待同步）` : '');
+          q("taskInfo").style.overflowWrap = 'anywhere';
 
-
-
-
-
-          WEEK_DAYS.forEach(([code, label]) => {
+WEEK_DAYS.forEach(([code, label]) => {
             const lb = document.createElement("label");
             const chk = document.createElement("input");
             chk.type = "checkbox";
@@ -2094,36 +2502,58 @@ function renderTeamsPreview() {
             lb.append(chk, label);
             q("days").appendChild(lb);
           });
-
-
-
-
-
-          config.pages.forEach((p, pi) => {
-            const lb = document.createElement("label");
-            const chk = document.createElement("input");
-            chk.type = "checkbox";
-            chk.checked = (s.pages || []).includes(p.id);
-            chk.onchange = () => {
-              const set = new Set(s.pages || []);
-              chk.checked ? set.add(p.id) : set.delete(p.id);
-              s.pages = config.pages.map(x => x.id).filter(id => set.has(id));
-              renderSchedules();
-              renderTeamsPreview();
-            };
-            lb.title = p.name;
-            lb.append(chk, `#${pi + 1} ${p.name.slice(0, 8)}${p.enabled === false ? " (停用)" : ""}`);
-            q("pages").appendChild(lb);
+ 
+ 
+          const renderPagePicker = () => {
+            const term = q('pageSearch').value.trim().toLocaleLowerCase();
+            q('pagePicker').replaceChildren(new Option('請選擇要加入的頁面…', ''));
+            for (const category of getPageCategories()) {
+              const available = config.pages.filter(p => !(s.pages || []).includes(p.id) && p.enabled !== false && pageCategoryId(p) === category.id && (!term || `${p.name} ${category.name}`.toLocaleLowerCase().includes(term)));
+              if (!available.length) continue;
+              const group = document.createElement('optgroup'); group.label = category.name;
+              available.forEach(p => group.appendChild(new Option(`#${config.pages.indexOf(p) + 1} ${p.name}`, p.id)));
+              q('pagePicker').appendChild(group);
+            }
+            q('addPage').disabled = true;
+          };
+          q('pageSearch').oninput = renderPagePicker;
+          q('pagePicker').onchange = () => { q('addPage').disabled = !q('pagePicker').value; };
+          q('addPage').onclick = () => {
+            const id = q('pagePicker').value;
+            if (!config.pages.some(p => p.id === id && p.enabled !== false) || (s.pages || []).includes(id)) return;
+            s.pages = [...(s.pages || []), id];
+            renderSchedules(); renderTeamsPreview();
+          };
+          renderPagePicker();
+          if (!(s.pages || []).length) q('pages').textContent = '尚未加入頁面。請從上方選單加入。';
+          (s.pages || []).forEach((id, index) => {
+            const p = config.pages.find(p => p.id === id), row = document.createElement('div');
+            row.className = 'schedule-page-row'; row.dataset.pageId = id;
+            const name = document.createElement('div'); name.className = 'schedule-page-name';
+            const category = p ? getPageCategories().find(c => c.id === pageCategoryId(p)).name : '';
+            name.textContent = `${index + 1}. ${p ? p.name : '⚠️ 頁面不存在：' + id}${p?.enabled === false ? '（已停用，執行時略過）' : ''}`;
+            name.title = p ? `${category} / ${p.name}` : id;
+            const actions = document.createElement('div'); actions.className = 'schedule-page-actions';
+            for (const [action, label, delta] of [['up','↑',-1], ['down','↓',1], ['remove','移除',0]]) {
+              const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.action = action;
+              button.title = action === 'up' ? '上移' : action === 'down' ? '下移' : '從此排程移除'; button.setAttribute('aria-label', `${button.title}：${p?.name || id}`);
+              button.disabled = action === 'up' ? index === 0 : action === 'down' ? index === s.pages.length - 1 : false;
+              button.onclick = () => {
+                if (action === 'remove') s.pages.splice(index, 1);
+                else { const to = index + delta; if (to < 0 || to >= s.pages.length) return; [s.pages[index], s.pages[to]] = [s.pages[to], s.pages[index]]; }
+                renderSchedules(); renderTeamsPreview();
+              };
+              actions.appendChild(button);
+            }
+            row.append(name, actions); q('pages').appendChild(row);
           });
-
-
-
-
-
+ 
+ 
           q("delete").onclick = () => {
             if (!confirm(`確定刪除排程「${s.name || s.id}」？\n（會同時從 Windows 工作排程器移除）`)) return;
             config.schedules.splice(si, 1);
             expandedScheduleIdx = -1;
+            rememberScheduleExpansion('');
             renderSchedules();
             renderTeamsPreview();
           };
@@ -2135,97 +2565,108 @@ function renderTeamsPreview() {
         list.appendChild(card);
       });
     }
-
-
-
-
-
+ 
+    document.getElementById('scheduleSearchInput').oninput = renderSchedules;
+    document.getElementById('collapseSchedulesBtn').onclick=()=>{
+      expandedScheduleIdx=-1;rememberScheduleExpansion('');
+      for(const key of Object.keys(panelLayout.folds)) {
+        if(key.startsWith('["pages",') || key.startsWith('["targets",') || key.startsWith('["messages",'))panelLayout.folds[key]=false;
+      }
+      savePanelLayout();renderSchedules();
+    };
+ 
+ 
     document.getElementById("addScheduleBtn").onclick = () => {
       ensureSchedules();
-      // id 自動產生 (作為 Windows 任務名稱 E3_Monitor_<id>)，使用者不需要填
+      // id 保持固定供執行參數使用；Windows 任務顯示排程名稱。
       let n = config.schedules.length + 1;
       while (config.schedules.some(s => s.id === `sched${n}`)) n++;
       config.schedules.push({
         id: `sched${n}`,
         enabled: true,
         name: `排程 ${n}`,
+        alert_only: false,
         time: "08:00",
         days: [],
         pages: config.pages.filter(p => p.enabled !== false).map(p => p.id),
         target_chat_name: "",
+        messages: {default_message:'',normal_summary:'',abnormal_header:''},
         title: ""
       });
       expandedScheduleIdx = config.schedules.length - 1;
+      document.getElementById('scheduleSearchInput').value = '';
+      rememberScheduleExpansion(`sched${n}`);
       previewScheduleId = `sched${n}`;
       renderSchedules();
+      queueNumericPreviews();
       renderTeamsPreview();
     };
-
-
-
-
-
+ 
+ 
     // ===== 自動儲存 & 自動套用排程 =====
     // 每秒比對設定有沒有變：有變就寫入 config.json；排程 (時間 / 星期 / 啟用 / 新增刪除) 有變就自動同步 Windows 工作排程
     let autoSaveEnabled = false;   // 設定確定是從 config.json 讀進來後才開啟，避免用瀏覽器暫存的舊設定覆蓋
     let lastSavedJson = "";
     let lastAppliedSchedulesJson = "";
     let saveInFlight = false;
-
-
-
-
-
+    let captureCommitInFlight = false;
+    let captureCommitUncertain = false;
+    let lastAttemptedSchedulesJson = "";
+    let scheduleApplyFailed = false;
+    // 保存期間阻止實際操作與事件處理器改動設定；其他頁面的自動保存也需等待。
+    for (const type of ['beforeinput','input','change','click','keydown','pointerdown']) {
+      document.addEventListener(type, event => {
+        if (captureCommitInFlight || captureCommitUncertain) { event.preventDefault(); event.stopImmediatePropagation(); }
+      }, true);
+    }
+ 
+ 
     function setAutoSaveStatus(kind, text) {
       const chip = document.getElementById("autoSaveStatus");
       chip.className = "save-chip" + (kind === "ok" ? "" : " " + kind);
       chip.textContent = text;
     }
-
-
-
-
-
-    // 只比對會影響 Windows 排程的欄位 (名稱、標題、發送對象改了不需要重新註冊)
+ 
+ 
+    function scheduleTaskName(s) { return String(s.name || '').trim() || String(s.id); }
+    // 名稱也是 Windows 任務的一部分；標題、發送對象不影響註冊。
     function scheduleSignature() {
-      return JSON.stringify((config.schedules || []).map(s => [s.id, s.enabled !== false, s.time, (s.days || []).join(",")]));
+      return JSON.stringify((config.schedules || []).map(s => [s.id, scheduleTaskName(s), s.enabled !== false, s.time, (s.days || []).join(","), scheduleRepeatMinutes(s), s.repeat?.enabled === true ? s.repeat.end_time : '']));
     }
-
-
-
-
-
+ 
+ 
     async function autoSaveTick() {
-      if (!autoSaveEnabled || saveInFlight || isDragging || isCropDragging || ruleDrag) return;
+      if (!autoSaveEnabled || saveInFlight || captureCommitInFlight || captureCommitUncertain || isDragging || isCropDragging || ruleDrag) return;
+      if (!validateScheduleTiming()) return;
       normalizePageModes();
       const json = JSON.stringify(config, null, 2);
       const schedSig = scheduleSignature();
-      if (json === lastSavedJson && schedSig === lastAppliedSchedulesJson) return;
+      if (json === lastSavedJson && (schedSig === lastAppliedSchedulesJson || schedSig === lastAttemptedSchedulesJson)) return;
       saveInFlight = true;
       try {
-        if (schedSig !== lastAppliedSchedulesJson) {
+        if (schedSig !== lastAppliedSchedulesJson && schedSig !== lastAttemptedSchedulesJson) {
           // 排程有變：register-schedules 會一併儲存 config.json
           await applySchedules();
         } else {
           setAutoSaveStatus("saving", "💾 儲存中…");
           const ok = await saveConfigDirectly("", "", true);
-          if (ok) setAutoSaveStatus("ok", `✅ 已自動儲存 ${new Date().toLocaleTimeString("zh-TW", { hour12: false })}`);
+          if (ok) setAutoSaveStatus(scheduleApplyFailed || schedSig !== lastAppliedSchedulesJson ? "error" : "ok", scheduleApplyFailed || schedSig !== lastAppliedSchedulesJson ? "⚠️ 設定已儲存，Windows 排程未同步" : `✅ 已自動儲存 ${new Date().toLocaleTimeString("zh-TW", { hour12: false })}`);
         }
       } finally {
         saveInFlight = false;
       }
     }
     setInterval(autoSaveTick, 1000);
-
-
-
-
-
+ 
+ 
     async function applySchedules() {
+      if (captureCommitInFlight || captureCommitUncertain) return;
       ensureSchedules();
       normalizePageModes();
+      if (!validateScheduleTiming()) return;
       const jsonStr = JSON.stringify(config, null, 2);
       const sig = scheduleSignature();
+      lastAttemptedSchedulesJson = sig;
       const reportEl = document.getElementById("registerReport");
       setAutoSaveStatus("saving", "📅 同步 Windows 排程中…");
       document.getElementById("scheduleSyncStatus").textContent = "⏳ 正在同步 Windows 工作排程...";
@@ -2238,7 +2679,7 @@ function renderTeamsPreview() {
         });
         const data = await resp.json();
         lastSavedJson = jsonStr;
-        lastAppliedSchedulesJson = sig;
+        scheduleApplyFailed = !resp.ok || data.ok !== true;
         if (!resp.ok) {
           // 服務拒絕寫入 (設定格式不正確)：config.json 維持原樣；下次修改設定時會再試
           setAutoSaveStatus("error", "❌ 儲存失敗");
@@ -2251,54 +2692,66 @@ function renderTeamsPreview() {
         reportEl.textContent = data.report;
         setAutoSaveStatus(data.ok ? "ok" : "error", data.ok ? `✅ 已自動儲存並同步排程 ${new Date().toLocaleTimeString("zh-TW", { hour12: false })}` : "⚠️ 排程同步失敗");
       } catch (err) {
+        scheduleApplyFailed = true;
         setAutoSaveStatus("error", "❌ 儲存失敗");
         showServiceBanner("⚠️ 本機服務沒有回應，剛才的修改只暫存在瀏覽器，config.json 與 Windows 排程都沒有更新。請雙擊 open_calibrator.bat 重新開啟。");
       }
-      await refreshScheduleStatus();
+      const verified = await refreshScheduleStatus();
+      setAutoSaveStatus(verified ? 'ok' : 'error', verified ? '✅ 已儲存並核對 Windows 排程' : '⚠️ Windows 排程未同步，請檢查並重新套用');
     }
  
-
-
+ 
     document.getElementById("registerSchedulesBtn").onclick = async () => {
       if (saveInFlight) return;
       saveInFlight = true;
       try { await applySchedules(); } finally { saveInFlight = false; }
     };
-
-
-
-
-
+ 
+ 
     // 讀取 Windows 工作排程器目前的任務，顯示每個排程的「下次執行時間」
     let scheduleTaskInfo = {};
+    function taskMatchesSchedule(task, schedule) {
+      const actual = task.schedule;
+      const days = value => [...new Set(value || [])].sort().join(',');
+      return task.task_name === scheduleTaskName(schedule) && task.task_path === '\\' && task.enabled === true && actual?.supported === true &&
+        actual.time === String(schedule.time || '').padStart(5, '0') && days(actual.days) === days(schedule.days) &&
+        Number(actual.repeat_interval_minutes || 0) === scheduleRepeatMinutes(schedule) &&
+        (actual.end_time || '') === (schedule.repeat?.enabled === true ? String(schedule.repeat.end_time).padStart(5,'0') : '');
+    }
     async function refreshScheduleStatus() {
       const el = document.getElementById("scheduleSyncStatus");
+      let synchronized = false;
       try {
         const resp = await fetch("http://127.0.0.1:8765/api/schedule-status", { cache: "no-store" });
+        if (resp.ok === false) throw new Error('讀取排程失敗');
         const data = await resp.json();
         scheduleTaskInfo = {};
         (data.tasks || []).forEach(t => { scheduleTaskInfo[t.id] = t; });
         const enabled = (config.schedules || []).filter(s => s.enabled !== false);
         const missing = enabled.filter(s => !scheduleTaskInfo[s.id]);
         const outdated = enabled.filter(s => scheduleTaskInfo[s.id] && (!scheduleTaskInfo[s.id].wake || !scheduleTaskInfo[s.id].catch_up));
-        el.textContent = !enabled.length
-          ? "目前沒有啟用的排程"
+        const mismatched = enabled.filter(s => scheduleTaskInfo[s.id] && !taskMatchesSchedule(scheduleTaskInfo[s.id], s));
+        const extra = (data.tasks || []).filter((t, i, all) => !enabled.some(s => s.id === t.id) || all.findIndex(other => other.id === t.id) !== i);
+        synchronized = !scheduleApplyFailed && !missing.length && !outdated.length && !mismatched.length && !extra.length;
+        if (synchronized) lastAppliedSchedulesJson = scheduleSignature();
+        el.textContent = scheduleApplyFailed
+          ? "⚠️ Windows 排程同步失敗，請按「🔄 重新套用」"
           : missing.length
           ? `⚠️ ${missing.length} 個排程尚未寫入 Windows，請按「🔄 重新套用」`
           : outdated.length
           ? `⚠️ ${outdated.length} 個排程尚未套用喚醒／補跑設定，請按「🔄 重新套用」`
-          : `✅ Windows 排程已同步（${enabled.length} 個）`;
-        el.style.color = missing.length || outdated.length ? "#fbbf24" : "";
+          : mismatched.length || extra.length
+          ? "⚠️ Windows 任務名稱、時間、重複間隔、星期、啟用狀態或清單與設定不符，請按「🔄 重新套用」"
+          : !enabled.length ? "目前沒有啟用的排程" : `✅ Windows 排程已同步（${enabled.length} 個）`;
+        el.style.color = synchronized ? "" : "#fbbf24";
       } catch (e) {
         el.textContent = "無法讀取 Windows 排程狀態";
       }
       renderSchedules();
+      return synchronized;
     }
-
-
-
-
-
+ 
+ 
     document.getElementById("loginSetupBtn").onclick = async () => {
       try {
         const resp = await fetch("http://127.0.0.1:8765/api/login-setup", { method: "POST" });
@@ -2308,77 +2761,301 @@ function renderTeamsPreview() {
         showSaveToast("❌ 無法開啟：本機服務沒有回應", true);
       }
     };
-
-
-
-
-
-    document.getElementById("sendToSelfBtn").onclick = () => {
-      config.teams.target_chat_name = SELF_TARGET;
-      document.getElementById("defaultChatInput").value = SELF_TARGET;
-      renderTeamsPreview();
-      showSaveToast("✅ 預設發送對象已設為「自己（個人對話）」，可直接按右側 🧪 測試貼上");
+ 
+ 
+    function composeTeamsMessage(sched, problems = []) {
+      const messages=Object.fromEntries(['default_message','normal_summary','abnormal_header'].map(k=>[k,
+        sched?.messages && Object.prototype.hasOwnProperty.call(sched.messages,k) ? sched.messages[k] : config.teams[k]]));
+      return [sched?.title, messages.default_message, problems.length ? messages.abnormal_header : messages.normal_summary, ...problems]
+        .filter(value => typeof value === 'string' && value.trim()).join('\n');
+    }
+    function previewBatchText(message, index, count) {
+      return !message.trim() ? '' : count > 1 ? `${message}\n（第 ${index}/${count} 批）` : message;
+    }
+    function buildSelfTestPreview() {
+      const sched = getPreviewSchedule(), pages = pagesForSchedule(sched);
+      const images = [], alerts = [], failures = [];
+      for (const p of pages) {
+        const entry = getTeamsPreviewImage(p);
+        if (entry.error) failures.push(`⚠️ ${p.name}：預覽圖待確認（${entry.error}），本頁圖片未附上`);
+        else images.push({dataUrl:entry.dataUrl});
+        if (hasActiveRules(p)) for (const r of (p.rules || []).filter(r => r.enabled !== false)) {
+          const result = evaluateRule(p.id, r);
+          if (result.exceeded) alerts.push(ruleAlert(p,r,result));
+          if (result.outOfRange||result.unknown) failures.push(ruleProblem(p,r,result));
+        }
+      }
+      for (const id of (sched?.pages || []).filter(id => !config.pages.some(p => p.id === id))) failures.push(`⚠️ 排程指定的頁面「${id}」不存在，本頁圖片未附上，請修正排程設定`);
+      if (!pages.length && !failures.length) throw new Error('目前預覽沒有可測試的頁面。');
+      const problems = [...alerts, ...failures];
+      const message = composeTeamsMessage(sched, problems);
+      return {label:sched ? (sched.name || sched.id) : '全部啟用頁面', mode:config.teams.prefer_window || 'auto', headless:config.teams.cdp_headless !== false, message, images, hasFailures:failures.length > 0};
+    }
+    function newSelfTestId() {
+      const random = globalThis.crypto;
+      if (typeof random?.randomUUID === 'function') return random.randomUUID().replace(/-/g, '');
+      if (typeof random?.getRandomValues !== 'function') throw new Error('瀏覽器無法建立安全測試編號，請使用 Edge 並從 open_calibrator.bat 開啟設定工具。');
+      return Array.from(random.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
+    }
+    async function selfTestRequest(url, options = {}, timeoutMs = 15000) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {...options, signal:controller.signal, cache:'no-store'});
+        return {response, result:await response.json()};
+      } catch (error) {
+        if (error.name === 'AbortError') throw new Error('本機服務回應逾時；可能仍在執行連線檢查或其他工作。');
+        throw error;
+      } finally { clearTimeout(timeout); }
+    }
+    let selfTestBusy = false, selfTestJobId = null, selfTestWatchSerial = 0, selfTestStarting = false;
+    let selfTestConfirmation = null;
+    function closeSelfTestConfirmation() {
+      if (!selfTestConfirmation) return;
+      const current = selfTestConfirmation;
+      selfTestConfirmation = null;
+      current.dialog.close(); current.dialog.remove();
+      if (document.title.includes('E3-SELF-CONFIRM-' + current.token)) document.title = current.previousTitle;
+    }
+    function showSelfTestConfirmation(id, info) {
+      if (!info || !/^[a-f0-9]{32}$/.test(info.token) || !Number.isFinite(Date.parse(info.expiresUtc))) return;
+      if (selfTestConfirmation?.id === id && selfTestConfirmation.token === info.token) return;
+      closeSelfTestConfirmation();
+      const dialog = document.createElement('dialog');
+      dialog.id = 'selfTestConfirmDialog';
+      dialog.setAttribute('aria-labelledby', 'selfTestConfirmTitle');
+      dialog.style.cssText = 'margin:auto;width:min(600px,calc(100vw - 48px));max-height:85vh;overflow:auto;box-sizing:border-box;padding:24px;border:2px solid #32bcff;border-radius:12px;background:#162132;color:#edf5ff;box-shadow:0 12px 60px #000a;font:15px/1.6 system-ui;';
+      dialog.innerHTML = `<style>#selfTestConfirmDialog::backdrop{background:#0009}#selfTestConfirmDialog button{padding:9px 14px}#selfTestConfirmDialog button:disabled{opacity:.5}</style>
+        <h2 id="selfTestConfirmTitle" style="margin:0 0 12px;color:#32bcff">確認將目前預覽傳給自己</h2>
+        <p>請核對辨識到的實際對話；尚未貼上或送出。</p>
+        <div data-role="destination" style="white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#0d1524;border-radius:6px"></div>
+        <p data-role="preview" style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
+        <p>本次忽略預設與排程收件人。送出期間請勿切換 Teams 帳號、對話或操作輸入框。</p>
+        <label style="display:flex;gap:8px;align-items:flex-start;margin:16px 0"><input data-role="checked" type="checkbox" style="margin-top:6px">我已核對，這是我自己的個人對話</label>
+        <p data-role="status" role="status" style="white-space:pre-wrap;color:#ffd778"></p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <button type="button" data-role="refresh" hidden>重新查詢狀態</button>
+          <button type="button" data-role="cancel" autofocus>取消，不傳送</button>
+          <button type="button" data-role="approve" disabled>確認傳給自己</button>
+        </div>`;
+      const part = role => dialog.querySelector('[data-role="' + role + '"]');
+      if (info.kind === 'schedule') dialog.querySelector('h2').textContent = '確認將本次排程結果傳給自己';
+      part('destination').textContent = info.destination;
+      part('preview').textContent = (info.kind === 'schedule' ? '實際執行排程：' : '預覽：') + (info.label || '目前預覽') + '\n圖片：' + info.imageCount + ' 張（超過上限會分批）';
+      part('status').textContent = '請在 ' + new Date(info.expiresUtc).toLocaleTimeString() + ' 前確認；逾時會取消。';
+      const current = {id, token:info.token, dialog, previousTitle:document.title, submitted:false};
+      selfTestConfirmation = current;
+      part('checked').onchange = () => {part('approve').disabled = current.submitted || !part('checked').checked;};
+      const decide = async decision => {
+        if (selfTestConfirmation !== current || selfTestJobId !== id || current.submitted) return;
+        if (decision === 'approve' && !part('checked').checked) return;
+        if (Date.now() >= Date.parse(info.expiresUtc)) {
+          part('status').textContent = '確認已逾時，正在查詢停止結果。';
+          part('approve').disabled = true; watchSelfTest(id); return;
+        }
+        current.submitted = true;
+        part('approve').disabled = part('cancel').disabled = part('checked').disabled = true;
+        part('status').textContent = decision === 'approve' ? '正在提交確認，請勿重複操作…' : '正在取消，本次不傳送…';
+        try {
+          const {response, result} = await selfTestRequest('http://127.0.0.1:8765/api/test-self-confirm', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id,token:info.token,decision})
+          });
+          if (selfTestConfirmation !== current || selfTestJobId !== id) return;
+          if (!response.ok) throw new Error(result.error || result.message || '確認未被接受');
+          part('status').textContent = '已收到決定，正在查詢本次測試結果…';
+        } catch (error) {
+          if (selfTestConfirmation !== current || selfTestJobId !== id) return;
+          part('status').textContent = '確認回應待查詢：' + error.message + '\n只查詢原測試，不會重送。';
+        }
+        if (selfTestConfirmation === current && selfTestJobId === id) {
+          part('refresh').hidden = false; watchSelfTest(id);
+        }
+      };
+      part('approve').onclick = () => decide('approve');
+      part('cancel').onclick = () => decide('cancel');
+      part('refresh').onclick = () => watchSelfTest(id);
+      dialog.addEventListener('cancel', event => {event.preventDefault(); decide('cancel');});
+      document.body.appendChild(dialog);
+      dialog.showModal();
+      document.title = 'E3-SELF-CONFIRM-' + info.token + ' | 確認傳給自己';
+      window.focus();
+    }
+    function setSelfTestBusy(busy) {
+      selfTestBusy = busy;
+      const btn = document.getElementById('sendToSelfBtn');
+      btn.disabled = selfTestStarting;
+      btn.textContent = busy ? '📨 改執行新的預覽測試…' : '📨 將目前預覽傳給自己';
+      const runBtn = document.getElementById('runScheduleToSelfBtn');
+      if (runBtn) runBtn.disabled = selfTestStarting;
+      document.getElementById('previewScheduleSelect').disabled=selfTestStarting;
+      document.getElementById('selfTestRefreshBtn').hidden = !busy || !selfTestJobId;
+    }
+    async function watchSelfTest(id) {
+      const status = document.getElementById('selfTestStatus');
+      const serial = ++selfTestWatchSerial;
+      selfTestJobId = id; setSelfTestBusy(true);
+      if (!/^[a-f0-9]{32}$/.test(id)) { status.textContent = '⚠️ 原測試編號無法辨識。請先核對 Teams 訊息與草稿；不會建立另一筆傳送。'; return; }
+      try {
+        for (;;) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          if (serial !== selfTestWatchSerial) return;
+          const {response, result} = await selfTestRequest('http://127.0.0.1:8765/api/test-self-status?id=' + encodeURIComponent(id), {}, 10000);
+          if (serial !== selfTestWatchSerial) return;
+          if (!response.ok) throw new Error(result.error || result.message || '無法查詢測試結果');
+          status.textContent = result.message || '正在查詢原測試狀態…';
+          if (result.state === 'confirming') showSelfTestConfirmation(id, result.confirmation);
+          else closeSelfTestConfirmation();
+          if (['complete','stopped'].includes(result.state)) {
+            sessionStorage.removeItem('e3SelfTestJob');
+            selfTestJobId = null; setSelfTestBusy(false);
+            showSaveToast(result.message, result.state === 'stopped');
+            return;
+          }
+        }
+      } catch (error) {
+        if (serial !== selfTestWatchSerial) return;
+        document.getElementById('sendToSelfBtn').textContent = '⚠️ 測試狀態待確認';
+        status.textContent = '⚠️ 無法確認測試結果：' + error.message + '\n請先檢查確認視窗、Teams 訊息與草稿。可按「重新查詢測試狀態」；只查原工作，不會重送。';
+        if (selfTestConfirmation?.id === id) {
+          selfTestConfirmation.dialog.querySelector('[data-role="refresh"]').hidden = false;
+          selfTestConfirmation.dialog.querySelector('[data-role="status"]').textContent = status.textContent;
+        }
+      }
+    }
+    document.getElementById('selfTestRefreshBtn').onclick = () => {
+      if (!selfTestJobId) return;
+      document.getElementById('selfTestStatus').textContent = '正在重新查詢原測試；不建立新傳送。';
+      watchSelfTest(selfTestJobId);
     };
-
-
-
-
-
-    // 列出開著的 Teams 與發送對象能否找到 (會先存檔，用畫面上最新的設定)；不會切換或貼上
+    async function startSelfTest(kind = 'preview') {
+      if(selfTestStarting) return;
+      selfTestStarting=true;setSelfTestBusy(selfTestBusy);
+      try {
+        if(!window.E3WorkUI) throw new Error('請重新整理設定頁以載入工作選擇功能');
+        const choice=await E3WorkUI.chooseSelfTest(kind === 'schedule' ? '依目前選擇的排程重新擷取並傳給自己' : '將目前預覽傳給自己', selfTestBusy ? selfTestJobId : null);
+        if(!choice.proceed){
+          if(choice.watch){sessionStorage.setItem('e3SelfTestJob',choice.watch);watchSelfTest(choice.watch);}
+          return;
+        }
+        ++selfTestWatchSerial;closeSelfTestConfirmation();
+        await startSelfTestJob(kind);
+      }catch(error){document.getElementById('selfTestStatus').textContent='尚未啟動新工作：'+error.message;}
+      finally{selfTestStarting=false;setSelfTestBusy(selfTestBusy);}
+    }
+    async function startSelfTestJob(kind = 'preview') {
+      const status = document.getElementById('selfTestStatus');
+      if (captureCommitInFlight || captureCommitUncertain) {
+        status.textContent = '⛔ 請先完成擷取儲存並確認目前預覽，再傳給自己。';
+        showSaveToast(status.textContent, true); return;
+      }
+      status.textContent = kind === 'schedule' ? '正在準備所選排程的實際擷取，尚未傳送；完成後會在本頁核對自己對話。' : '正在準備目前預覽，尚未傳送；找到自己對話後會在本頁中央顯示確認框。';
+      setSelfTestBusy(true);
+      let payload;
+      try {
+        if (kind === 'schedule') {
+          const sched = getPreviewSchedule();
+          if (!sched) throw new Error('請先在右上「預覽哪個排程」選擇一個排程，不能使用全部頁面。');
+          if (!Array.isArray(sched.pages) || !sched.pages.length) throw new Error('此排程尚未指定頁面。');
+          payload = {scheduleId:sched.id, config:JSON.parse(JSON.stringify(config))};
+        } else payload = buildSelfTestPreview();
+        payload.id = newSelfTestId();
+        try {
+          sessionStorage.setItem('e3SelfTestJob', payload.id);
+          if (sessionStorage.getItem('e3SelfTestJob') !== payload.id) throw new Error('無法核對測試編號');
+        } catch (error) { throw new Error('瀏覽器無法保存防重送的測試編號，尚未啟動測試。請允許本站儲存資料，再從 open_calibrator.bat 開啟。'); }
+      } catch (error) {
+        selfTestJobId = null; setSelfTestBusy(false);
+        status.textContent = '⛔ 未啟動測試：' + error.message;
+        showSaveToast(status.textContent, true); return;
+      }
+      selfTestJobId = payload.id; setSelfTestBusy(true);
+      const selected=kind === 'schedule' ? payload.config.schedules.find(s=>s.id===payload.scheduleId) : null;
+      const selectedCount=selected ? (selected.pages || []).filter(id=>payload.config.pages.some(p=>p.id===id && p.enabled !== false)).length : 0;
+      status.textContent = kind === 'schedule' ? `本次排程：${selected.name || selected.id}，預計擷取 ${selectedCount} 張。正在啟動實際擷取與判定；完成後在本頁確認才會傳給自己。測試不受「僅異常時發送」限制。` : '正在啟動自己對話辨識，請在本頁確認；尚未確認前不會送出。本次測試不受「僅異常時發送」限制。';
+      try {
+        const endpoint = kind === 'schedule' ? '/api/test-self-schedule' : '/api/test-self';
+        const {response, result} = await selfTestRequest('http://127.0.0.1:8765' + endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        if (selfTestJobId !== payload.id) return;
+        if (!response.ok) {
+          sessionStorage.removeItem('e3SelfTestJob');
+          selfTestJobId = null; setSelfTestBusy(false);
+          status.textContent = '⛔ 未啟動測試：' + (result.error || result.message || response.status); return;
+        }
+      } catch (error) {
+        if (selfTestJobId !== payload.id) return;
+        status.textContent = '⚠️ ' + error.message + '\n正在查詢原測試狀態；不會重新送出請求。';
+      }
+      if (selfTestJobId === payload.id) watchSelfTest(payload.id);
+    }
+    document.getElementById('sendToSelfBtn').onclick = () => startSelfTest('preview');
+    const runScheduleToSelfBtn = document.getElementById('runScheduleToSelfBtn');
+    if (runScheduleToSelfBtn) runScheduleToSelfBtn.onclick = () => startSelfTest('schedule');
+    try {
+      const pendingSelfTest = sessionStorage.getItem('e3SelfTestJob');
+      if (pendingSelfTest) {
+        document.getElementById('selfTestStatus').textContent = '正在查詢上次測試結果；不會重新送出。';
+        watchSelfTest(pendingSelfTest);
+      }
+    } catch (error) {
+      document.getElementById('selfTestStatus').textContent = '⚠️ 瀏覽器儲存空間無法存取。請允許本站儲存資料；傳給自己測試暫時無法啟動。';
+    }
+async function cdpApiRequest(path, options={}) {
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+      try{
+        const response=await fetch('http://127.0.0.1:8765'+path,{...options,signal:controller.signal,cache:'no-store'});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.error||'本機服務沒有回應');
+        return data;
+      }finally{clearTimeout(timer);}
+    }
+    // Background diagnostic: keep setup and explicit work choices available while checking.
     document.getElementById("detectTeamsBtn").onclick = async () => {
       const btn = document.getElementById("detectTeamsBtn");
       const out = document.getElementById("detectTeamsResult");
       btn.disabled = true;
       out.hidden = false;
-      out.textContent = "🔍 偵測中（約 5～20 秒）...";
+      out.textContent = config.teams.prefer_window === 'cdp' ? '🔍 正在逐一檢查收件對象，完成後顯示全部結果；依對象數量與登入狀態可能需要數分鐘…' : '🔍 偵測中（約 5～20 秒）...';
       try {
         const jsonStr = JSON.stringify(config, null, 2);
-        const resp = await fetch("http://127.0.0.1:8765/api/teams-detect", {
+        let data = await cdpApiRequest('/api/teams-detect', {
           method: "POST",
           headers: { "Content-Type": "application/json; charset=utf-8" },
           body: jsonStr
         });
-        if (resp.status === 400) {
-          out.textContent = "❌ 無法偵測：" + ((await resp.json()).error || "設定格式不正確");
-          return;
-        }
-        if (!resp.ok) throw new Error(resp.status);
         lastSavedJson = jsonStr;
-        out.textContent = (await resp.json()).report;
+        // Also accept a completed response from an older service during an update.
+        while(data.id && !data.complete){
+          out.textContent='🔍 檢查中'+(data.elapsedSeconds!=null?'（'+data.elapsedSeconds+' 秒）':'')+'。可以繼續操作設定；若要重新綁定，請按「設定 CDP 收件對象」，占用時可選擇等待或強制停止前一工作。';
+          await new Promise(resolve=>setTimeout(resolve,1000));
+          data=await cdpApiRequest('/api/teams-detect-status?id='+encodeURIComponent(data.id));
+        }
+        out.textContent = data.report || data.error || '未取得檢查結果，請重新檢查。';
       } catch (e) {
-        out.textContent = "❌ 無法偵測：本機服務沒有回應，請雙擊 open_calibrator.bat 重新開啟";
+        out.textContent = '❌ 無法取得檢查結果：'+(e.name==='AbortError'?'本機服務回應逾時；可重新查詢。原檢查不會重複啟動。':e.message);
       } finally {
         btn.disabled = false;
       }
     };
-
-
-
-
-
+ 
+ 
     function renderAll() {
       renderPageTabs();
       renderSidebarInputs();
       renderCanvas();
       renderTeamsPreview();
       renderSchedules();
+      queueNumericPreviews();
     }
-
-
-
-
-
+ 
+ 
     function getCanvasCoords(e) {
       const rect = mainCanvas.getBoundingClientRect();
       const x = Math.max(0, Math.min(mainCanvas.width - 1, Math.floor((e.clientX - rect.left) * mainCanvas.width / rect.width)));
       const y = Math.max(0, Math.min(mainCanvas.height - 1, Math.floor((e.clientY - rect.top) * mainCanvas.height / rect.height)));
       return { x, y };
     }
-
-
-
-
-
+ 
+ 
     function updateLoupe(x, y) {
       const page = config.pages[currentPageIdx];
       if (!page) return;
@@ -2387,11 +3064,8 @@ function renderTeamsPreview() {
       const p = off.getContext("2d").getImageData(x, y, 1, 1).data;
       document.getElementById("cursorCoordText").textContent = `X: ${x}, Y: ${y}`;
       document.getElementById("cursorRgbText").textContent = `RGB: (${p[0]}, ${p[1]}, ${p[2]})`;
-
-
-
-
-
+ 
+ 
       loupeCtx.imageSmoothingEnabled = false;
       loupeCtx.clearRect(0, 0, 54, 54);
       loupeCtx.drawImage(mainCanvas, x - 4, y - 4, 9, 9, 0, 0, 54, 54);
@@ -2399,18 +3073,15 @@ function renderTeamsPreview() {
       loupeCtx.lineWidth = 1;
       loupeCtx.strokeRect(24, 24, 6, 6);
     }
-
-
-
-
-
+ 
+ 
     // ===== 畫布滑鼠操作：✂️ 擷取範圍 / 📏 警戒線 兩種模式 =====
     // 📏 模式：在空白處拖曳 = 新增一條警戒線；拖曳選取中的紅線 = 調整高度；拖曳框內 = 移動框
     function hitTestRules(page, pt) {
       const tol = Math.max(3, 6 / zoomLevel);   // 紅線可點範圍 (畫面上約 6px)
       const rules = page.rules || [];
       const sel = rules[selectedRuleIdx];
-      if (sel && sel.enabled !== false &&
+      if (sel && sel.measure_mode!=='numeric' && sel.enabled !== false &&
           Math.abs(pt.y - sel.threshold_y) <= tol &&
           pt.x >= sel.roi.x - 6 - tol && pt.x <= sel.roi.x + sel.roi.w + 6 + tol) {
         return { kind: "line", idx: selectedRuleIdx };
@@ -2424,11 +3095,8 @@ function renderTeamsPreview() {
       }
       return null;
     }
-
-
-
-
-
+ 
+ 
     function addRule(page, roi) {
       const n = (page.rules || []).length + 1;
       page.rules = page.rules || [];
@@ -2446,11 +3114,8 @@ function renderTeamsPreview() {
       });
       selectedRuleIdx = page.rules.length - 1;
     }
-
-
-
-
-
+ 
+ 
     mainCanvas.addEventListener("mousedown", e => {
       const page = config.pages[currentPageIdx];
       if (!page) return;
@@ -2463,11 +3128,12 @@ function renderTeamsPreview() {
       }
       const img = pageImageCanvases[page.id];
       if (!img || img.isPlaceholder) return;
-
-
-
-
-
+      if(currentTool==='axis'){
+        const rule=page.rules?.[selectedRuleIdx];if(rule?.measure_mode!=='numeric')return;
+        ruleDrag={kind:'axis',start:pt};return;
+      }
+ 
+ 
       if (currentTool === "pick_color") {
         const rule = (page.rules || [])[selectedRuleIdx];
         if (rule) {
@@ -2479,11 +3145,8 @@ function renderTeamsPreview() {
         renderAll();
         return;
       }
-
-
-
-
-
+ 
+ 
       const hit = hitTestRules(page, pt);
       if (hit && hit.kind === "line") {
         ruleDrag = { kind: "line" };
@@ -2496,21 +3159,15 @@ function renderTeamsPreview() {
         ruleDrag = { kind: "new", start: pt, created: false };
       }
     });
-
-
-
-
-
+ 
+ 
     mainCanvas.addEventListener("mousemove", e => {
       const pt = getCanvasCoords(e);
       updateLoupe(pt.x, pt.y);
       const page = config.pages[currentPageIdx];
       if (!page) return;
-
-
-
-
-
+ 
+ 
       if (isCropDragging) {
         page.crop_region = {
           enabled: true,
@@ -2524,24 +3181,20 @@ function renderTeamsPreview() {
         renderCropFields();
         return;
       }
-
-
-
-
-
+ 
+ 
       if (!ruleDrag) {
         // 游標提示：紅線上 = 上下拖曳、框內 = 移動、其他 = 十字 (框選新警戒線)
         const hit = currentTool === "rule" ? hitTestRules(page, pt) : null;
         mainCanvas.style.cursor = !hit ? "crosshair" : hit.kind === "line" ? "ns-resize" : "move";
         return;
       }
-
-
-
-
-
+ 
+ 
       const r = page.rules[selectedRuleIdx];
-      if (ruleDrag.kind === "new") {
+      if(ruleDrag.kind==='axis'&&r){
+        r.axis_roi={x:Math.min(ruleDrag.start.x,pt.x),y:Math.min(ruleDrag.start.y,pt.y),w:Math.max(3,Math.abs(pt.x-ruleDrag.start.x)),h:Math.max(3,Math.abs(pt.y-ruleDrag.start.y))};
+      } else if (ruleDrag.kind === "new") {
         const w = Math.abs(pt.x - ruleDrag.start.x);
         const h = Math.abs(pt.y - ruleDrag.start.y);
         if (!ruleDrag.created) {
@@ -2562,14 +3215,12 @@ function renderTeamsPreview() {
       }
       renderCanvas();
     });
-
-
-
-
-
+ 
+ 
     window.addEventListener("mouseup", () => {
       isDragging = false;
       if (ruleDrag) {
+        if(ruleDrag.kind==='axis')setToolMode('rule');
         ruleDrag = null;
         renderAll();
       }
@@ -2580,11 +3231,8 @@ function renderTeamsPreview() {
         renderAll();
       }
     });
-
-
-
-
-
+ 
+ 
     function setToolMode(mode) {
       const page = config.pages[currentPageIdx];
       if (mode === "crop" && page && !fullImages[page.id]) {
@@ -2610,11 +3258,8 @@ function renderTeamsPreview() {
       renderCanvas();
       showSaveToast("💧 請在圖上點一下曲線，取用它的顏色");
     };
-
-
-
-
-
+ 
+ 
     document.querySelectorAll(".zoom-btn").forEach(btn => {
       btn.onclick = () => {
         zoomMode = btn.dataset.zoom;
@@ -2624,36 +3269,64 @@ function renderTeamsPreview() {
     window.addEventListener("resize", () => {
       if (zoomMode === "fit") renderCanvas();
     });
-
-
-
-
-
+ 
+ 
     // 新增與刪除頁面
+    document.getElementById('pageCategoryFilter').onchange = e => { selectedPageCategory = e.target.value; document.getElementById('pageSearchInput').value = ''; selectCategoryPage(); };
+    document.getElementById('pageSearchInput').oninput = selectCategoryPage;
+    document.getElementById('pageListPrev').onclick = () => { pageListOffset = Math.max(0, pageListOffset - PAGE_LIST_SIZE); renderPageTabs(); };
+    document.getElementById('pageListNext').onclick = () => { pageListOffset += PAGE_LIST_SIZE; renderPageTabs(); };
+    document.getElementById('addCategoryBtn').onclick = () => {
+      const name = prompt('新增分類名稱（例如：機台監控、系統狀態）');
+      if (!name?.trim()) return;
+      if (getPageCategories().some(c => c.name === name.trim())) { showSaveToast('已有相同名稱的分類。', true); return; }
+      const category = {id:'category_' + crypto.randomUUID().replaceAll('-', ''), name:name.trim()};
+      config.page_categories = [...(config.page_categories || []), category]; selectedPageCategory = category.id;
+      document.getElementById('pageSearchInput').value = ''; selectCategoryPage();
+    };
+    document.getElementById('renameCategoryBtn').onclick = () => {
+      const category = (config.page_categories || []).find(c => c.id === selectedPageCategory); if (!category) return;
+      const name = prompt('分類新名稱', category.name); if (!name?.trim()) return;
+      if (getPageCategories().some(c => c.id !== category.id && c.name === name.trim())) { showSaveToast('已有相同名稱的分類。', true); return; }
+      category.name = name.trim(); renderAll();
+    };
+    document.getElementById('deleteCategoryBtn').onclick = () => {
+      const category = (config.page_categories || []).find(c => c.id === selectedPageCategory); if (!category) return;
+      if (!confirm(`刪除分類「${category.name}」？\n分類內頁面會移到「未分類」，頁面與排程都會保留。`)) return;
+      config.pages.filter(p => p.category_id === category.id).forEach(p => { p.category_id = ''; });
+      config.page_categories = config.page_categories.filter(c => c.id !== category.id); selectedPageCategory = '';
+      document.getElementById('pageSearchInput').value = ''; selectCategoryPage();
+    };
+    document.getElementById('pageCategoryInput').onchange = e => {
+      const page = config.pages[currentPageIdx]; if (!page) return;
+      page.category_id = e.target.value; selectedPageCategory = e.target.value;
+      document.getElementById('pageSearchInput').value = ''; pageListOffset = 0; renderAll();
+    };
     document.getElementById("addPageBtn").onclick = () => {
       const nextNum = config.pages.length + 1;
       const newPage = {
-        id: `page_${Date.now()}`,
+        id: 'page_' + crypto.randomUUID().replaceAll('-', ''),
         enabled: true,
+        category_id: selectedPageCategory || '',
         name: `自訂頁面 ${nextNum}`,
         url: "http://your-internal-system.corp/new-page",
         target_chat_name: "",
         mode: "threshold_check",
         wait_seconds: 5,
+        auth: { enabled: false, username: "", password: "" },
         // 預設整頁 (引擎固定可視範圍 1920x1080)；📸 抓圖後再用 ✂️ 擷取範圍 框選
         crop_region: { enabled: true, x: 0, y: 0, w: 1920, h: 1080 },
         rules: []
       };
       config.pages.push(newPage);
+      document.getElementById('pageSearchInput').value = '';
+      pageListOffset = Math.floor((filteredCapturePages().length - 1) / PAGE_LIST_SIZE) * PAGE_LIST_SIZE;
       currentPageIdx = config.pages.length - 1;
       selectedRuleIdx = 0;
       ensurePageImage(newPage, () => renderAll());
     };
-
-
-
-
-
+ 
+ 
     document.getElementById("deletePageBtn").onclick = () => {
       if (config.pages.length <= 1) {
         alert("至少需保留 1 個頁面（若不需使用可取消勾選『啟用此頁面』）。");
@@ -2679,17 +3352,15 @@ function renderTeamsPreview() {
       }).catch(() => {});
       renderAll();
     };
-
-
-
-
-
+ 
+ 
     document.getElementById("pageEnabledChk").onchange = e => {
       config.pages[currentPageIdx].enabled = e.target.checked;
       renderAll();
     };
     document.getElementById("pageNameInput").oninput = e => {
       config.pages[currentPageIdx].name = e.target.value;
+      document.getElementById('pageSearchInput').value = '';
       renderPageTabs();
     };
     async function fetchLiveUrlScreenshot() {
@@ -2703,22 +3374,39 @@ function renderTeamsPreview() {
       }
       const btn = document.getElementById("fetchUrlImgBtn");
       if (btn.disabled) return;  // Enter 與 change 事件會同時觸發，避免重複開 Edge
+      normalizePageModes();
+      // 頁面物件與內容都必須仍是同一份，才可套用非同步擷取结果。
+      const captureState = () => JSON.stringify({ page, auth: getPageAuth(page) });
+      const originalState = captureState();
+      const assertCaptureCurrent = () => {
+        if (!config.pages.includes(page) || captureState() !== originalState)
+          throw new Error("擷取期間此頁設定已變更或頁面已移除，已捨棄舊結果；請重新抓圖");
+      };
+      const request = { url: page.url, pageId: page.id, browser_zoom: page.browser_zoom || 100, wait_seconds: page.wait_seconds || 5 };
       const origText = btn.textContent;
       btn.textContent = "⏳ 等待擷取...";
       btn.disabled = true;
+      let captureSaveLock = false;
       showSaveToast("⏳ 正在開啟 Edge；載入完成後，請先捲動，再按網頁上的「擷取目前畫面」。");
-
-
-
-
-
+ 
+ 
       try {
+        // 先等前次儲存完成，再保存此刻的頁面帳密；儲存失敗不開啟抓圖。
+        while (saveInFlight) await new Promise(resolve => setTimeout(resolve, 100));
+        assertCaptureCurrent();
+        if (!autoSaveEnabled) throw new Error("設定尚未從本機服務載入，無法保存此頁登入設定");
+        saveInFlight = true;
+        captureSaveLock = true;
+        if (!await saveConfigDirectly("", "", true)) throw new Error("此頁設定儲存失敗，未啟動抓圖");
+        assertCaptureCurrent();
         const resp = await fetch("http://127.0.0.1:8765/api/capture-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: page.url, pageId: page.id, browser_zoom: page.browser_zoom || 100, wait_seconds: page.wait_seconds || 5 })
+          body: JSON.stringify(request)
         });
         let data = await resp.json();
+        saveInFlight = false;
+        captureSaveLock = false;
         // 抓圖在背景執行 (最多 10 分鐘等使用者捲動選擇)，期間本機服務仍可自動存檔；每秒詢問一次結果
         const deadline = Date.now() + 12 * 60 * 1000;
         while (data && data.ok && data.pending && Date.now() < deadline) {
@@ -2727,42 +3415,68 @@ function renderTeamsPreview() {
         }
         if (data && data.pending) data = { ok: false, error: "等待抓圖結果逾時，請關閉抓圖用的 Edge 視窗後再試" };
         if (data && data.ok && data.dataUrl) {
-          const img = new Image();
-          img.onload = () => {
-            // 此來源圖是使用者選定的可視畫面，裁切座標相對於它；排程還原相同 viewport/scroll。
-            if (!data.capture_view) {
-              showSaveToast("❌ 抓圖服務版本過舊，請更新主程式並重新開啟設定工具。", true);
-              return;
-            }
-            const viewChanged = JSON.stringify(page.capture_view) !== JSON.stringify(data.capture_view);
-            page.capture_view = data.capture_view;
-            page.browser_zoom = data.capture_view.zoom;
-            if (viewChanged) page.crop_region = { enabled: true, x: 0, y: 0, w: img.width, h: img.height };
-            fullImages[page.id] = imageToCanvas(img);
-            fitCropToFull(page, img);
-            rebuildCropped(page, true);
-            renderAll();
-            saveConfigDirectly("");
-            showSaveToast("✅ 已擷取你選的位置，請框選要傳送的區域並確認警戒線。");
-          };
-          img.src = data.dataUrl;
+          const img = await loadImage(data.dataUrl);
+          assertCaptureCurrent();
+          if (data.pageId && data.pageId !== request.pageId) throw new Error("擷取結果與目前頁面不符，請重新抓圖");
+          // 此來源圖是使用者選定的可視畫面，裁切座標相對於它；排程還原相同 viewport/scroll。
+          if (!data.capture_view) {
+            showSaveToast("❌ 抓圖服務版本過舊，請更新主程式並重新開啟設定工具。", true);
+            return;
+          }
+          while (saveInFlight) await new Promise(resolve => setTimeout(resolve, 100));
+          assertCaptureCurrent();
+          captureCommitInFlight = true;
+          document.querySelector('.workspace').inert = true;
+          const candidate = JSON.parse(JSON.stringify(page));
+          const viewChanged = JSON.stringify(candidate.capture_view) !== JSON.stringify(data.capture_view);
+          candidate.capture_view = data.capture_view;
+          candidate.browser_zoom = data.capture_view.zoom;
+          if (viewChanged) candidate.crop_region = { enabled: true, x: 0, y: 0, w: img.width, h: img.height };
+          fitCropToFull(candidate, img);clampCrop(candidate, img);
+          const full = imageToCanvas(img), cropped = document.createElement('canvas'), c = candidate.crop_region;
+          cropped.width = c.w;cropped.height = c.h;
+          cropped.getContext('2d').drawImage(full,c.x,c.y,c.w,c.h,0,0,c.w,c.h);
+          // 清掉先前裁切編輯的延遲保存，避免稍後把舊圖覆蓋已提交的新圖。
+          for (const kind of ['full','crop']) clearTimeout(sampleSaveTimers[`${page.id}:${kind}`]);
+          let committed;
+          try {
+            const response = await fetch('http://127.0.0.1:8765/api/commit-capture', {
+              method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({pageId:page.id,expectedPage:page,capture_view:candidate.capture_view,crop_region:c,
+                full:full.toDataURL('image/png'),crop:cropped.toDataURL('image/png')})
+            });
+            committed = await response.json();
+            if (typeof committed.ok !== 'boolean' || committed.uncertain) throw new Error(committed.error || '無法確認保存結果');
+          } catch (error) {
+            captureCommitUncertain = true;autoSaveEnabled = false;
+            showServiceBanner('⚠️ 無法確認擷取保存結果，已暫停編輯與自動儲存。請重新整理設定頁，讀取磁碟上的最新資料。');
+            throw error;
+          }
+          if (!committed.ok) throw new Error(committed.error || '擷取保存失敗，原有圖片與位置已保留');
+          page.capture_view = candidate.capture_view;page.browser_zoom = candidate.browser_zoom;page.crop_region = candidate.crop_region;
+          fullImages[page.id] = full;setCroppedCanvas(page.id,cropped);
+          // 以後端真正保存的版本為基準；等待擷取時對其他頁面的編輯仍須由自動儲存提交。
+          lastSavedJson = committed.config ? JSON.stringify(committed.config,null,2) : "";
+          try { localStorage.setItem('e3_monitor_config_v1',JSON.stringify(config,null,2)); } catch (error) {}
+          renderAll();
+          showSaveToast("✅ 已擷取你選的位置，請框選要傳送的區域並確認警戒線。");
         } else {
           showSaveToast("❌ 抓取網址失敗：" + (data.error || "請確認網址可連線"), true);
         }
       } catch (err) {
-        showSaveToast("⚠️ 請透過 open_calibrator.bat 開啟以支援即時抓取網址畫面", true);
+        showSaveToast("❌ 抓圖未完成：" + err.message, true);
       } finally {
+        if (captureSaveLock) saveInFlight = false;
+        captureCommitInFlight = false;
+        document.querySelector('.workspace').inert = captureCommitUncertain;
         btn.textContent = origText;
         btn.disabled = false;
       }
     }
 
-
-
-
-
-    document.getElementById("pageUrlInput").oninput = e => {
+document.getElementById("pageUrlInput").oninput = e => {
       config.pages[currentPageIdx].url = e.target.value;
+      renderPageTime(config.pages[currentPageIdx]);
     };
     document.getElementById("pageUrlInput").onkeydown = e => {
       if (e.key === "Enter") {
@@ -2779,6 +3493,7 @@ function renderTeamsPreview() {
     // 網頁縮放：50～200 任意整數 (與引擎 Get-BrowserZoom、/api/capture-url 的檢查一致)
     function renderBrowserZoom(page) {
       const pageZoom = Number(page.browser_zoom) || 100;
+      document.getElementById('pageZoomSummary').textContent=`目前 ${pageZoom}%`;
       document.getElementById("pageBrowserZoom").value = String(pageZoom);
       document.querySelectorAll("#pageZoomPresets button").forEach(b => b.classList.toggle("active", Number(b.dataset.zoom) === pageZoom));
     }
@@ -2817,7 +3532,7 @@ function renderTeamsPreview() {
       };
     });
  
-
+ 
     document.getElementById("ruleEnabledChk").onchange = e => {
       const r = config.pages[currentPageIdx].rules[selectedRuleIdx];
       if (r) { r.enabled = e.target.checked; renderAll(); }
@@ -2875,11 +3590,8 @@ function renderTeamsPreview() {
       selectedRuleIdx = Math.max(0, selectedRuleIdx - 1);
       renderAll();
     };
-
-
-
-
-
+ 
+ 
     document.getElementById("teamsWindowSelect").onchange = e => {
       config.teams.prefer_window = e.target.value;
       renderCdpMode();
@@ -2888,48 +3600,247 @@ function renderTeamsPreview() {
       const cdp = config.teams.prefer_window === 'cdp';
       document.getElementById('cdpSetupBtn').hidden = !cdp;
       document.getElementById('cdpHelp').hidden = !cdp;
-      document.getElementById('teamsWindowHelp').textContent = cdp ? '使用專用 Edge（edge_profile）在背景開啟 Teams 網頁版，不需要開著 Teams；登入過期時按「🔐 登入並檢查 CDP 傳送」重新登入。' : '程式會用您已經開著、已經登入的 Teams，不需另外登入。發送前請先開好 Teams；同時開著好幾種時，選「只用…」指定。';
-      document.getElementById('scheduleRunHint').textContent = cdp ? '排程要求喚醒、錯過後補跑；喚醒受主機電源政策限制。需保持 Windows 登入、不可睡眠。鎖定或螢幕關閉時也照常背景擷取並傳送，不等待解鎖。' : '排程要求喚醒、錯過後補跑；喚醒受主機電源政策限制。需保持 Windows 登入；桌面不可用時先背景擷取，等待解鎖後再操作 Teams，最多等 30 分鐘。Teams 開著仍須解鎖才能貼圖。';
+      document.getElementById('cdpHelpWrap').hidden = !cdp;
+      document.getElementById('cdpBindingsBox').hidden = !cdp;
+      renderSavedCdpTargets();
+      if(cdp) refreshSavedCdpTargets();
+      const headless = config.teams.cdp_headless !== false;
+      document.getElementById('cdpHeadlessRow').hidden = !cdp;
+      document.getElementById('cdpHeadlessChk').checked = headless;
+      document.getElementById('cdpHelp').textContent = (headless ? '每個收件對象先設定一次，完成後驗證無視窗登入。正式傳送（含傳給自己）會先清除目標對話未送出的文字與附件，再送本次選定內容。排程會在背景截圖、核對帳號與聊天室後傳送，完成後關閉專用瀏覽器。登入有效時不用重新綁定；請先正常關閉原 CDP 專用 Edge，避免登入資料被佔用。' : '分頁模式：保持專用 Teams 分頁開啟並停留在綁定聊天室。正式傳送會先清除目標對話未送出的文字與附件，再送本次內容；關閉分頁後需重新綁定。') + ' 每批最多 4 張圖片＋文字（25 MiB）。測試失敗後可再次按原按鈕；' + (headless ? '確認舊工作已停止並清空輸入區後，只執行本次內容，不補送舊工作。' : '確認舊工作已停止，清除舊草稿後只送本次內容，不補送舊工作。');
+      document.getElementById('teamsWindowHelp').textContent = cdp ? (headless ? '排程不切換日常工作視窗、不移動滑鼠或使用桌面剪貼簿；手動「抓圖」仍會開啟 Edge 讓您選位置。首次使用請在實際主機測試，網站與 Teams 登入需保持有效。' : '使用已綁定的 CDP 專用 Edge 分頁；登入過期需重新登入。') : '使用已登入的 Teams；正式傳送會先核對對話並清除舊草稿。多種 Teams 同時開著時，請選「只用…」指定。';
+      document.getElementById('scheduleRunHint').textContent = cdp ? (headless ? '無 Edge 視窗：即使正在使用電腦，排程也在背景截圖與傳送。需保持 Windows 登入、電腦清醒、網路及登入有效。「執行排程傳給自己」也用背景截圖，送出前仍需確認。' : '鎖定時先背景擷取，再由 CDP 傳送，不等待解鎖。需保持 Windows 登入、電腦清醒與 Teams 登入有效；分頁模式需保持專用 Edge 開啟，解鎖時截圖仍可能顯示視窗。') : '桌面模式需解鎖才能操作 Teams；鎖定時最多等待解鎖 30 秒，逾時結束本次傳送，截圖保留。';
+      document.getElementById('scheduleRunHint').textContent += ' 各種模式單次工作最多 10 分鐘；前一個工作還在執行時最多等 3 分鐘，期間可在本頁選擇繼續等待或強制停止前一工作，逾時結束本次且不自動重送。';
       document.getElementById('detectTeamsBtn').textContent = cdp ? '🔍 檢查 CDP 連線' : '🔍 偵測 Teams 視窗';
-      document.getElementById('testPreviewBtn').textContent = cdp ? '🧪 開啟對話檢查（不貼上、不送出）' : '🧪 測試貼上（不送出）';
-      document.getElementById('testPreviewBtn').title = cdp ? '背景開啟 Teams 網頁版，確認對話名稱、輸入框與範例圖，不會貼上或傳送' : '用範例圖貼到 Teams，但不按 Enter';
+      document.getElementById('detectTeamsBtn').title = cdp ? '確認各收件對象的登入與聊天室設定，顯示是否設定完成；不傳送訊息' : '列出 Teams 視窗與目前對話，不貼上、不送出';
+      document.getElementById('testPreviewBtn').textContent = cdp ? '🧪 檢查圖片與綁定（不送出）' : '🧪 測試貼上（不送出）';
+      document.getElementById('testPreviewBtn').title = cdp ? '僅驗證 PNG 與收件綁定，不會貼上或傳送' : '用範例圖貼到 Teams，但不按 Enter';
+      refreshSidebarFolds();
     }
+    function renderSavedCdpTargets() {
+      const state=cdpBindingsState, list=document.getElementById('cdpBindingsList');list.replaceChildren();
+      document.getElementById('cdpBindingsRefresh').disabled=state.loading;
+      document.getElementById('cdpBindingsTitle').textContent='已設定的 CDP 對象'+(state.targets&&!state.error?'（'+state.targets.length+'）':'');
+      const selected=(config.teams.target_chat_name||'').trim(), matched=(state.targets||[]).filter(t=>t.route===selected);
+      const usable=t=>t.complete&&(config.teams.cdp_headless!==false||t.windowConfigured);
+      document.getElementById('cdpBindingsDefault').textContent=state.error?'綁定狀態讀取失敗，請重新整理。':state.targets===null?'正在讀取已設定對象…':!selected?'尚未填寫預設收件名稱':matched.length===1&&usable(matched[0])?'預設對象：'+selected+' · 已設定':'預設對象：'+selected+' · 尚未完整綁定';
+      if(state.error){list.textContent=state.error;return;}
+      if(state.targets===null)return;
+      if(!state.targets.length){list.textContent='尚無已儲存的對象，請按「設定 CDP 收件對象」。';return;}
+      for(const target of state.targets){
+        const row=document.createElement('div');row.style.cssText='padding:5px 0;border-bottom:1px solid var(--border);';
+        row.textContent=(usable(target)?'✓ ':'⚠ ')+target.route+(target.label&&target.label!==target.route?' → '+target.label:'')+(target.route===selected?'（預設）':'')+(usable(target)?'':' · 需重新設定');
+        list.append(row);
+      }
+    }
+    async function refreshSavedCdpTargets(force=false) {
+      const state=cdpBindingsState;
+      if(state.loading||(!force&&Date.now()-state.loadedAt<30000))return;
+      state.loading=true;renderSavedCdpTargets();
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
+      try{
+        const response=await fetch('http://127.0.0.1:8765/api/cdp-bindings',{cache:'no-store',signal:controller.signal});
+        const data=await response.json();
+        if(!response.ok||!data.ok||!Array.isArray(data.targets)||data.targets.some(t=>!t||typeof t.route!=='string'||typeof t.label!=='string'||typeof t.complete!=='boolean'||typeof t.windowConfigured!=='boolean'))throw new Error('無法讀取已設定對象，請確認本機服務已更新並啟動。');
+        state.targets=data.targets;state.error='';
+      }catch(error){state.error='無法讀取已設定對象，請確認本機服務已更新並啟動。';}
+      finally{clearTimeout(timer);state.loading=false;state.loadedAt=Date.now();renderSavedCdpTargets();}
+    }
+    document.getElementById('cdpBindingsRefresh').onclick=()=>refreshSavedCdpTargets(true);
+    window.addEventListener('focus',()=>{if(config.teams.prefer_window==='cdp')refreshSavedCdpTargets(true);});
+    setInterval(()=>{if(!document.hidden&&config.teams.prefer_window==='cdp')refreshSavedCdpTargets();},30000);
+
+    // ===== 手機遙控（@日管）狀態卡片：唯讀顯示接收端心跳、監看與兩個 Windows 任務 =====
+    const receiverState={loading:false,loadedAt:0,data:null,error:''};
+    function receiverTime(iso){
+      const d=iso?new Date(iso):null;
+      if(!d||Number.isNaN(d.getTime()))return '';
+      const p=n=>String(n).padStart(2,'0');
+      return `${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+    function receiverDuration(iso){
+      const t=iso?Date.parse(iso):NaN; if(Number.isNaN(t))return '';
+      const m=Math.max(0,Math.floor((Date.now()-t)/60000)), d=Math.floor(m/1440), h=Math.floor(m%1440/60);
+      return d?`${d} 天 ${h} 小時`:h?`${h} 小時 ${m%60} 分`:`${m} 分鐘`;
+    }
+    function receiverHeadline(data){
+      const hb=data.heartbeat||{};
+      if(!hb.exists)return {text:'尚未啟動過',cls:'warn'};
+      if(!hb.alive)return {text:hb.state==='stopped'?'已停止':'程序已結束',cls:'bad'};
+      if(!data.health.ok)return {text:'執行中，但無法讀取 Teams',cls:'warn'};
+      return {text:hb.state==='processing'?'正在處理指令':'接收中',cls:'good'};
+    }
+    function renderReceiverStatus(){
+      const box=document.getElementById('receiverStatus'), summary=document.getElementById('receiverSummary');
+      document.getElementById('receiverRefreshBtn').disabled=receiverState.loading;
+      box.replaceChildren();
+      if(receiverState.error){summary.textContent='狀態無法讀取';box.textContent=receiverState.error;return;}
+      const data=receiverState.data;
+      if(!data){summary.textContent='讀取中…';return;}
+      const head=receiverHeadline(data), tasks=data.tasks;
+      const taskText=t=>!t?'無法讀取':t.foreign?'有同名的其他任務（未覆寫）':!t.registered?'未設定':t.enabled===false?'已設定但停用':'已設定';
+      summary.textContent=`${head.text} · 離線通知${tasks?(tasks.watchdog?.registered?'已設定':'未設定'):'狀態未知'}${data.senderLogin?.checked&&!data.senderLogin.ok?' · 排程登入需處理':''}`;
+      const row=(label,text,cls)=>{const r=document.createElement('div');r.className='row';const a=document.createElement('span');a.className='label';a.textContent=label;const b=document.createElement('span');b.textContent=text;if(cls)b.className=cls;r.append(a,b);box.append(r);return r;};
+      const hb=data.heartbeat||{};
+      row('接收端',head.text+(hb.exists&&hb.computer?`（${hb.computer}）`:''),head.cls);
+      if(!hb.exists){row('','尚未有接收紀錄：請雙擊 start_teams_receiver.bat。');}
+      else{
+        if(hb.alive&&hb.startedUtc)row('已執行',receiverDuration(hb.startedUtc));
+        row('最後回報',receiverTime(hb.utc)||'無');
+        if(!hb.alive&&hb.stopReason)row('停止原因',hb.stopReason,'bad');
+        if(hb.alive)row('防睡眠',hb.sleepGuard?'已要求系統保持清醒':'未生效，請把 Windows 睡眠設為「永不」',hb.sleepGuard?'':'warn');
+        const sources=Array.isArray(hb.sources)?hb.sources:[];
+        const r=row('接收對話',sources.length?'':'沒有');
+        if(sources.length){
+          const ul=document.createElement('ul');
+          for(const s of sources){
+            const li=document.createElement('li');
+            const ok=s.active&&!s.error;
+            li.className=ok?'good':'warn';
+            li.textContent=(ok?'✓ ':'⚠ ')+s.route+(ok?(s.lastOkUtc?`（最後讀取 ${receiverTime(s.lastOkUtc)}）`:''):`：${s.error||'尚未連上'}`);
+            ul.append(li);
+          }
+          r.lastChild.append(ul);
+        }
+      }
+      // 對話層級的錯誤已逐項列在「接收對話」，只有其他原因（例如心跳過久）才另列
+      const sourceWarned=(Array.isArray(hb.sources)?hb.sources:[]).some(s=>!s.active||s.error);
+      if(!data.health.ok&&hb.exists&&hb.alive&&!sourceWarned)row('注意',data.health.reason,'warn');
+      const login=data.senderLogin;
+      if(!login||!login.checked)row('排程登入',tasks?.watchdog?.registered?'尚未檢查（監看會約每 6 小時、每個排程前約 1 小時檢查）':'未檢查：需先註冊離線通知','warn');
+      else row('排程登入',login.ok?`正常（${receiverTime(login.lastCheckUtc)} 檢查）`:`需要處理（${receiverTime(login.lastCheckUtc)} 檢查）：${login.reason}`,login.ok?'good':'bad');
+      if(data.pendingNotices)row('待送通知',`${data.pendingNotices} 則，接收端連上後會送出`,'warn');
+      if(data.watchdog?.alerted)row('離線通知',`已於 ${receiverTime(data.watchdog.sinceUtc)} 通知${data.watchdog.notify==='failed'?'（傳送失敗）':''}`,'warn');
+      if(data.taskError)row('工作排程',data.taskError,'warn');
+      else{
+        const w=tasks?.watchdog, a=tasks?.autostart;
+        row('離線通知',taskText(w)+(w?.registered&&w.next?`，下次檢查 ${w.next}`:''),w?.registered?'':'warn');
+        row('開機啟動',taskText(a)+(a?.registered?'（登入 Windows 1 分鐘後）':''),a?.registered?'':'warn');
+      }
+      document.getElementById('receiverRegisterBtn').textContent=tasks?.watchdog?.registered&&tasks?.autostart?.registered?'重新註冊離線通知與開機自動啟動':'註冊離線通知與開機自動啟動';
+    }
+    async function refreshReceiverStatus(force=false){
+      if(receiverState.loading||!location.protocol.startsWith('http')||(!force&&Date.now()-receiverState.loadedAt<30000))return;
+      receiverState.loading=true;renderReceiverStatus();
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+      try{
+        const response=await fetch('/api/receiver-status',{cache:'no-store',signal:controller.signal});
+        const data=await response.json();
+        if(!response.ok||!data.ok||!data.heartbeat||!data.health)throw new Error(data.error||'本機服務沒有回傳狀態，請重新開啟設定工具');
+        receiverState.data=data;receiverState.error='';
+      }catch(error){receiverState.error='無法讀取手機遙控狀態：'+(error.name==='AbortError'?'本機服務逾時':error.message);}
+      finally{clearTimeout(timer);receiverState.loading=false;receiverState.loadedAt=Date.now();renderReceiverStatus();}
+    }
+    document.getElementById('receiverRefreshBtn').onclick=()=>refreshReceiverStatus(true);
+    document.getElementById('receiverRegisterBtn').onclick=async()=>{
+      const out=document.getElementById('receiverRegisterResult'), btn=document.getElementById('receiverRegisterBtn');
+      if(!confirm('會在這台電腦建立兩個 Windows 工作排程：\n\n• E3 日管接收監看：每 10 分鐘檢查接收端，離線或恢復時通知預設 Teams 對話一次\n• E3 日管接收端：登入 Windows 1 分鐘後自動開啟接收視窗\n\n確定建立？'))return;
+      btn.disabled=true;out.textContent='正在註冊…';
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+      try{
+        const response=await fetch('/api/receiver-register',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:controller.signal});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok||!data.ok)throw new Error(data.error||'註冊失敗');
+        out.textContent='✅ 已註冊兩個工作排程。主機重開後需登入 Windows 才會執行。';
+      }catch(error){out.textContent='❌ '+(error.name==='AbortError'?'本機服務逾時，請按「重新整理」確認是否已建立':error.message);}
+      finally{clearTimeout(timer);btn.disabled=false;refreshReceiverStatus(true);}
+    };
+    window.addEventListener('focus',()=>refreshReceiverStatus(true));
+    setInterval(()=>{if(!document.hidden)refreshReceiverStatus();},30000);
+    refreshReceiverStatus(true);
+    document.getElementById('cdpHeadlessChk').onchange = e => {
+      config.teams.cdp_headless = e.target.checked;
+      renderCdpMode();
+    };
     document.getElementById('cdpSetupBtn').onclick = async () => {
-      const button = document.getElementById('cdpSetupBtn'); button.disabled = true;
+      const button = document.getElementById('cdpSetupBtn'), originalText=button.textContent;
+      button.disabled = true;button.textContent='正在開啟設定…';
       try {
-        const resp = await fetch('http://127.0.0.1:8765/api/cdp-setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
-        const data = await resp.json();
-        if (!resp.ok || !data.ok) throw new Error(data.error || '無法啟動 CDP 設定');
-        showSaveToast('已開啟 CDP 登入視窗：請在 Edge 登入 Teams 網頁版，再回到黑色視窗按 Enter 檢查發送對象。');
-      } catch (error) { showSaveToast('❌ '+error.message,true); }
-      finally { button.disabled=false; }
+        const data = await cdpApiRequest('/api/cdp-setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
+        if (!data.ok) throw new Error(data.error || '無法啟動 CDP 設定');
+        showSaveToast('已開啟 CDP 設定視窗，請依提示選擇收件對象；若有其他工作占用，請在網頁選擇如何處理。');
+        if(window.E3WorkUI)window.E3WorkUI.refresh();
+      } catch (error) { showSaveToast('❌ '+(error.name==='AbortError'?'啟動結果尚未確認，請先查看是否已有 CDP 設定視窗。':error.message),true); }
+      finally { button.disabled=false;button.textContent=originalText; }
     };
     document.getElementById("autoPressEnterChk").onchange = e => {
       config.teams.auto_press_enter = e.target.checked;
     };
     document.getElementById("defaultChatInput").oninput = e => {
       config.teams.target_chat_name = e.target.value;
+      renderSavedCdpTargets();
+      renderTeamsPreview();
+    };
+    document.getElementById("defaultMessageInput").oninput = e => {
+      initializeScheduleMessages();
+      config.teams.default_message = e.target.value;
       renderTeamsPreview();
     };
     document.getElementById("normalSummaryInput").oninput = e => {
+      initializeScheduleMessages();
       config.teams.normal_summary = e.target.value;
       renderTeamsPreview();
     };
     document.getElementById("abnormalHeaderInput").oninput = e => {
+      initializeScheduleMessages();
       config.teams.abnormal_header = e.target.value;
       renderTeamsPreview();
     };
-    document.getElementById("authUserInput").oninput = e => {
-      config.auth.username = e.target.value;
+    function getPageAuth(page) {
+      if (!Object.prototype.hasOwnProperty.call(page, 'auth')) {
+        const old = config.auth || {};
+        const validUser = !!old.username && old.username !== 'YOUR_USERNAME';
+        page.auth = { enabled: !!old.enabled && validUser, username: validUser ? old.username : '', password: validUser ? (old.password || '') : '' };
+      }
+      if (!page.auth || typeof page.auth !== 'object') page.auth = { enabled: false, username: '', password: '' };
+      return page.auth;
+    }
+    function renderPageAuth(page) {
+      const auth = getPageAuth(page);
+      const enabled = auth.enabled === true;
+      document.getElementById('pageLoginSummary').textContent=enabled ? '自動登入已啟用' : '使用已保存的登入狀態';
+      document.getElementById('pageAuthEnabledChk').checked = enabled;
+      document.getElementById('pageAuthFields').hidden = !enabled;
+      document.getElementById('pageAuthUserInput').value = auth.username || '';
+      document.getElementById('pageAuthPassInput').value = auth.password || '';
+      document.getElementById('pageAuthHelp').textContent = enabled
+        ? '只使用此頁帳密；遇到登入畫面時自動填入。請填妥後按「抓圖」確認；MFA／驗證碼需手動登入。'
+        : '不自動填帳密，沿用已保存的登入狀態；不會登出。適合免登入或公司自動登入的網站。';
+    }
+    function renderPageTime(page) {
+      let supported=false;
+      try{supported=/\/(screens|charts)\.php$/i.test(new URL(page.url).pathname);}catch{}
+      document.getElementById('pageTimeFold').hidden=!supported;
+      const setting=page.zabbix_time || {enabled:true,range:'7d'};
+      const enabled=setting.enabled !== false;
+      document.getElementById('pageTimeNowChk').checked=enabled;
+      document.getElementById('pageTimeRange').value=setting.range;
+      document.getElementById('pageTimeRange').disabled=!enabled;
+      document.getElementById('pageTimeSummary').textContent=!enabled ? '不調整時間區間' : setting.range==='keep' ? '只切 NOW，不點選區間' : `NOW → ${setting.range}`;
+    }
+    document.getElementById('pageTimeNowChk').onchange=e=>{
+      const page=config.pages[currentPageIdx];
+      page.zabbix_time={enabled:e.target.checked,range:page.zabbix_time?.range || '7d'};
+      renderPageTime(page);
     };
-    document.getElementById("authPassInput").oninput = e => {
-      config.auth.password = e.target.value;
+    document.getElementById('pageTimeRange').onchange=e=>{
+      const page=config.pages[currentPageIdx];
+      page.zabbix_time={enabled:document.getElementById('pageTimeNowChk').checked,range:e.target.value};
+      renderPageTime(page);
     };
-
-
-
-
-
+    document.getElementById('pageAuthEnabledChk').onchange = e => {
+      const page = config.pages[currentPageIdx];
+      getPageAuth(page).enabled = e.target.checked;
+      renderPageAuth(page);
+    };
+    document.getElementById("pageAuthUserInput").oninput = e => {
+      getPageAuth(config.pages[currentPageIdx]).username = e.target.value;
+    };
+    document.getElementById("pageAuthPassInput").oninput = e => {
+      getPageAuth(config.pages[currentPageIdx]).password = e.target.value;
+    };
+ 
+ 
     document.getElementById("changePageImgInput").onchange = e => {
       const file = e.target.files[0];
       if (!file) return;
@@ -2949,11 +3860,8 @@ function renderTeamsPreview() {
       };
       reader.readAsDataURL(file);
     };
-
-
-
-
-
+ 
+ 
     function showSaveToast(msg, isError = false) {
       const el = document.getElementById("saveStatusText");
       el.style.color = isError ? "#f87171" : "#4ade80";
@@ -2962,24 +3870,19 @@ function renderTeamsPreview() {
         if (el.textContent === msg) el.textContent = "";
       }, 4000);
     }
-
-
-
-
-
+ 
+ 
     // testMode: "" = 只儲存；"preview" = 測試貼上不送出；"send" = 正式送出
     // silent = 自動儲存 (不跳提示，只更新右上角狀態)
     async function saveConfigDirectly(testMode = "", scheduleId = "", silent = false) {
+      if (captureCommitInFlight || captureCommitUncertain) return false;
       const triggerTest = !!testMode;
       normalizePageModes();
       const jsonStr = JSON.stringify(config, null, 2);
       // 1. 永遠同步保存一份到瀏覽器記憶，重整網頁也不會消失
       try { localStorage.setItem("e3_monitor_config_v1", jsonStr); } catch (e) {}
-
-
-
-
-
+ 
+ 
       // 2. 優先透過本機背景服務 (http://127.0.0.1:8765) 直接寫入程式資料夾的 config.json (免彈窗、免下載)
       const params = new URLSearchParams();
       if (scheduleId) params.set("schedule", scheduleId);
@@ -3009,29 +3912,23 @@ function renderTeamsPreview() {
               testMode === "send"
                 ? "✅ 已儲存並開始正式送出，請勿操作滑鼠鍵盤"
                 : testMode === "preview"
-                ? (config.teams.prefer_window === 'cdp' ? "✅ 已儲存，正在背景開啟 Teams 檢查對話（不貼上、不送出）" : "✅ 已儲存，正在貼上到 Teams（不會送出），請勿操作滑鼠鍵盤")
+                ? (config.teams.prefer_window === 'cdp' ? "✅ 已儲存，正在檢查圖片與綁定（不送出）" : "✅ 已儲存，正在貼上到 Teams（不會送出），請勿操作滑鼠鍵盤")
                 : "✅ 已儲存至 config.json"
             );
           }
           return true;
         }
       } catch (err) {}
-
-
-
-
-
+ 
+ 
       // 本機服務沒有回應：明確告知 config.json 沒有更新 (瀏覽器暫存只是備份，排程讀不到)
       setAutoSaveStatus("error", "❌ 儲存失敗");
       showSaveToast("❌ 儲存失敗：本機服務沒有回應，config.json 沒有更新", true);
       showServiceBanner("⚠️ 本機服務沒有回應，剛才的修改只暫存在瀏覽器，config.json 沒有更新。請雙擊 open_calibrator.bat 重新開啟，修改會在重新開啟後自動儲存。");
       return false;
     }
-
-
-
-
-
+ 
+ 
     // 測試都以右側「預覽哪個排程」為準；預設只貼上不送出，正式送出需再次確認
     function previewScheduleArg() {
       const s = getPreviewSchedule();
@@ -3041,7 +3938,7 @@ function renderTeamsPreview() {
     document.getElementById("testSendNowBtn").onclick = () => {
       const s = getPreviewSchedule();
       const pages = pagesForSchedule(s);
-      const targets = [...new Set(pages.map(p => describeTarget(resolveTarget(p, s).target)))];
+      const targets = [...new Set(pages.flatMap(p => resolveTargets(p, s).map(({target}) => describeTarget(target))))];
       if (!pages.length) {
         alert("此排程沒有可傳送的頁面。");
         return;
@@ -3050,14 +3947,12 @@ function renderTeamsPreview() {
         alert("發送對象尚未設定或無法使用（連結 / Email），請先到「排程與發送」填入 Teams 對話名稱。");
         return;
       }
-      const msg = `確定要用範例圖【正式送出】嗎？\n\n排程：${s ? `${s.time} ${s.name}` : "全部啟用頁面"}\n圖片：${pages.length} 張\n發送到：\n${targets.join("\n")}\n\n送出後無法收回。`;
+      const policy = s && s.alert_only === true ? '\n發送條件：僅異常時發送；本次範例圖若未超標且無失敗，就不發送。' : '';
+      const msg = `確定要用範例圖【正式送出】嗎？\n\n排程：${s ? `${s.time} ${s.name}` : "全部啟用頁面"}\n圖片：${pages.length} 張\n發送到：\n${targets.join("\n")}${policy}\n\n送出後無法收回。`;
       if (confirm(msg)) saveConfigDirectly("send", previewScheduleArg());
     };
-
-
-
-
-
+ 
+ 
     // 左側三個分頁 (記住上次停留的分頁)
     function setSideTab(tab) {
       document.querySelector(".sidebar").dataset.activeTab = tab;
@@ -3071,11 +3966,8 @@ function renderTeamsPreview() {
       const savedTab = localStorage.getItem("e3_calibrator_tab");
       if (["pages", "send", "global"].includes(savedTab)) setSideTab(savedTab);
     } catch (e) {}
-
-
-
-
-
+ 
+ 
     // 直接雙擊 calibrator.html (file://) 開啟時：圖片只能用內建舊範例、抓圖後的裁切圖也存不回去，
     // 所以本機服務有開就自動轉到 http://127.0.0.1:8765/calibrator.html，沒開就顯示警告
     function showServiceBanner(msg) {
@@ -3088,11 +3980,8 @@ function renderTeamsPreview() {
       }
       bar.textContent = msg;
     }
-
-
-
-
-
+ 
+ 
     async function initApp() {
       if (location.protocol === "file:") {
         try {
@@ -3134,23 +4023,26 @@ function renderTeamsPreview() {
         showServiceBanner(`❌ config.json 格式錯誤，無法讀取（${configError}）。為避免覆蓋，自動儲存已停用；畫面上是瀏覽器暫存的舊設定。請用記事本修正 config.json（常見原因：手動編輯少了逗號或引號、從網頁 / Teams 複製貼上帶入特殊空白），修正後重新整理此頁。`);
       }
       ensureSchedules();
+      config.pages.forEach(page => getPageAuth(page));
       normalizePageModes();
       lastSavedJson = JSON.stringify(config, null, 2);
-      lastAppliedSchedulesJson = scheduleSignature();
+      lastAttemptedSchedulesJson = scheduleSignature();
+      // 在記下已儲存內容之後才轉換，讓自動儲存把「自己」寫回 config.json (只改收件名稱，不重新註冊排程)
+      if (fromServer && normalizeLegacySelfTargets()) setAutoSaveStatus("saving", "已整理收件對象（舊版「自己」連結、空白項目），正在儲存…");
       if (fromServer) {
         autoSaveEnabled = true;
+        numericAutoEnabled = true;
         refreshScheduleStatus();
       } else {
         setAutoSaveStatus("error", configError ? "❌ config.json 格式錯誤" : "⚠️ 無法自動儲存");
       }
       loadSampleImages();
     }
-
-
-
-
-
+ 
+ 
     initApp();
   </script>
+  <script src="work_control.js"></script>
 </body>
 </html>
+

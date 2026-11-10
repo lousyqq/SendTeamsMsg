@@ -109,7 +109,7 @@
 <div class="layout">
 <nav class="toc" aria-label="目錄">
   <div class="brand">📊 E3 監控截圖使用手冊</div>
-  <div class="ver">最後更新：2026-11-09</div>
+  <div class="ver">最後更新：2026-11-10</div>
   <a href="#overview">0. 流程總覽</a>
   <a href="#prepare">1. 第一次使用前的準備</a>
   <a class="sub" href="#open-tool">1-2 開啟設定工具</a>
@@ -121,6 +121,7 @@
   <a class="sub" href="#real-send">2-4 正式送出</a>
   <a class="sub" href="#real-page">2-5 真實網頁、不發送</a>
   <a class="sub" href="#cdp">2-6 CDP 背景傳送（鎖定也能傳）</a>
+  <a class="sub" href="#receiver-watch">2-7 手機遙控（@日管）：保持清醒、自動恢復與離線通知</a>
   <a href="#add-page">3. 新增網頁、擷取範圍與警戒線</a>
   <a class="sub" href="#capture">3-1 抓整頁畫面</a>
   <a class="sub" href="#crop">3-2 框選擷取範圍</a>
@@ -218,7 +219,7 @@
 <p>先把訊息送到<b>自己的個人對話</b>（自己跟自己的聊天），確認沒問題再改成群組。</p>
 
 <h3 id="copy-link">2-1 設定發送對象</h3>
-<div class="callout ok"><strong>最快：📨 先傳給自己測試</strong>左欄 <span class="ui">📅 排程與發送</span> →「預設發送對象」下方按 <span class="ui">📨 先傳給自己測試</span>，發送對象就會設成<code>自己</code>（自己跟自己的個人對話），可以直接跳到 2-2。</div>
+<div class="callout ok"><strong>最快：📨 先傳給自己測試</strong>左欄 <span class="ui">📅 排程與發送</span> →「預設發送對象」下方按 <span class="ui">📨 先傳給自己測試</span>，發送對象就會設成<code>自己</code>（自己跟自己的個人對話），可以直接跳到 2-2。<br>舊版設定若把「自己」存成一長串 Teams 連結，開啟設定工具時會自動改存成<code>自己</code>（傳送對象不變；CDP 已用舊連結名稱綁定的本人對話也會沿用，不必重新綁定）。</div>
 <p>要傳到<b>群組</b>時，在「預設發送對象」填入<b>對話名稱</b>：</p>
 <div class="two">
   <ol class="steps">
@@ -265,7 +266,7 @@
 <div class="two">
   <div>
     <ol class="steps">
-      <li>右欄 <span class="ui">👁 預覽哪個排程</span> 選一個排程，確認圖片張數、訊息開頭、發送對象。</li>
+      <li>右欄 <span class="ui">👁 預覽哪個排程</span> 選一個排程（選單會顯示每個排程的張數），確認圖片張數、訊息開頭、發送對象。左欄「預覽與測試」的 <span class="ui">將目前預覽傳給自己</span>、<span class="ui">執行排程傳給自己</span> 也一律使用這裡選的排程。</li>
       <li>按 <span class="ui">🧪 測試貼上（不送出）</span>。</li>
       <li><b>放開滑鼠鍵盤約 20～40 秒</b>：程式會找到開著的 Teams（PWA / 桌面版 / Edge 分頁；縮小也沒關係，會自動還原到最前面，Edge 會切到 Teams 分頁）→ 在聊天清單點選您的對話 → 確認視窗標題是該對話 → 貼上圖片，等圖片出現在輸入框 → 貼上文字，<b>不按 Enter</b>。</li>
       <li>到 Teams 檢查輸入框：沒問題就自己按 Enter（或刪掉）。</li>
@@ -324,8 +325,8 @@
   <div>
     <ol class="steps">
       <li><span class="ui">📅 排程與發送</span> →「使用哪個 Teams」選 <b>CDP 背景傳送（鎖定、螢幕關閉也能傳；需先登入）</b>。</li>
-      <li>按 <span class="ui">🔐 登入並檢查 CDP 傳送</span>（或雙擊 <code>setup_cdp.bat</code>）：會開一個 Edge 視窗和一個黑色視窗。在 Edge 登入 <b>Teams 網頁版</b>（出現「保持登入？」請選「是」），看到聊天畫面後回黑色視窗按 <b>Enter</b>。</li>
-      <li>黑色視窗會逐一開啟每個發送對象檢查（<b>不貼上、不送出</b>），列出 ✅ / ❌，最後確認背景 Edge 能沿用登入；看完按 Enter 關閉。</li>
+      <li>按 <span class="ui">設定 CDP 收件對象</span>（或雙擊 <code>setup_cdp.bat</code>）：會開一個 Edge 視窗和一個黑色視窗。黑色視窗列出所有收件名稱與「已綁定／尚未綁定」：輸入編號（多個用逗號，例如 <code>1,3</code>），或輸入 <code>A</code> 依序設定全部尚未綁定的對象。</li>
+      <li>在 Edge 登入 <b>Teams 網頁版</b>（出現「保持登入？」請選「是」），依黑色視窗提示逐一切到對應的聊天室，按 <b>Enter</b> 核對、輸入 <code>BIND</code> 儲存；某個對象想先跳過就輸入 <code>S</code>（原綁定不變）。全部完成後會關閉設定 Edge，並用一個背景 Edge 依序確認能沿用登入（<b>不貼上、不送出</b>），列出 ✅ / ❌；看完按 Enter 關閉。之後按 <span class="ui">🔍 檢查 CDP 連線</span> 也只開一個背景 Edge 檢查所有對象。</li>
       <li>之後要檢查時按 <span class="ui">🔍 檢查 CDP 連線</span>（背景執行，結果顯示在下方）。</li>
       <li>右欄 <span class="ui">🧪 開啟對話檢查（不貼上、不送出）</span>，再用 <span class="ui">🚀 正式送出…</span> 傳給自己，確認 Teams 收到圖片與文字。</li>
       <li>改成正式群組名稱、鎖定電腦，用 <code>schtasks /Run /TN E3_Monitor_morning</code> 跑一次排程，解鎖後確認群組收到。</li>
@@ -344,6 +345,18 @@
     <div class="callout">此功能已在開發機用「模擬的 Teams 網頁」完整測試（登入、找對話、名稱相近、捲動清單、4 張圖＋文字一則送出、分批、草稿、模擬鎖定、約 6 MiB 大圖）；公司真實 Teams 仍需您實際驗收一次。</div>
   </div>
 </div>
+
+<h3 id="receiver-watch">2-7 手機遙控（@日管）：保持清醒、自動恢復與離線通知</h3>
+<p>第一次使用先雙擊 <code>setup_teams_receiver.bat</code>，在開啟的 Edge 選好要接收指令的對話後輸入 <code>BIND</code>；要接收多個對話時，黑色視窗問「要再綁定另一個接收對話嗎？」輸入 <code>Y</code>，會開新分頁讓您選下一個（每個對話一個分頁，請保持開啟）。主機開著 <code>start_teams_receiver.bat</code> 時，可以從手機在綁定的 Teams 對話輸入 <code>@日管 狀態</code>、<code>@日管 截圖清單</code>、<code>@日管 截圖 名稱</code> 遙控截圖。<code>@日管 狀態</code> 會回覆主機名稱、接收端已連續執行多久，以及每個排程<b>上次執行時間與結果</b>（成功／有頁面或傳送失敗／逾時）和下次執行時間；只查詢，不會執行排程。接收端的指令截圖保留 7 天、收據與指令紀錄保留 30 天，之後每天自動清除（待核對的傳送紀錄不會刪）。為了讓主機長時間待命：</p>
+<ol class="steps">
+  <li><b>保持清醒（自動）</b>：接收視窗開著的期間，程式會要求 Windows <b>不要自動睡眠</b>；螢幕仍可關閉、可以鎖定，<b>不會更改電源計畫</b>。關閉接收視窗或按 Ctrl+C 後自動解除。這無法阻止手動睡眠、闔上筆電、登出或斷電。若黑色視窗出現「無法要求系統保持清醒」，請把 Windows 電源設定的「睡眠」改為「永不」。</li>
+  <li><b>自動回到原對話（自動）</b>：專用 Edge 被關閉、當機、Windows 更新重開，或綁定的分頁被關掉時，接收端會<b>自動重新開啟專用 Edge</b>（沿用原登入），用原本的對話識別開回同一個對話，並重新核對帳號、對話與名稱，全部相符才繼續接收；<b>不需要重跑 setup_teams_receiver.bat</b>。失敗時每 60 秒再試一次，同一個對話只會保留一個恢復用分頁。若 Teams 要求重新登入或 MFA，請在那個分頁登入，下一次嘗試就會接上。恢復後不會處理離線期間或更早的舊指令，也不會重送。</li>
+  <li><b>在設定工具查看狀態</b>：<span class="ui">📅 排程與發送</span> →「手機遙控（@日管）」顯示接收端是否在執行、已執行多久、最後回報時間、是否已要求保持清醒、每個接收對話是否讀得到（讀不到時顯示原因，例如登入過期），以及離線通知、開機自動啟動是否已設定。收合時標題旁也會顯示摘要；每 30 秒自動更新，或按 <span class="ui">重新整理</span>。</li>
+  <li><b>離線通知與開機自動啟動（建議設定一次）</b>：在上述卡片按 <span class="ui">註冊離線通知與開機自動啟動</span>（確認後建立），或雙擊 <code>register_receiver_watchdog.bat</code>，會建立兩個 Windows 工作：「E3 日管接收端」在<b>登入 Windows 1 分鐘後自動開啟接收視窗</b>；「E3 日管接收監看」<b>每 10 分鐘</b>檢查接收端是否正常。發現接收視窗被關閉、程式當機、主機曾重開機、超過 10 分鐘沒有回報，或超過 10 分鐘讀不到 Teams 對話（例如登入過期、專用 Edge 被關閉）時，會用排程的 CDP 傳送，在<b>預設 Teams 對話</b>發一則「✦ [日管監看] 日管接收端目前可能無法遙控」，並附上原因；恢復後再發一則「已恢復」。同一次離線只通知一次，不會每 10 分鐘重複。</li>
+  <li><b>排程登入過期預警（自動，需先完成上一步）</b>：監看工作也會檢查<b>排程傳送用的 Teams 登入</b>是否還有效（約每 6 小時一次，以及每個排程開始前約 1 小時；只檢查、不傳訊息）。登入過期時，排程那份登入沒辦法通知自己，所以改由<b>手機遙控接收端</b>用它自己的 Teams 登入，在接收的本人對話發一則「✦ [日管監看] 排程用的 Teams 登入需要處理」，附上原因與下次排程時間；請到主機的設定工具按「設定 CDP 收件對象」重新登入，恢復後會再通知一次。接收端沒有在執行時，通知會等它連上後再送（最多保留 6 小時）。設定工具的「手機遙控」卡片也會顯示「排程登入」的最近檢查結果。</li>
+  <li>主機重開機後仍需<b>登入 Windows</b>（由人登入或公司允許的自動登入），這兩個工作才會執行。不再需要時，在命令列執行 <code>powershell -ExecutionPolicy Bypass -File e3_monitor_native.ps1 -UnregisterReceiverWatchdog</code> 一併移除兩個工作。<b>刻意關閉接收視窗時，監看會通知一次「已停止」</b>，屬正常。</li>
+</ol>
+<div class="callout warn"><strong>⚠️ 使用條件</strong>離線通知需要「使用哪個 Teams」選 <b>CDP 背景傳送</b>，並已設定好預設 Teams 對話名稱（與排程共用同一個登入）；若排程用的 Teams 登入也過期，就無法發出通知。監看工作只在 Windows 已登入時執行。紀錄在 <code>logs\teams_receiver\heartbeat.json</code>（接收端心跳）與 <code>watchdog_last.txt</code>（最近一次檢查結果）。</div>
 
 <!-- ======================================================= -->
 <h2 id="add-page">3. 新增網頁、擷取範圍與警戒線</h2>
@@ -401,7 +414,7 @@
 <h3>4-1 新增 / 修改排程</h3>
 <div class="two">
   <div>
-    <p><span class="ui">📅 排程與發送</span> →「排程時段」。每個排程平常收合成一行，點它展開；前面的勾選框是啟用 / 停用；<span class="ui">➕ 新增</span> 建立新排程。</p>
+    <p><span class="ui">📅 排程與發送</span> →「排程時段」（預設展開；收合時標題旁列出前幾個排程的時間與名稱）。每個排程平常收合成一行，點它展開；前面的勾選框是啟用 / 停用；<span class="ui">➕ 新增</span> 建立新排程。</p>
     <table>
       <tr><th>欄位</th><th>說明</th></tr>
       <tr><td>時間</td><td>每天幾點執行</td></tr>
@@ -435,7 +448,7 @@
 
 <h3 id="run-notes">4-5 排程執行時的注意事項</h3>
 <ul>
-  <li>電腦需<b>開機並已登入 Windows</b>。排程會要求喚醒、錯過時間後補跑（受硬體與公司電源政策限制），執行期間會要求系統保持清醒。排程<b>一律用背景 Edge 截圖（不顯示視窗）</b>，螢幕關閉或鎖定時都能截圖。使用 <b>CDP 背景傳送</b>（<a href="#cdp">2-6</a>）會直接傳送；其他方式在螢幕鎖定或遠端桌面斷線時，會等待解鎖最多 30 分鐘再貼圖，逾時則停止（截圖保留在 <code>captures\</code>）。</li>
+  <li>電腦需<b>開機並已登入 Windows</b>。排程會要求喚醒、錯過時間後補跑（受硬體與公司電源政策限制），執行期間會要求系統保持清醒。使用 <b>CDP 背景傳送</b>（<a href="#cdp">2-6</a>）且勾選無 Edge 視窗時，排程一律在背景截圖與傳送；其他方式在桌面可用時會短暫顯示截圖用 Edge，螢幕鎖定或遠端桌面斷線時改用背景截圖，之後等待解鎖<b>最多 30 秒</b>再貼圖，逾時則停止（截圖保留在 <code>captures\</code>）。前一個排程或測試還在執行時，本次最多等 <b>3 分鐘</b>；期間設定工具會跳出選擇（繼續等待／強制停止前一工作／取消），沒有選擇不會自動強制停止，逾時本次不執行。每次工作最多 10 分鐘，結果不明時不會自動重送。</li>
   <li>排程時段下方顯示「⚠️ N 個排程尚未套用喚醒／補跑設定」時，按 <span class="ui">🔄 重新套用</span>。</li>
   <li>（CDP 背景傳送以外的方式）<b>Teams 要開著且已登入</b>（PWA / Edge 分頁 / 桌面版；縮小或被蓋住都沒關係）。沒開時會自動開啟（依序：開始功能表的 Teams PWA 捷徑 → 桌面版 → 用 Edge 開 Teams 網頁版），開啟後等約 20 秒載入；建議還是先開好。</li>
   <li>用 Edge 分頁時，程式會把 Edge 切到 Teams 分頁；Edge 讓分頁睡眠（「已捨棄」）時會自動喚醒並等它載入（最多 30 秒）。</li>
@@ -560,6 +573,7 @@
       <tr><td><code>e3_monitor_native.ps1</code></td><td>主程式（截圖、判斷、發送 Teams、設定工具的本機服務、排程）</td></tr>
       <tr><td><code>teams_delivery.ps1</code></td><td>Teams 分批規則（每批 4 張、25 MiB）；<b>缺少時連設定工具都打不開</b></td></tr>
       <tr><td><code>teams_cdp\</code>、<code>setup_cdp.bat</code></td><td>CDP 背景傳送（<a href="#cdp">2-6</a>）；不使用 CDP 時可以不放</td></tr>
+      <tr><td><code>teams_receiver*.ps1</code>、<code>teams_receiver_watchdog.ps1</code>、<code>*_teams_receiver.bat</code>、<code>register_receiver_watchdog.bat</code></td><td>手機 @日管 遙控與離線通知（<a href="#receiver-watch">2-7</a>）；不使用遙控時可以不放</td></tr>
       <tr><td><code>config.json</code></td><td>您的設定（含 Teams 對話名稱；若有填網站帳密請妥善保管）</td></tr>
     </table>
   </div>
@@ -571,7 +585,7 @@
       <tr><td><code>USER_MANUAL.html</code></td><td>沒有使用手冊（📖 按鈕打不開）；圖片已內嵌，單一檔案即可</td></tr>
       <tr><td><code>tools\</code></td><td>只有重拍手冊截圖時才用到</td></tr>
       <tr><td><code>sample_data.js</code></td><td>內建舊範例圖，無影響</td></tr>
-      <tr><td><code>CLAUDE.md</code></td><td>開發說明，執行用不到</td></tr>
+      <tr><td><code>CLAUDE.md</code>、<code>docs\</code></td><td>開發說明與歷史紀錄，執行用不到</td></tr>
     </table>
   </div>
 </div>

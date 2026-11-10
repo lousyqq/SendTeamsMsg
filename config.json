@@ -1,222 +1,379 @@
 {
-  "schedules": [
-    {
-      "id": "morning",
-      "enabled": true,
-      "name": "測試",
-      "time": "18:21",
-      "days": [],
-      "pages": [
-        "page1",
-        "page_1793694163534",
-        "page_1793694279892",
-        "page_1793694614919"
-      ],
-      "target_chat_name": "Sariel Lin-林玉婷 (您)",
-      "title": "[MSD 日管index]"
-    },
-    {
-      "id": "sched2",
-      "enabled": false,
-      "name": "排程 2",
-      "time": "08:00",
-      "days": [],
-      "pages": [
-        "page1"
-      ],
-      "target_chat_name": "",
-      "title": ""
-    }
-  ],
-  "auth": {
-    "enabled": true,
-    "auth_type": "form_or_dialog",
-    "login_url": "",
-    "username": "esiuser",
-    "password": "ESI@168",
-    "save_session": true
-  },
-  "teams": {
-    "send_mode": "edge_teams_web",
-    "desktop_window_title": "Teams",
-    "target_chat_name": "Sariel Lin-林玉婷 (您)",
-    "auto_switch_chat": false,
-    "normal_summary": "",
-    "abnormal_header": "",
-    "attach_annotated_image_on_alert": false,
-    "auto_press_enter": true,
-    "prefer_window": ""
-  },
-  "pages": [
-    {
-      "id": "page1",
-      "enabled": true,
-      "name": "P14",
-      "url": "http://10.10.101.14/screens.php?elementid=194",
-      "target_chat_name": "",
-      "mode": "capture_only",
-      "wait_seconds": 5,
-      "crop_region": {
-        "enabled": true,
-        "x": 37,
-        "y": 6,
-        "w": 1840,
-        "h": 943
-      },
-      "rules": [
-        {
-          "id": "p1_r1",
-          "enabled": false,
-          "name": "F14E3DB1: 03.CPU load (7d)",
-          "roi": {
-            "x": 0,
-            "y": 0,
-            "w": 1215,
-            "h": 651
-          },
-          "threshold_y": 305,
-          "color_mode": "auto",
-          "target_color": "#8e7f84",
-          "color_tolerance": 48,
-          "min_pixels": 2,
-          "alert_message": "⚠️ [頁面1 - F14E3DB1: 03.CPU load] 昨日數值超過警戒線，請 DBA / 系統工程師協助查詢！"
-        },
-        {
-          "id": "p1_r2",
-          "enabled": false,
-          "name": "F14E3DB1: 02.Memory Usage (7d)",
-          "roi": {
-            "x": 708,
-            "y": 19,
-            "w": 18,
-            "h": 27
-          },
-          "threshold_y": 24,
-          "color_mode": "auto",
-          "target_color": "#5859e0",
-          "color_tolerance": 48,
-          "min_pixels": 2,
-          "alert_message": "⚠️ [頁面1 - F14E3DB1: 02.Memory Usage] 昨日記憶體使用率超過警戒線，請協助查詢確認！"
-        },
-        {
-          "id": "p1_r3",
-          "enabled": false,
-          "name": "F12AE3AP21: 26.FDC Execution Time (7d)",
-          "roi": {
-            "x": 708,
-            "y": 170,
-            "w": 18,
-            "h": 27
-          },
-          "threshold_y": 176,
-          "color_mode": "auto",
-          "target_color": "#2ca02c",
-          "color_tolerance": 48,
-          "min_pixels": 2,
-          "alert_message": "⚠️ [頁面1 - F12AE3AP21: 26.FDC Execution Time] 昨日執行時間超過警戒線，請 AP 負責人協助查詢！"
-        }
-      ],
-      "capture_view": {
-        "width": 2293,
-        "height": 1146,
-        "x": 0,
-        "y": 266,
-        "zoom": 125
-      },
-      "browser_zoom": 125
-    },
-    {
-      "id": "page_1793694163534",
-      "enabled": true,
-      "name": "P58",
-      "url": "http://10.13.2.27/screens.php?elementid=138",
-      "target_chat_name": "",
-      "mode": "capture_only",
-      "wait_seconds": 5,
-      "crop_region": {
-        "enabled": true,
-        "x": 37,
-        "y": 32,
-        "w": 1831,
-        "h": 881
-      },
-      "rules": [],
-      "capture_view": {
-        "width": 2390,
-        "height": 1195,
-        "x": 0,
-        "y": 250,
-        "zoom": 100
-      },
-      "browser_zoom": 100
-    },
-    {
-      "id": "page_1793694279892",
-      "enabled": true,
-      "name": "CMS",
-      "url": "http://10.10.101.14/screens.php?elementid=201",
-      "target_chat_name": "",
-      "mode": "capture_only",
-      "wait_seconds": 5,
-      "crop_region": {
-        "enabled": true,
-        "x": 123,
-        "y": 61,
-        "w": 1636,
-        "h": 833
-      },
-      "rules": [
-        {
-          "id": "page_1793694279892_r1793694428828",
-          "enabled": false,
-          "name": "監控小圖 #1",
-          "roi": {
-            "x": 158,
-            "y": 231,
-            "w": 1626,
-            "h": 710
-          },
-          "threshold_y": 480,
-          "color_mode": "auto",
-          "target_color": "#2e34c6",
-          "color_tolerance": 48,
-          "min_pixels": 2,
-          "alert_message": "⚠️ [CMS - 監控小圖 #1] 昨日圖示超過警戒線，請相關人員協助查詢！"
-        }
-      ],
-      "capture_view": {
-        "width": 2124,
-        "height": 1062,
-        "x": 0,
-        "y": 222,
-        "zoom": 100
-      },
-      "browser_zoom": 100
-    },
-    {
-      "id": "page_1793694614919",
-      "enabled": true,
-      "name": "KPI",
-      "url": "http://p58web01/PT_MainIndex/PT_WebReport.aspx",
-      "target_chat_name": "",
-      "mode": "capture_only",
-      "wait_seconds": 5,
-      "crop_region": {
-        "enabled": true,
-        "x": 16,
-        "y": 0,
-        "w": 1869,
-        "h": 906
-      },
-      "rules": [],
-      "capture_view": {
-        "width": 2390,
-        "height": 1195,
-        "x": 0,
-        "y": 0,
-        "zoom": 100
-      },
-      "browser_zoom": 100
-    }
-  ]
+    "schedules":  [
+                      {
+                          "id":  "morning",
+                          "enabled":  true,
+                          "name":  "MSD日管Index",
+                          "time":  "08:00",
+                          "days":  [
+
+
+
+                                   ],
+                          "pages":  [
+                                        "page1",
+                                        "page_1793694163534",
+                                        "page_1793694279892",
+                                        "page_1793694614919"
+                                    ],
+                          "target_chat_name":  "",
+                          "title":  "[MSD 日管index-測試]",
+                          "target_chat_names":  [
+                                                    "Sariel Lin-林玉婷 (您)",
+                                                    ""
+                                                ],
+                          "messages":  {
+                                           "default_message":  "測試是否可以正常傳送",
+                                           "abnormal_header":  "",
+                                           "normal_summary":  ""
+                                       }
+                      },
+                      {
+                          "id":  "sched2",
+                          "enabled":  true,
+                          "name":  "ExecutionTime_3D",
+                          "time":  "09:00",
+                          "days":  [
+
+
+
+                                   ],
+                          "pages":  [
+                                        "page_cf3a7b1bbee646fd9bd6ef0560b9519e",
+                                        "page_b0632b21121f4649944d25dca38b2c44"
+                                    ],
+                          "target_chat_name":  "",
+                          "title":  "[ExecutionTime 測試]",
+                          "repeat":  {
+                                         "enabled":  true,
+                                         "every":  60,
+                                         "unit":  "minutes",
+                                         "end_time":  "23:00"
+                                     },
+                          "target_chat_names":  [
+                                                    "Sariel Lin-林玉婷 (您)",
+                                                    ""
+                                                ],
+                          "messages":  {
+                                           "default_message":  "測試是否可以抓到peak",
+                                           "abnormal_header":  "有異常peak，請確認",
+                                           "normal_summary":  "正常"
+                                       }
+                      }
+                  ],
+    "auth":  {
+                 "enabled":  true,
+                 "auth_type":  "form_or_dialog",
+                 "login_url":  "",
+                 "username":  "esiuser",
+                 "password":  "ESI@168",
+                 "save_session":  true
+             },
+    "teams":  {
+                  "send_mode":  "edge_teams_web",
+                  "desktop_window_title":  "Teams",
+                  "target_chat_name":  "Sariel Lin-林玉婷 (您)",
+                  "auto_switch_chat":  false,
+                  "normal_summary":  "全部正常",
+                  "abnormal_header":  "請確認",
+                  "attach_annotated_image_on_alert":  false,
+                  "auto_press_enter":  true,
+                  "prefer_window":  "cdp",
+                  "cdp_headless":  true,
+                  "default_message":  "測試是否可以正常傳送"
+              },
+    "pages":  [
+                  {
+                      "id":  "page1",
+                      "enabled":  true,
+                      "name":  "P14_D7",
+                      "url":  "http://10.10.101.14/screens.php?elementid=194",
+                      "target_chat_name":  "",
+                      "mode":  "capture_only",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  37,
+                                          "y":  11,
+                                          "w":  1841,
+                                          "h":  894
+                                      },
+                      "rules":  [
+
+
+
+                                ],
+                      "capture_view":  {
+                                           "width":  2390,
+                                           "height":  1195,
+                                           "x":  0,
+                                           "y":  276,
+                                           "zoom":  80,
+                                           "layout":  "native100-v1"
+                                       },
+                      "browser_zoom":  80,
+                      "auth":  {
+                                   "enabled":  true,
+                                   "username":  "esiuser",
+                                   "password":  "ESI@168"
+                               },
+                      "category_id":  "category_81dffcd7771f413f819672f3fba63707"
+                  },
+                  {
+                      "id":  "page_1793694163534",
+                      "enabled":  true,
+                      "name":  "P58_D7",
+                      "url":  "http://10.13.2.27/screens.php?elementid=138",
+                      "target_chat_name":  "",
+                      "mode":  "capture_only",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  30,
+                                          "y":  5,
+                                          "w":  1848,
+                                          "h":  895
+                                      },
+                      "rules":  [
+
+
+
+                                ],
+                      "capture_view":  {
+                                           "width":  2390,
+                                           "height":  1195,
+                                           "x":  0,
+                                           "y":  276,
+                                           "zoom":  80,
+                                           "layout":  "native100-v1"
+                                       },
+                      "browser_zoom":  80,
+                      "auth":  {
+                                   "enabled":  true,
+                                   "username":  "esiuser",
+                                   "password":  "ESI@168"
+                               },
+                      "category_id":  "category_81dffcd7771f413f819672f3fba63707"
+                  },
+                  {
+                      "id":  "page_1793694279892",
+                      "enabled":  true,
+                      "name":  "CMS",
+                      "url":  "http://10.10.101.14/screens.php?elementid=201",
+                      "target_chat_name":  "",
+                      "mode":  "capture_only",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  76,
+                                          "y":  15,
+                                          "w":  1724,
+                                          "h":  927
+                                      },
+                      "rules":  [
+                                    {
+                                        "id":  "page_1793694279892_r1793694428828",
+                                        "enabled":  false,
+                                        "name":  "監控小圖 #1",
+                                        "roi":  {
+                                                    "x":  158,
+                                                    "y":  231,
+                                                    "w":  1626,
+                                                    "h":  710
+                                                },
+                                        "threshold_y":  480,
+                                        "color_mode":  "auto",
+                                        "target_color":  "#2e34c6",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "⚠️ [CMS - 監控小圖 #1] 昨日圖示超過警戒線，請相關人員協助查詢！"
+                                    }
+                                ],
+                      "capture_view":  {
+                                           "width":  1912,
+                                           "height":  956,
+                                           "x":  0,
+                                           "y":  271,
+                                           "zoom":  100,
+                                           "layout":  "native100-v1"
+                                       },
+                      "browser_zoom":  100,
+                      "auth":  {
+                                   "enabled":  true,
+                                   "username":  "esiuser",
+                                   "password":  "ESI@168"
+                               },
+                      "category_id":  "category_81dffcd7771f413f819672f3fba63707"
+                  },
+                  {
+                      "id":  "page_1793694614919",
+                      "enabled":  true,
+                      "name":  "MOVE",
+                      "url":  "http://p58web01/PT_MainIndex/PT_WebReport.aspx",
+                      "target_chat_name":  "",
+                      "mode":  "capture_only",
+                      "wait_seconds":  5,
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  16,
+                                          "y":  3,
+                                          "w":  1870,
+                                          "h":  922
+                                      },
+                      "rules":  [
+
+
+
+                                ],
+                      "capture_view":  {
+                                           "width":  2390,
+                                           "height":  1195,
+                                           "x":  0,
+                                           "y":  0,
+                                           "zoom":  80,
+                                           "layout":  "native100-v1"
+                                       },
+                      "browser_zoom":  80,
+                      "auth":  {
+                                   "enabled":  false,
+                                   "username":  "esiuser",
+                                   "password":  "ESI@168"
+                               },
+                      "category_id":  "category_81dffcd7771f413f819672f3fba63707"
+                  },
+                  {
+                      "id":  "page_cf3a7b1bbee646fd9bd6ef0560b9519e",
+                      "enabled":  true,
+                      "category_id":  "category_103e9561b2934a28b3dfa41ff05890d8",
+                      "name":  "P14_D3",
+                      "url":  "http://10.10.101.14/charts.php?graphid=4825180",
+                      "target_chat_name":  "",
+                      "mode":  "threshold_check",
+                      "wait_seconds":  5,
+                      "auth":  {
+                                   "enabled":  true,
+                                   "username":  "esiuser",
+                                   "password":  "ESI@168"
+                               },
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  8,
+                                          "y":  240,
+                                          "w":  1873,
+                                          "h":  417
+                                      },
+                      "rules":  [
+                                    {
+                                        "id":  "page_cf3a7b1bbee646fd9bd6ef0560b9519e_r1794304748444",
+                                        "enabled":  true,
+                                        "name":  "監控小圖 #1",
+                                        "roi":  {
+                                                    "x":  1665,
+                                                    "y":  33,
+                                                    "w":  141,
+                                                    "h":  207
+                                                },
+                                        "threshold_y":  105,
+                                        "color_mode":  "custom",
+                                        "target_color":  "#6666ff",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "",
+                                        "measure_mode":  "numeric",
+                                        "value_threshold":  30,
+                                        "axis_roi":  {
+                                                         "x":  51,
+                                                         "y":  31,
+                                                         "w":  33,
+                                                         "h":  218
+                                                     }
+                                    }
+                                ],
+                      "capture_view":  {
+                                           "width":  1912,
+                                           "height":  956,
+                                           "x":  0,
+                                           "y":  0,
+                                           "zoom":  100,
+                                           "layout":  "native100-v1"
+                                       },
+                      "browser_zoom":  100,
+                      "zabbix_time":  {
+                                          "enabled":  true,
+                                          "range":  "3d"
+                                      }
+                  },
+                  {
+                      "id":  "page_b0632b21121f4649944d25dca38b2c44",
+                      "enabled":  true,
+                      "category_id":  "category_103e9561b2934a28b3dfa41ff05890d8",
+                      "name":  "P58_D3",
+                      "url":  "http://10.13.2.27/charts.php?graphid=1554111",
+                      "target_chat_name":  "",
+                      "mode":  "threshold_check",
+                      "wait_seconds":  5,
+                      "auth":  {
+                                   "enabled":  true,
+                                   "username":  "esiuser",
+                                   "password":  "ESI@168"
+                               },
+                      "crop_region":  {
+                                          "enabled":  true,
+                                          "x":  11,
+                                          "y":  242,
+                                          "w":  1872,
+                                          "h":  395
+                                      },
+                      "rules":  [
+                                    {
+                                        "id":  "page_b0632b21121f4649944d25dca38b2c44_r1794288261007",
+                                        "enabled":  true,
+                                        "name":  "監控小圖 #1",
+                                        "roi":  {
+                                                    "x":  1673,
+                                                    "y":  35,
+                                                    "w":  128,
+                                                    "h":  203
+                                                },
+                                        "threshold_y":  106,
+                                        "color_mode":  "custom",
+                                        "target_color":  "#6666ff",
+                                        "color_tolerance":  48,
+                                        "min_pixels":  2,
+                                        "alert_message":  "",
+                                        "measure_mode":  "numeric",
+                                        "value_threshold":  30,
+                                        "axis_roi":  {
+                                                         "x":  54,
+                                                         "y":  19,
+                                                         "w":  25,
+                                                         "h":  230
+                                                     }
+                                    }
+                                ],
+                      "capture_view":  {
+                                           "width":  1912,
+                                           "height":  956,
+                                           "x":  0,
+                                           "y":  0,
+                                           "zoom":  100,
+                                           "layout":  "native100-v1"
+                                       },
+                      "browser_zoom":  100,
+                      "zabbix_time":  {
+                                          "enabled":  true,
+                                          "range":  "3d"
+                                      }
+                  }
+              ],
+    "page_categories":  [
+                            {
+                                "id":  "category_81dffcd7771f413f819672f3fba63707",
+                                "name":  "日管Index"
+                            },
+                            {
+                                "id":  "category_103e9561b2934a28b3dfa41ff05890d8",
+                                "name":  "特殊頁面監控"
+                            }
+                        ]
 }
