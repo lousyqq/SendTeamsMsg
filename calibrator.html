@@ -184,7 +184,8 @@
     .schedule-page-name { flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; line-height:1.6; font-size:12px; }
     .schedule-page-actions { display:flex; gap:3px; flex-shrink:0; }
     .schedule-page-actions button { padding:2px 6px; font-size:11px; }
-    .schedule-page-list { max-height:340px; overflow:auto; }
+    /* 排程清單與頁面清單不另設高度：只由左側欄捲動，避免捲軸套捲軸切掉展開的排程設定 */
+    .schedule-page-list { }
     .section-box { flex-shrink:0; }
     details.panel-fold > summary { cursor:pointer; color:var(--accent); font-size:12px; font-weight:600; overflow-wrap:anywhere; }
     details.panel-fold > summary .fold-meta { display:block; color:var(--muted); font-size:11px; font-weight:400; margin:5px 0 0 14px; }
@@ -467,6 +468,12 @@
       white-space: normal;
     }
     .sched-row > span:last-child { grid-column:4; grid-row:1; }
+    .sched-row .sched-last { grid-column:2 / 5; grid-row:3; font-size:11px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; }
+    .sched-row .sched-last:empty { display:none; }
+    .sched-row .sched-last.ok { color:#4ade80; }
+    .sched-row .sched-last.warn { color:#fbbf24; }
+    .sched-row .sched-last.bad { color:#f87171; }
+    .sched-row .sched-last.running { color:#93c5fd; }
     .sched-body {
       margin-top: 8px;
       padding-top: 8px;
@@ -592,7 +599,6 @@
     .hover-help > button { padding:0; border:0; background:none; color:var(--accent); font-size:12px; text-decoration:underline dotted; text-underline-offset:3px; }
     .hover-help [role="tooltip"] { display:none; margin-top:6px; padding:8px; border:1px solid var(--border); border-radius:6px; color:var(--muted); font-size:12px; line-height:1.6; }
     .hover-help:hover [role="tooltip"], .hover-help:focus-within [role="tooltip"] { display:block; }
-    #scheduleList { max-height:420px; overflow-y:auto; }
     .schedule-actions { display:flex; justify-content:space-between; gap:8px; margin:8px 0; }
     .schedule-actions button { padding:3px 8px; font-size:12px; }
     .sync-row button { flex-shrink:0; white-space:nowrap; }
@@ -869,7 +875,9 @@
           <button id="receiverRegisterBtn" type="button" style="padding:3px 10px;font-size:12px;" title="建立「E3 日管接收監看」與「E3 日管接收端」兩個 Windows 工作排程">註冊離線通知與開機自動啟動</button>
         </div>
         <div id="receiverRegisterResult" role="status" style="font-size:12px;margin-top:6px;white-space:pre-wrap;"></div>
-        <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;">第一次使用先雙擊 <code>setup_teams_receiver.bat</code> 選擇要接收指令的對話，再雙擊 <code>start_teams_receiver.bat</code> 開始接收。手機在該對話輸入 <code>@日管 狀態</code> 即可測試。</div>
+        <label style="font-size:12px;margin-top:8px;display:block;"><input id="receiverHeadlessChk" type="checkbox"> 接收端使用無 Edge 視窗（背景執行）</label>
+        <div id="receiverModeHint" role="status" style="font-size:11px;color:var(--muted);line-height:1.6;">預設有視窗：可被其他視窗蓋住或鎖定螢幕，但請勿最小化（最小化會被自動還原）。無視窗不會出現在桌面，但需要重新登入 Teams 時要先停止接收端再執行 setup。</div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;">第一次使用先雙擊 <code>setup_teams_receiver.bat</code> 選擇要接收指令的對話，再雙擊 <code>start_teams_receiver.bat</code> 開始接收；接收端只用一個分頁輪流讀取各對話，不需要讓對話保持開啟。停止請用 <code>stop_teams_receiver.bat</code>。手機在該對話輸入 <code>@日管 狀態</code> 即可測試。</div>
       </details>
 
 
@@ -927,6 +935,7 @@
           <input type="checkbox" id="autoPressEnterChk" checked />
           <span>正式排程貼上後自動按 Enter 送出</span>
         </label>
+        <div id="autoPressEnterHint" role="status" style="font-size:11px;line-height:1.6;margin-top:4px;"></div>
       </div>
     </div>
  
@@ -2314,6 +2323,42 @@ function renderTeamsPreview() {
  
  
     // 排程卡片：預設收合成一行摘要，點開才編輯 (同時只展開一張)
+    // 排程卡片標題下的兩行：設定摘要＋下次時間，以及上次執行結果 (來自 /api/schedule-status)
+    function renderScheduleRowStatus(card, s) {
+      const meta = card.querySelector('[data-k="rowMeta"]'), last = card.querySelector('[data-k="rowLast"]');
+      const task = scheduleTaskInfo[s.id];
+      meta.textContent = `${pagesForSchedule(s).length} 張 · ${daysText(s)}` +
+        (s.repeat?.enabled === true ? ` · ${scheduleTimingText(s)}` : '') +
+        (s.alert_only === true ? " · 僅異常" : "") +
+        (s.enabled === false ? "" : task ? (task.next ? ` · 下次 ${task.next}` : "") : " · ⚠️ 未寫入");
+      const run = task?.last;
+      last.className = 'sched-last' + (run?.status ? ' ' + run.status : '');
+      last.title = run?.reason || '';
+      if (!task || !run) { last.textContent = ''; return; }
+      if (run.status === 'none' || !run.at) { last.textContent = '上次：尚未執行過'; return; }
+      const mark = {ok:'✓ ', warn:'⚠ ', bad:'✗ ', running:'⏳ '}[run.status] || '';
+      last.textContent = `上次 ${run.at}：${mark}${run.text || '已執行（結果請看主機紀錄）'}` + (run.status === 'bad' && run.reason ? `｜${run.reason.split('\n')[0]}` : '');
+    }
+    // 只更新卡片上的狀態文字，不重建排程清單，不打斷正在編輯的欄位
+    let scheduleRunInfoBusy = false;
+    async function refreshScheduleRunInfo() {
+      if (scheduleRunInfoBusy || !location.protocol.startsWith('http')) return;
+      scheduleRunInfoBusy = true;
+      try {
+        const resp = await fetch("http://127.0.0.1:8765/api/schedule-status", { cache: "no-store" });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        scheduleTaskInfo = {};
+        (data.tasks || []).forEach(t => { scheduleTaskInfo[t.id] = t; });
+        document.querySelectorAll('#scheduleList .sched-card').forEach(card => {
+          const s = config.schedules.find(x => x.id === card.dataset.scheduleId);
+          if (s) renderScheduleRowStatus(card, s);
+        });
+      } catch (e) { /* 讀不到時保留上次顯示 */ }
+      finally { scheduleRunInfoBusy = false; }
+    }
+    window.addEventListener('focus', () => { if (autoSaveEnabled) refreshScheduleRunInfo(); });
+    setInterval(() => { if (autoSaveEnabled && !document.hidden) refreshScheduleRunInfo(); }, 60000);
     function renderSchedules() {
       initializeScheduleMessages();
       const enabledCount=config.schedules.filter(s=>s.enabled!==false).length;
@@ -2341,7 +2386,8 @@ function renderTeamsPreview() {
             <span class="sched-time" data-k="rowTime"></span>
             <span data-k="rowName" style="min-width:0;overflow-wrap:anywhere;"></span>
             <span class="sched-meta" data-k="rowMeta"></span>
-            <span style="color:var(--muted);">${expanded ? "▾" : "▸"}</span>
+            <span class="sched-last" data-k="rowLast" role="status"></span>
+            <span style="color:var(--muted);grid-column:4;grid-row:1;">${expanded ? "▾" : "▸"}</span>
           </div>
           ${expanded ? `
           <div class="sched-body">
@@ -2392,11 +2438,7 @@ function renderTeamsPreview() {
         const q = k => card.querySelector(`[data-k="${k}"]`);
         q("rowTime").textContent = s.time || "--:--";
         q("rowName").textContent = s.name || s.id;
-        const task = scheduleTaskInfo[s.id];
-        q("rowMeta").textContent = `${pagesForSchedule(s).length} 張 · ${daysText(s)}` +
-          (s.repeat?.enabled === true ? ` · ${scheduleTimingText(s)}` : '') +
-          (s.alert_only === true ? " · 僅異常" : "") +
-          (s.enabled === false ? "" : task ? (task.next ? ` · 下次 ${task.next}` : "") : " · ⚠️ 未寫入");
+        renderScheduleRowStatus(card, s);
         q("enabled").checked = s.enabled !== false;
         q("enabled").onclick = e => e.stopPropagation();
         q("enabled").onchange = e => {
@@ -3596,6 +3638,15 @@ document.getElementById("pageUrlInput").oninput = e => {
       config.teams.prefer_window = e.target.value;
       renderCdpMode();
     };
+    function renderAutoPressEnterHint() {
+      const hint = document.getElementById('autoPressEnterHint');
+      const cdp = config.teams.prefer_window === 'cdp', off = config.teams.auto_press_enter === false;
+      hint.style.color = cdp && off ? '#f87171' : 'var(--muted)';
+      hint.textContent = cdp
+        ? (off ? '⚠ CDP 模式不支援只貼上不送出：取消勾選時，排程與離線通知都不會送出，並記錄為傳送失敗。請重新勾選。'
+               : 'CDP 模式一定會送出；取消勾選會讓排程不送出並記錄為失敗。')
+        : '取消勾選時只貼上圖片與文字，留在輸入框由人確認後送出（需解鎖桌面）。';
+    }
     function renderCdpMode() {
       const cdp = config.teams.prefer_window === 'cdp';
       document.getElementById('cdpSetupBtn').hidden = !cdp;
@@ -3607,6 +3658,8 @@ document.getElementById("pageUrlInput").oninput = e => {
       const headless = config.teams.cdp_headless !== false;
       document.getElementById('cdpHeadlessRow').hidden = !cdp;
       document.getElementById('cdpHeadlessChk').checked = headless;
+      renderReceiverMode();
+      renderAutoPressEnterHint();
       document.getElementById('cdpHelp').textContent = (headless ? '每個收件對象先設定一次，完成後驗證無視窗登入。正式傳送（含傳給自己）會先清除目標對話未送出的文字與附件，再送本次選定內容。排程會在背景截圖、核對帳號與聊天室後傳送，完成後關閉專用瀏覽器。登入有效時不用重新綁定；請先正常關閉原 CDP 專用 Edge，避免登入資料被佔用。' : '分頁模式：保持專用 Teams 分頁開啟並停留在綁定聊天室。正式傳送會先清除目標對話未送出的文字與附件，再送本次內容；關閉分頁後需重新綁定。') + ' 每批最多 4 張圖片＋文字（25 MiB）。測試失敗後可再次按原按鈕；' + (headless ? '確認舊工作已停止並清空輸入區後，只執行本次內容，不補送舊工作。' : '確認舊工作已停止，清除舊草稿後只送本次內容，不補送舊工作。');
       document.getElementById('teamsWindowHelp').textContent = cdp ? (headless ? '排程不切換日常工作視窗、不移動滑鼠或使用桌面剪貼簿；手動「抓圖」仍會開啟 Edge 讓您選位置。首次使用請在實際主機測試，網站與 Teams 登入需保持有效。' : '使用已綁定的 CDP 專用 Edge 分頁；登入過期需重新登入。') : '使用已登入的 Teams；正式傳送會先核對對話並清除舊草稿。多種 Teams 同時開著時，請選「只用…」指定。';
       document.getElementById('scheduleRunHint').textContent = cdp ? (headless ? '無 Edge 視窗：即使正在使用電腦，排程也在背景截圖與傳送。需保持 Windows 登入、電腦清醒、網路及登入有效。「執行排程傳給自己」也用背景截圖，送出前仍需確認。' : '鎖定時先背景擷取，再由 CDP 傳送，不等待解鎖。需保持 Windows 登入、電腦清醒與 Teams 登入有效；分頁模式需保持專用 Edge 開啟，解鎖時截圖仍可能顯示視窗。') : '桌面模式需解鎖才能操作 Teams；鎖定時最多等待解鎖 30 秒，逾時結束本次傳送，截圖保留。';
@@ -3666,10 +3719,18 @@ document.getElementById("pageUrlInput").oninput = e => {
     function receiverHeadline(data){
       const hb=data.heartbeat||{};
       if(!hb.exists)return {text:'尚未啟動過',cls:'warn'};
-      if(!hb.alive)return {text:hb.state==='stopped'?'已停止':'程序已結束',cls:'bad'};
+      if(!hb.alive)return {text:hb.state==='stopped'?(hb.intentional?'已依要求停止':'已停止'):'程序已結束',cls:'bad'};
       if(!data.health.ok)return {text:'執行中，但無法讀取 Teams',cls:'warn'};
       return {text:hb.state==='processing'?'正在處理指令':'接收中',cls:'good'};
     }
+    function renderReceiverMode(){
+      document.getElementById('receiverHeadlessChk').checked=config.teams.receiver_headless===true;
+    }
+    document.getElementById('receiverHeadlessChk').onchange=e=>{
+      config.teams.receiver_headless=e.target.checked;
+      document.getElementById('receiverModeHint').textContent='已儲存設定；重新啟動接收端（stop_teams_receiver.bat 後再 start_teams_receiver.bat）才會生效。';
+      renderReceiverStatus();
+    };
     function renderReceiverStatus(){
       const box=document.getElementById('receiverStatus'), summary=document.getElementById('receiverSummary');
       document.getElementById('receiverRefreshBtn').disabled=receiverState.loading;
@@ -3689,6 +3750,11 @@ document.getElementById("pageUrlInput").oninput = e => {
         row('最後回報',receiverTime(hb.utc)||'無');
         if(!hb.alive&&hb.stopReason)row('停止原因',hb.stopReason,'bad');
         if(hb.alive)row('防睡眠',hb.sleepGuard?'已要求系統保持清醒':'未生效，請把 Windows 睡眠設為「永不」',hb.sleepGuard?'':'warn');
+        if(hb.alive&&hb.mode){
+          // 接收端只在啟動時讀取視窗模式；設定與執行中的模式不同時提醒重新啟動
+          const wanted=config.teams.receiver_headless===true?'headless':'window', name=m=>m==='headless'?'無視窗':'有視窗';
+          row('視窗模式',`${name(hb.mode)}（一個工作分頁輪流讀取）`+(hb.mode===wanted?'':`；設定已改為${name(wanted)}，重新啟動接收端後生效`),hb.mode===wanted?'':'warn');
+        }
         const sources=Array.isArray(hb.sources)?hb.sources:[];
         const r=row('接收對話',sources.length?'':'沒有');
         if(sources.length){
@@ -3716,7 +3782,9 @@ document.getElementById("pageUrlInput").oninput = e => {
         const w=tasks?.watchdog, a=tasks?.autostart;
         row('離線通知',taskText(w)+(w?.registered&&w.next?`，下次檢查 ${w.next}`:''),w?.registered?'':'warn');
         row('開機啟動',taskText(a)+(a?.registered?'（登入 Windows 1 分鐘後）':''),a?.registered?'':'warn');
+        row('自動重啟',w?.registered?('接收程式結束或卡住時由監看任務重新啟動'+(data.autoRestart?.count?`；最近一次 ${receiverTime(data.autoRestart.lastUtc)}`:'')):'未啟用：需先註冊離線通知',w?.registered?'':'warn');
       }
+      renderReceiverMode();
       document.getElementById('receiverRegisterBtn').textContent=tasks?.watchdog?.registered&&tasks?.autostart?.registered?'重新註冊離線通知與開機自動啟動':'註冊離線通知與開機自動啟動';
     }
     async function refreshReceiverStatus(force=false){
@@ -3765,6 +3833,7 @@ document.getElementById("pageUrlInput").oninput = e => {
     };
     document.getElementById("autoPressEnterChk").onchange = e => {
       config.teams.auto_press_enter = e.target.checked;
+      renderAutoPressEnterHint();
     };
     document.getElementById("defaultChatInput").oninput = e => {
       config.teams.target_chat_name = e.target.value;

@@ -360,7 +360,19 @@ function Get-E3ScheduleTaskStatus {
         if (-not $id) { continue }
         $info = $task | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
         $next = if ($info -and $info.NextRunTime -and $info.NextRunTime.Year -gt 2000) { $info.NextRunTime.ToString('MM/dd HH:mm') } else { '' }
-        @{ id=$id; task_name=[string]$task.TaskName; task_path=[string]$task.TaskPath; state=[string]$task.State; next=$next
+        # 上次執行：時間＋簡短結果 (判斷與監看通知相同；teams_receiver_watchdog.ps1 缺少時只回時間)
+        $lastAt = if ($info -and $info.LastRunTime -and $info.LastRunTime.Year -gt 2000) { $info.LastRunTime } else { $null }
+        $lastRun = @{ at=$(if ($lastAt) { $lastAt.ToString('MM/dd HH:mm') } else { '' }); status=''; text=''; reason='' }
+        if ($info -and (Get-Command Get-E3ScheduleRunSummary -ErrorAction SilentlyContinue)) {
+            try {
+                $saved = $null
+                $resultFile = Join-Path $PSScriptRoot "logs\schedule_results\$id.json"
+                if ($id -match '^[A-Za-z0-9_-]+$') { try { $saved = Read-E3WorkJson $resultFile } catch {} }
+                $summary = Get-E3ScheduleRunSummary $lastAt ([long]$info.LastTaskResult) $saved
+                $lastRun.status = $summary.status; $lastRun.text = $summary.text; $lastRun.reason = $summary.reason
+            } catch {}
+        }
+        @{ id=$id; task_name=[string]$task.TaskName; task_path=[string]$task.TaskPath; state=[string]$task.State; next=$next; last=$lastRun
            wake=[bool]$task.Settings.WakeToRun; catch_up=[bool]$task.Settings.StartWhenAvailable
            enabled=($task.Settings.Enabled -ne $false -and [string]$task.State -ne 'Disabled'); schedule=(Get-E3TaskSchedule $task) }
     }
@@ -2751,7 +2763,10 @@ if ($ReceiverWatchdog -or $RegisterReceiverWatchdog -or $UnregisterReceiverWatch
         # 排程用 Teams 登入預警：約每 6 小時、每個排程前約 1 小時檢查一次；異常時交給接收端用它自己的登入通知
         $loginResult = @(0)
         try { $loginResult = @(Invoke-E3SenderLoginCheck $config) } catch { Write-Host "⚠️ 排程登入檢查失敗：$($_.Exception.Message)" -ForegroundColor Yellow; $loginResult = @(1) }
-        exit ([Math]::Max([int]$watchdogResult[-1], [int]$loginResult[-1]))
+        # 排程傳送結果：上一輪沒送達（失敗、結果不明、逾時、等不到執行權）時，經接收端通知一次
+        $scheduleResult = @(0)
+        try { $scheduleResult = @(Invoke-E3ScheduleResultCheck $config) } catch { Write-Host "⚠️ 排程結果檢查失敗：$($_.Exception.Message)" -ForegroundColor Yellow; $scheduleResult = @(1) }
+        exit ([Math]::Max([Math]::Max([int]$watchdogResult[-1], [int]$loginResult[-1]), [int]$scheduleResult[-1]))
     } catch { Write-Host "❌ 接收端監看：$($_.Exception.Message)" -ForegroundColor Red; exit 1 }
 }
 if ($ReceiverCaptureJob) {
@@ -2825,6 +2840,23 @@ if ($Schedule) {
     }
 }
 $runTag = if ($runSchedule) { $runSchedule.id } else { "all" }
+# 排程傳送結果：監看任務 (-ReceiverWatchdog) 讀這份檔案，判斷這一輪是否沒有送達並經接收端通知。
+# 只記錄正式排程 (-Schedule，不含測試/不送出模式)。開始時先寫 running：工作被 10 分鐘期限強制結束時
+# finally 不會執行，留下的 running 就是「中斷、結果不明」的證據。
+$script:E3ScheduleResult = $null
+function Save-E3ScheduleResult {
+    if (-not $script:E3ScheduleResult) { return }
+    try {
+        $script:E3ScheduleResult.updatedUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        Write-E3WorkJson (Join-Path $PSScriptRoot ("logs\schedule_results\{0}.json" -f $script:E3ScheduleResult.scheduleId)) $script:E3ScheduleResult
+    } catch { Write-Host "⚠️ 排程結果紀錄無法寫入：$($_.Exception.Message)" -ForegroundColor Yellow }
+}
+if ($runSchedule -and -not $SelfScheduleJob -and -not $TestSample -and -not $NoSend -and -not $DryRun -and [string]$runSchedule.id -match '^[A-Za-z0-9_-]+$') {
+    $script:E3ScheduleResult = @{ version=1; scheduleId=[string]$runSchedule.id; name=[string]$runSchedule.name; pid=$PID
+        startedUtc=[DateTimeOffset]::UtcNow.ToString('O'); state='running'; exitCode=$null; skipped=''; error=''
+        targets=@(); delivered=@(); sendFailures=@() }
+    Save-E3ScheduleResult
+}
  
  
 # 每次執行寫一份 log (排程在背景執行時沒有視窗可看)，保留 30 天
@@ -2865,6 +2897,7 @@ try {
 if (-not $hasLock) {
     if($SelfScheduleJob){Save-E3SelfTestStatus 'stopped' '本次等待已取消或逾時，尚未開始擷取。';Remove-E3SelfScheduleConfig $SelfScheduleJob}
     Write-Host "本次 [$runTag] 未取得執行權，已結束。" -ForegroundColor Yellow
+    if ($script:E3ScheduleResult) { $script:E3ScheduleResult.state='no_lock'; $script:E3ScheduleResult.exitCode=1; Save-E3ScheduleResult }
     try { Stop-Transcript | Out-Null } catch {}
     exit 1
 }
@@ -2880,6 +2913,7 @@ try {
         if (-not $runSchedule) { throw "排程 [$Schedule] 已移除，未執行" }
         if (-not $SelfScheduleJob -and -not $TestSample -and -not (Test-E3RepeatWindow $runSchedule)) {
             Write-Host '⏭️ 已超過重複排程時段或不在指定星期，本輪略過；不擷取、不發送。' -ForegroundColor Yellow
+            if ($script:E3ScheduleResult) { $script:E3ScheduleResult.skipped='outside_window' }
             return
         }
     }
@@ -3155,6 +3189,10 @@ if ($scheduleTargets.Count -gt 1) {
 $hasScheduleProblem = @($chatGroups.Values | Where-Object { $_.alerts.Count -gt 0 -or $_.failures.Count -gt 0 }).Count -gt 0
 $skipNormalDelivery = -not $SelfScheduleJob -and $runSchedule -and $runSchedule.alert_only -eq $true -and -not $hasScheduleProblem
 if($SelfScheduleJob){Write-Host '自己測試：本次固定傳送實際結果，忽略僅異常時發送；原排程設定未變。'}
+if ($script:E3ScheduleResult) {
+    $script:E3ScheduleResult.targets = @($chatGroups.Keys | ForEach-Object { [string]$_ })
+    if ($skipNormalDelivery) { $script:E3ScheduleResult.skipped = 'alert_only_normal' }
+}
 if ($skipNormalDelivery) {
     Write-Host "🔕 僅異常時發送：本次未偵測到超標或監控失敗，不發送 Teams；截圖與紀錄已保留。" -ForegroundColor Green
 } elseif ($runSchedule -and $runSchedule.alert_only -eq $true) {
@@ -3182,6 +3220,7 @@ foreach ($chatName in @($chatGroups.Keys)) {
     # 發送對象仍是預設佔位文字時不貼，避免貼到目前開著的任意對話
     if (-not $NoSend -and ($chatName -match '請將.*連結|貼在這裡|^預設Teams群組$')) {
         Write-Host "⚠️ 尚未設定 Teams 發送對象 (目前為「$chatName」)，略過發送。請在 calibrator「排程與發送」填入 Teams 對話名稱。" -ForegroundColor Yellow
+        $sendFailures += "【$chatName】尚未設定 Teams 發送對象，未送出"
         $exitCode = 1
         continue
     }
@@ -3191,6 +3230,7 @@ foreach ($chatName in @($chatGroups.Keys)) {
             if($SelfScheduleJob){Save-E3SelfTestStatus 'finding' '實際擷取與判定完成，正在辨識自己的 Teams；稍後請在本頁核對確認。'}
             elseif ($runSchedule -and $config.teams.prefer_window -ne 'cdp') { Wait-TeamsDesktop }
             Send-GroupToTeams -targetChatName $chatName -imageFiles $imgs -messageText $msg -teamsCfg $config.teams -isDryRun $DryRun -SelfTest:([bool]$SelfScheduleJob)
+            if ($script:E3ScheduleResult) { $script:E3ScheduleResult.delivered += [string]$chatName }
         } catch {
             $sendFailures += "【$chatName】$($_.Exception.Message)"
             $exitCode = 1
@@ -3212,7 +3252,14 @@ if ($sendFailures.Count -gt 0) {
     Write-Host "❌ 執行發生錯誤: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
     $exitCode = 1
+    if ($script:E3ScheduleResult) { $script:E3ScheduleResult.error = [string]$_.Exception.Message }
 } finally {
+    if ($script:E3ScheduleResult) {
+        $script:E3ScheduleResult.state = 'finished'
+        $script:E3ScheduleResult.exitCode = [int]$(if ($exitCode) { $exitCode } else { 0 })
+        $script:E3ScheduleResult.sendFailures = @($sendFailures | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        Save-E3ScheduleResult
+    }
     $deadlineGuard.Dispose()
     if($SelfScheduleJob){Remove-E3SelfScheduleConfig $SelfScheduleJob}
     if ($sleepGuard) { [void][E3Win]::SetThreadExecutionState([uint32]2147483648) }

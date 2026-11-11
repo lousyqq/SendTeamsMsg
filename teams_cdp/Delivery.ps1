@@ -354,7 +354,7 @@ function Reset-E3HeadlessBrowserForNewDelivery {
     do {if(-not @(Get-E3ProfileEdgeProcesses $profile).Count){return};Start-Sleep -Milliseconds 100}while([DateTime]::UtcNow -lt $until)
     throw '舊專用 Edge 尚未結束，未啟動重複瀏覽器'
 }
-function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$InteractiveRestart) {
+function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$InteractiveRestart,[string]$ExtraArguments='') {
     Assert-E3DebugPolicy
     $edge=@((Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe'))|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1
     if(-not $edge){throw '找不到 Edge'}
@@ -368,6 +368,8 @@ function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$Interac
     if(Test-Path -LiteralPath $portFile){Remove-Item -LiteralPath $portFile -Force}
     $argList='--remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir="'+$fullProfile+'" --no-first-run --no-default-browser-check --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding about:blank'
     if($Headless){$argList+=' --headless=new'}
+    # Launch-time switches persist across CDP reconnects; per-session emulation does not.
+    if($ExtraArguments){$argList+=' '+$ExtraArguments}
     $style=if($Headless){'Hidden'}else{'Normal'}
     # Raw Chromium logs are opt-in. Drain both pipes without retaining their output
     # so logging noise neither creates files nor fills a pipe and blocks Edge.
@@ -1122,7 +1124,9 @@ function Test-E3CdpConnection($cfg,[switch]$PassThru) {
     $lines=[Collections.Generic.List[string]]::new()
     $headless=Test-E3UseHeadless $cfg.teams
     try {
-        try{$locked=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$locked=$true}
+        # The phone receiver takes this lock for every chat read and releases it between reads,
+        # so wait briefly instead of failing on the first try. A real send or setup keeps it longer.
+        try{$locked=$mutex.WaitOne(15000)}catch [Threading.AbandonedMutexException]{$locked=$true}
         if(-not $locked){throw 'CDP 正在傳送或設定中，請完成後再檢查'}
         Register-E3WorkOwner 'cdp' '檢查 CDP 連線'
         $routes=@(Get-E3ConfiguredRoutes $cfg)
@@ -1168,6 +1172,9 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
     $target=if($SelfTest){$null}else{Resolve-E3CdpTarget $targetChatName -Headless:$headless}
     $images=@()
     # Validate all inputs before the first real send.
+    # The standalone receiver has not loaded the capture engine. Assemblies loaded
+    # by its screenshot child process are not available in this sending process.
+    if(@($imageFiles).Count){Add-Type -AssemblyName System.Drawing -ErrorAction Stop}
     foreach($file in $imageFiles){
         $bytes=[IO.File]::ReadAllBytes($file)
         if($bytes.Length -lt 8 -or $bytes.Length -gt 10MB -or [BitConverter]::ToString($bytes[0..7]) -ne '89-50-4E-47-0D-0A-1A-0A'){throw 'CDP 只接受每張不超過 10 MiB 的 PNG'}
@@ -1176,7 +1183,10 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
         $sha=[Security.Cryptography.SHA256]::Create();try{$hash=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
         $images+=@{bytes=$bytes;size=$bytes.Length;hash=$hash;name=[IO.Path]::GetFileName($file)}
     }
-    if($isDryRun -or $teamsCfg.auto_press_enter -eq $false){Write-Host "✅ CDP 綁定與 $($images.Count) 張 PNG 檢查通過；未貼圖、未送出。請用「檢查 CDP 連線」另查專用 Edge。";return}
+    if($isDryRun){Write-Host "✅ CDP 綁定與 $($images.Count) 張 PNG 檢查通過；未貼圖、未送出。請用「檢查 CDP 連線」另查專用 Edge。";return}
+    # CDP cannot leave a pasted draft for a person to send. Report "not sent" instead of
+    # returning normally, so schedules and watchdog alerts are not recorded as delivered.
+    if($teamsCfg.auto_press_enter -eq $false){throw '「正式排程貼上後自動按 Enter 送出」已關閉；CDP 模式不支援只貼上不送出，本次未貼圖、未送出。請在設定工具「全域設定」重新勾選。'}
     $batches=@(Split-TeamsImageBatches $images)
     $mutex=[Threading.Mutex]::new($false,'Local\E3TeamsCdpShared');$locked=$false;$context=0;$token=$null;$started=$false;$finished=$false;$ownedBrowser=$null;$discard=$null
     try{
