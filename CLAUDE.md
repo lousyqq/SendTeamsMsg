@@ -46,7 +46,6 @@
 | `numeric_monitor.ps1` | 數值門檻：Windows OCR 讀左 Y 軸刻度、線性擬合、藍線峰值換算 |
 | `teams_self_test.ps1`／`teams_self_test.js` | 「傳給自己」測試（本人對話辨識、設定頁確認、CDP 導頁） |
 | `teams_cdp\Delivery.ps1` | CDP 傳送模組；Teams 網頁腳本以 here-string 內嵌於 `Get-E3CdpRuntimeSource` |
-| `teams_cdp\README.md` | CDP 模組說明 |
 | `setup_cdp.bat` | 設定 CDP 收件對象（`-CdpSetup`） |
 | `teams_receiver.ps1` | 手機 `@日管` 指令接收端（單一工作分頁輪流讀取、回覆、心跳、防睡眠、自動復原、程序內重新開始；`-Stop` 要求停止） |
 | `teams_receiver_commands.ps1` | 指令解析與擷取工作分派 |
