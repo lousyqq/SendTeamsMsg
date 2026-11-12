@@ -97,7 +97,8 @@
     if (bodies.length !== 1 || !time) { skipped++; continue; }
     const body = bodies[0];
     const text = String(body.innerText || body.textContent || '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
-    if (text.length > 400 || !/^@日管 +(?=\S)/u.test(text)) continue;
+    // Candidates only; the PowerShell side decides (a space or a known command word must follow).
+    if (text.length > 400 || !/^@日管[ 　]*\S/u.test(text)) continue;
     // Commands are plain text: no picture, quote or unsent state.
     if ([...body.querySelectorAll('img')].some(image => !image.closest(emojiSelector)) || body.querySelector('inlineimage, [data-inline-image]')) continue;
     if (pending(row) || row.querySelector('blockquote,[data-tid*="quoted-reply"]')) continue;

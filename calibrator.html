@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>E3 彈性化監控截圖 & 警戒線視覺化設定工具 (企業免外掛版)</title>
-  <script src="sample_data.js"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -191,6 +190,24 @@
     details.panel-fold > summary .fold-meta { display:block; color:var(--muted); font-size:11px; font-weight:400; margin:5px 0 0 14px; }
     details.panel-fold[open] > summary { margin-bottom:10px; }
     .inner-fold { border:1px solid var(--border); border-radius:6px; padding:8px; margin-bottom:10px; }
+    /* 此頁完成度 */
+    .setup-steps { border:1px solid var(--border); border-radius:6px; padding:6px 8px; margin-bottom:10px; font-size:12px; }
+    .setup-steps .steps-row { display:flex; flex-wrap:wrap; gap:4px; }
+    .setup-steps .step { padding:1px 7px; border-radius:999px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
+    .setup-steps .step.done { color:#4ade80; border-color:rgba(34,197,94,.4); }
+    .setup-steps .step.todo { color:#fbbf24; border-color:rgba(251,191,36,.55); background:rgba(251,191,36,.08); }
+    .setup-steps .step.optional { color:var(--muted); border-style:dashed; }
+    .setup-steps .next-row { display:flex; align-items:center; gap:6px; margin-top:6px; color:var(--muted); line-height:1.5; }
+    .setup-steps .next-row button { flex-shrink:0; padding:2px 8px; font-size:12px; }
+    .setup-steps.complete { border-color:rgba(34,197,94,.35); }
+    #pageScheduleChecks .chk-row { margin-bottom:4px; }
+    #pageScheduleChecks .muted { color:var(--muted); font-size:11.5px; }
+    .flash-attention { animation: flashAttention 1.2s ease-out 2; }
+    @keyframes flashAttention { 0% { box-shadow:0 0 0 3px rgba(251,191,36,.8); } 100% { box-shadow:0 0 0 0 rgba(251,191,36,0); } }
+    /* 收合區內直接放的勾選列、說明標籤與縮放輸入框，與 .field 內的欄位同一種字級與外觀 */
+    .inner-fold > label { display:block; font-size:12px; color:var(--text); margin-bottom:4px; }
+    .inner-fold > label[for] { font-size:11.5px; color:var(--muted); }
+    .inner-fold .zoom-input-row input { width:90px; background:#0f172a; border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:5px; font-size:12.5px; font-family:inherit; }
     .preview-controls { position:sticky; top:0; z-index:3; background:var(--panel); }
     #allPagesStatusSummary { max-height:260px; overflow:auto; overflow-wrap:anywhere; }
     .preview-group { margin:10px 0; }
@@ -424,6 +441,19 @@
     .sidebar[data-active-tab="global"] > .section-box[data-tab="global"] {
       display: block;
     }
+    /* 頁面分頁：「此頁設定」與「監測項目」一次只顯示一塊 */
+    .sidebar[data-page-section="page"] > .section-box[data-pagesec="rules"],
+    .sidebar[data-page-section="rules"] > .section-box[data-pagesec="page"] { display: none; }
+    .page-section-switch { padding: 4px; }
+    .sidebar[data-active-tab="pages"] > .section-box.page-section-switch[data-tab="pages"] { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .sidebar.no-page-selection > .section-box.page-section-switch[data-tab="pages"] { display: none; }
+    .page-section-switch button { justify-content: center; font-size: 12.5px; padding: 6px 4px; }
+    .page-section-switch button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+    details.inline-help { display: inline; }
+    details.inline-help > summary { display: inline; cursor: pointer; color: var(--accent); font-size: 11.5px; list-style: none; }
+    details.inline-help > summary::-webkit-details-marker { display: none; }
+    details.inline-help[open] { display: block; margin-top: 4px; }
+    details.inline-help > p { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
     details.advanced {
       border-top: 1px dashed var(--border);
       padding-top: 6px;
@@ -554,6 +584,15 @@
       background: rgba(239, 68, 68, 0.15);
       color: #fca5a5;
     }
+    /* 「Windows 排程未同步」時整個提示就是同步按鈕 */
+    button.save-chip { font-family: inherit; cursor: default; }
+    button.save-chip.actionable { cursor: pointer; }
+    button.save-chip.actionable:hover { background: rgba(239, 68, 68, 0.28); }
+    .judge-line { padding: 2px 4px; border-radius: 4px; }
+    .judge-line.clickable { cursor: pointer; }
+    .judge-line.clickable:hover { background: rgba(148, 163, 184, 0.12); }
+    .judge-line.selected { outline: 1px solid rgba(56, 189, 248, 0.5); }
+    .judge-hint button { padding: 1px 8px; font-size: 11.5px; margin: 2px 4px 0 0; }
     .rule-hint {
       font-size: 11.5px;
       color: var(--muted);
@@ -621,7 +660,7 @@
     </div>
     <div class="top-actions">
       <span id="saveStatusText" style="font-size:12px;color:#4ade80;margin-right:6px;"></span>
-      <span id="autoSaveStatus" class="save-chip" title="所有修改都會自動存到 config.json">✅ 已自動儲存</span>
+      <button type="button" id="autoSaveStatus" class="save-chip" title="所有修改都會自動存到 config.json">✅ 已自動儲存</button>
       <a class="btn-label" href="/USER_MANUAL.html" target="_blank" rel="noopener" style="text-decoration:none;">📖 使用手冊</a>
     </div>
   </header>
@@ -631,11 +670,11 @@
     <!-- 左側設定面板 -->
     <div class="sidebar" data-active-tab="pages">
       <div class="side-tabs" id="sideTabs">
-        <button data-tab="pages" class="active">📄 頁面與警戒線</button>
+        <button data-tab="pages" class="active">📄 頁面與監測</button>
         <button data-tab="send">📅 排程與發送</button>
         <button data-tab="global">⚙️ 全域設定</button>
       </div>
-<!-- ===== 分頁：頁面與警戒線 ===== -->
+<!-- ===== 分頁：頁面與監測 ===== -->
       <div class="section-box" data-tab="pages">
         <div class="section-title">
           <span>擷取頁面</span>
@@ -658,9 +697,16 @@
         <div class="page-tabs" id="pageTabs"></div>
         <div class="page-list-pager"><button id="pageListPrev">上一頁</button><span id="pageListCount"></span><button id="pageListNext">下一頁</button></div>
       </div>
- 
- 
-      <div class="section-box" data-tab="pages">
+
+
+      <!-- 此頁設定與監測項目一次只顯示一塊，避免左欄過長 -->
+      <div class="section-box page-section-switch" data-tab="pages" role="tablist" aria-label="此頁的設定內容">
+        <button type="button" role="tab" data-pagesec="page">⚙️ 此頁設定</button>
+        <button type="button" role="tab" data-pagesec="rules">📏 監測項目 <span id="pageSecRuleCount"></span></button>
+      </div>
+
+
+      <div class="section-box" data-tab="pages" data-pagesec="page">
         <div class="section-title">
           <span>此頁面設定</span>
           <label class="btn-label" style="padding:2px 8px;font-size:11px;" title="從電腦選一張截圖作為此頁的校正圖">
@@ -668,6 +714,8 @@
             <input type="file" id="changePageImgInput" accept="image/*" style="display:none" />
           </label>
         </div>
+        <!-- 這一頁還差哪些步驟才會被排程正確擷取；缺的標黃色，「下一步」帶到該步驟 -->
+        <div id="pageSetupSteps" class="setup-steps" aria-live="polite"></div>
         <label class="chk-row">
           <input type="checkbox" id="pageEnabledChk" checked />
           <strong>啟用此頁面</strong>
@@ -737,43 +785,53 @@
             <input type="number" id="pageWaitInput" min="1" max="60" />
           </div>
         </details>
+        <div class="field" id="pageScheduleField">
+          <label>加入哪些排程（勾選＝排程執行時會擷取這一頁）</label>
+          <div id="pageScheduleChecks"></div>
+        </div>
         <div class="effective-target" id="pageEffectiveTarget"></div>
       </div>
  
  
       <!-- 警戒線清單與編輯區 -->
-      <div class="section-box" id="rulesSection" data-tab="pages">
+      <div class="section-box" id="rulesSection" data-tab="pages" data-pagesec="rules">
         <div class="section-title">
           <span>監測項目（警戒線／數值門檻）</span>
         </div>
         <div class="rule-hint" id="ruleHint">
-          在中間圖上用 <b>📏 警戒線</b> 模式：<b>拖曳</b>框出圖表最右邊「昨日」那一段 → 新增一條；
-          <b>拖曳紅線</b>調整高度；拖曳框內可移動。沒有任何警戒線＝只截圖。
+          在中間圖上<b>拖曳</b>框出要監測的區域就會新增一項；沒有任何監測項目＝只截圖。
+          <details class="inline-help"><summary>ⓘ 怎麼操作</summary>
+            <p>用畫布上方的 <b>📏 監測項目</b> 模式：拖曳框出圖表最右邊「昨日」那一段 → 新增一項；拖曳紅線調整警戒線高度；拖曳框內可移動。點下方卡片切換要編輯的項目。</p>
+          </details>
         </div>
         <div id="rulesList"></div>
- 
- 
+
+
         <div id="ruleEditor" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:none;">
           <label class="chk-row">
             <input type="checkbox" id="ruleEnabledChk" checked />
             <strong>啟用此監測項目</strong>
           </label>
+          <div class="field">
+            <label for="ruleNameInput">圖表名稱</label>
+            <input type="text" id="ruleNameInput" />
+          </div>
           <div class="field"><label for="measureModeSelect">判定方式</label><select id="measureModeSelect"><option value="pixel">警戒線（固定像素高度）</option><option value="numeric">數值門檻（辨識左側 Y 軸）</option></select></div>
           <div id="numericEditor" hidden>
             <div class="field"><label for="valueThresholdInput">藍色最高值超過多少才示警</label><input id="valueThresholdInput" type="number" step="any" placeholder="例如 30" /></div>
             <button id="selectAxisBtn" type="button">框選左側 Y 軸刻度</button>
-            <p class="rule-hint">監測框只框要比較的藍色曲線，包含完整高度。另框左側至少三個刻度數字，勿含座標軸線、標題或右側秒數；兩個框都必須保留在擷取範圍內。僅支援線性刻度，K／M／G／T 以千進位換算，門檻填換算後數值。</p>
+            <details class="inline-help"><summary>ⓘ 兩個框要怎麼框</summary>
+              <p>監測框只框要比較的藍色曲線，包含完整高度。另框左側至少三個刻度數字，勿含座標軸線、標題或右側秒數；兩個框都必須保留在擷取範圍內。僅支援線性刻度，K／M／G／T 以千進位換算，門檻填換算後數值。請先用下方「進階 → 從圖上取色」指定藍色。</p>
+            </details>
             <div class="field"><label>左側刻度框（X、Y、寬、高）</label><div class="grid-4"><input id="axisX" type="number" aria-label="刻度框 X" placeholder="X" /><input id="axisY" type="number" aria-label="刻度框 Y" placeholder="Y" /><input id="axisW" type="number" aria-label="刻度框寬" placeholder="寬" /><input id="axisH" type="number" aria-label="刻度框高" placeholder="高" /></div></div>
             <button id="numericPreviewBtn" type="button" style="margin-top:8px;">讀取刻度並試算</button>
             <p id="numericResult" class="rule-hint" aria-live="polite"></p>
-            <p class="rule-hint">排程每次截圖重新辨識，不沿用預覽數值。峰值落在辨識誤差內、刻度不清或找不到藍色時，回報「無法判定」。請先用下方「從圖上取色」指定藍色。</p>
+            <details class="inline-help"><summary>ⓘ 排程時怎麼判定</summary>
+              <p>排程每次截圖重新辨識，不沿用這裡的預覽數值。峰值落在辨識誤差內、刻度不清或找不到藍色時，回報「無法判定」，不會當成正常。</p>
+            </details>
           </div>
           <div class="field">
-            <label>圖表名稱</label>
-            <input type="text" id="ruleNameInput" />
-          </div>
-          <div class="field">
-            <label>超標時的訊息（可 @人員）</label>
+            <label>超標時的訊息（純文字；寫 @名字 不會變成 Teams 標註，對方也不會收到通知）</label>
             <textarea id="ruleAlertMsgInput"></textarea>
           </div>
           <details class="advanced" style="margin-bottom:8px;">
@@ -820,21 +878,27 @@
       </div>
  
  
-      <!-- ===== 分頁：排程與發送 ===== -->
-      <div class="section-box" data-tab="send" style="border-color:#38bdf8;">
-        <div class="section-title"><span>預覽與測試</span></div>
-        <div class="field">
-          <div id="selfTestScheduleHint" style="font-size:12px;color:#93c5fd;margin-top:4px;"></div>
-          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px">
-            <button id="sendToSelfBtn" style="min-width:0;padding:5px;font-size:12px;white-space:normal" title="將目前預覽傳給所選 Teams 中的登入者本人；忽略所有收件人設定，核對確認後才送出">📨 將目前預覽傳給自己</button>
-            <button id="runScheduleToSelfBtn" style="min-width:0;padding:5px;font-size:12px;white-space:normal" title="依右上「預覽哪個排程」選定的排程重新擷取網站、執行警戒線判定，再核對傳給自己；原排程收件人不變">▶ 執行排程傳給自己</button>
+      <!-- ===== 分頁：排程與發送（預覽與測試按鈕在右欄「排程預覽與測試」） ===== -->
+      <div class="section-box" data-tab="send" style="border-color:#a855f7;">
+        <details id="schedulesFold" class="panel-fold">
+          <summary>排程時段<span id="schedulesFoldSummary" class="fold-meta"></span></summary>
+          <div class="schedule-actions">
+            <button id="addScheduleBtn" type="button">➕ 新增</button>
+            <button id="collapseSchedulesBtn" type="button">全部收合</button>
           </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:5px;">只測試右上「預覽哪個排程」選定的一個排程；確認本人對話後才送出。</div>
-          <details class="panel-fold" id="selfHelpFold" style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.6;"><summary>使用說明</summary><p>預覽使用目前圖片；執行排程重新擷取與判定，正常也會傳給自己，忽略正式收件人。下方勾選框控制自動排程；勾選時同步選中供測試，多個勾選不會合併測試。</p></details>
-          <button id="selfTestRefreshBtn" hidden style="margin-top:6px;padding:3px 10px;font-size:12px;" title="只查詢原測試，不建立新傳送">🔄 重新查詢測試狀態</button>
-          <div id="selfTestStatus" role="status" style="font-size:12px;line-height:1.6;margin-top:6px;white-space:pre-wrap;"></div>
+        <input id="scheduleSearchInput" type="search" placeholder="搜尋排程名稱或時間" aria-label="搜尋排程名稱或時間" />
+        <div id="scheduleSearchCount"></div>
+        <div id="scheduleList"></div>
+        <details class="panel-fold" id="scheduleHelpFold" style="margin:8px 0;font-size:11px;color:var(--muted);"><summary>排程執行說明</summary><p id="scheduleRunHint" style="line-height:1.6;">桌面模式需解鎖才能操作 Teams；鎖定時最多等待解鎖 30 秒，逾時結束本次傳送，截圖保留。</p></details>
+        </details>
+        <div class="sync-row">
+          <span id="scheduleSyncStatus">⏳ 讀取 Windows 排程狀態...</span>
+          <button id="registerSchedulesBtn" style="padding:2px 8px;font-size:11.5px;" title="重新把排程寫入 Windows 工作排程器">🔄 重新套用</button>
         </div>
+        <pre id="registerReport" style="display:none;white-space:pre-wrap;font-size:11px;margin:8px 0 0;color:var(--muted);"></pre>
       </div>
+ 
+ 
       <details class="section-box panel-fold" data-tab="send" id="teamsSettingsFold" style="border-color:#38bdf8;">
         <summary>Teams 傳送設定<span class="fold-meta" id="teamsSettingsSummary"></span></summary>
         <div class="field">
@@ -881,24 +945,6 @@
       </details>
 
 
-      <div class="section-box" data-tab="send" style="border-color:#a855f7;">
-        <details id="schedulesFold" class="panel-fold">
-          <summary>排程時段<span id="schedulesFoldSummary" class="fold-meta"></span></summary>
-          <div class="schedule-actions">
-            <button id="addScheduleBtn" type="button">➕ 新增</button>
-            <button id="collapseSchedulesBtn" type="button">全部收合</button>
-          </div>
-        <input id="scheduleSearchInput" type="search" placeholder="搜尋排程名稱或時間" aria-label="搜尋排程名稱或時間" />
-        <div id="scheduleSearchCount"></div>
-        <div id="scheduleList"></div>
-        <details class="panel-fold" id="scheduleHelpFold" style="margin:8px 0;font-size:11px;color:var(--muted);"><summary>排程執行說明</summary><p id="scheduleRunHint" style="line-height:1.6;">桌面模式需解鎖才能操作 Teams；鎖定時最多等待解鎖 30 秒，逾時結束本次傳送，截圖保留。</p></details>
-        </details>
-        <div class="sync-row">
-          <span id="scheduleSyncStatus">⏳ 讀取 Windows 排程狀態...</span>
-          <button id="registerSchedulesBtn" style="padding:2px 8px;font-size:11.5px;" title="重新把排程寫入 Windows 工作排程器">🔄 重新套用</button>
-        </div>
-        <pre id="registerReport" style="display:none;white-space:pre-wrap;font-size:11px;margin:8px 0 0;color:var(--muted);"></pre>
-      </div>
  
  
       <details class="section-box panel-fold" data-tab="global" id="messageFold">
@@ -925,7 +971,7 @@
         <div class="section-title"><span>監控網站登入</span></div>
         <button id="loginSetupBtn" class="primary" style="width:100%;justify-content:center;margin-bottom:6px;" title="開啟專用 Edge，手動登入各監控網站一次">🔐 登入監控網站</button>
         <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">會開啟一個 Edge 視窗，裡面是所有啟用頁面的網址。逐一登入（可勾「記住我」）後<b>直接關閉該視窗</b>即可。第一次使用、登入過期或抓圖抓到登入畫面時使用。</div>
-        <div style="font-size:11.5px;color:var(--muted);">各網站的帳密請到「📄 頁面與警戒線」，選擇頁面後勾選「使用帳密自動登入」。每頁可使用不同帳密；需要 MFA／驗證碼的網站請先在此手動登入。</div>
+        <div style="font-size:11.5px;color:var(--muted);">各網站的帳密請到「📄 頁面與監測」，選擇頁面後勾選「使用帳密自動登入」。每頁可使用不同帳密；需要 MFA／驗證碼的網站請先在此手動登入。</div>
       </div>
  
  
@@ -945,7 +991,7 @@
       <div class="canvas-toolbar">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <button id="modeCropBtn" title="顯示擷取的來源畫面，拖曳框出要傳送的範圍">✂️ 擷取範圍</button>
-          <button id="modeRuleBtn" class="active-mode" title="拖曳新增警戒線框、拖曳紅線調整高度">📏 警戒線</button>
+          <button id="modeRuleBtn" class="active-mode" title="編輯監測項目：拖曳新增監測框、拖曳紅線調整警戒線高度、框選刻度">📏 監測項目</button>
           <span style="width:1px;height:20px;background:var(--border);margin:0 2px;"></span>
           <span style="font-size:11px;color:#94a3b8;">畫布預覽</span>
           <button class="zoom-btn" data-zoom="fit" title="僅調整預覽大小；原始網頁縮放請使用左側設定">符合寬度</button>
@@ -973,17 +1019,32 @@
  
     <!-- 右側即時檢測結果與依 Teams 群組分流的預覽 -->
     <div class="right-panel">
-      <div class="section-box preview-controls">
-        <div class="section-title" style="margin-bottom:6px;"><span>👁 預覽哪個排程</span></div>
-        <select id="previewScheduleSelect" class="preview-select"></select>
-        <div class="test-actions">
-          <button id="testPreviewBtn" title="用範例圖貼到 Teams，但不按 Enter，由您確認後自己送出">🧪 測試貼上（不送出）</button>
-          <button id="testSendNowBtn" style="color:#fca5a5;border-color:#7f1d1d;" title="用範例圖直接送出到 Teams">🚀 正式送出…</button>
+      <!-- 正在編輯的這一頁：判定結果與它屬於哪些排程（與下方「排程」預覽分開，避免看錯） -->
+      <div class="section-box" id="currentPageJudgeBox">
+        <div class="section-title" style="margin-bottom:6px;">
+          <span id="currentPageJudgeTitle">🎯 目前頁面</span>
+          <span id="currentPageJudgeBadge" class="status-pill status-ok"></span>
         </div>
+        <div id="currentPageJudgeList" style="font-size:12px;line-height:1.6;"></div>
+        <div id="currentPageScheduleHint" style="font-size:12px;line-height:1.6;margin-top:6px;"></div>
+      </div>
+      <div class="section-box preview-controls">
+        <div class="section-title" style="margin-bottom:6px;"><span>👁 排程預覽與測試</span></div>
+        <select id="previewScheduleSelect" class="preview-select" aria-label="預覽與測試哪個排程"></select>
+        <div id="selfTestScheduleHint" style="font-size:12px;color:#93c5fd;margin-top:6px;"></div>
+        <div class="test-actions" style="margin-top:6px;margin-bottom:0;">
+          <button id="testPreviewBtn" style="min-width:0;white-space:normal" title="用範例圖貼到 Teams，但不按 Enter，由您確認後自己送出">🧪 測試貼上（不送出）</button>
+          <button id="sendToSelfBtn" style="min-width:0;white-space:normal" title="將目前預覽傳給所選 Teams 中的登入者本人；忽略所有收件人設定，核對確認後才送出">📨 將目前預覽傳給自己</button>
+          <button id="runScheduleToSelfBtn" style="min-width:0;white-space:normal" title="依上方選單選定的排程重新擷取網站、執行判定，再核對傳給自己；原排程收件人不變">▶ 執行排程傳給自己</button>
+          <button id="testSendNowBtn" style="min-width:0;white-space:normal;color:#fca5a5;border-color:#7f1d1d;" title="用範例圖直接送出到 Teams">🚀 正式送出…</button>
+        </div>
+        <details class="panel-fold" id="selfHelpFold" style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.6;"><summary>使用說明</summary><p>四個按鈕都只針對上方選定的一個排程。「測試貼上」只檢查不送出；「傳給自己」兩個按鈕只送到登入者本人的對話，確認本人對話後才送出：「將目前預覽傳給自己」用目前圖片，「執行排程傳給自己」重新擷取與判定（正常也會傳）。「正式送出」會送到排程的正式收件人。</p></details>
+        <button id="selfTestRefreshBtn" hidden style="margin-top:6px;padding:3px 10px;font-size:12px;" title="只查詢原測試，不建立新傳送">🔄 重新查詢測試狀態</button>
+        <div id="selfTestStatus" role="status" style="font-size:12px;line-height:1.6;margin-top:6px;white-space:pre-wrap;"></div>
       </div>
       <div class="section-box">
         <div class="section-title" style="margin-bottom:6px;">
-          <span>⚡ 警戒線判定</span>
+          <span>⚡ 排程判定結果</span>
           <span id="overallBadge" class="status-pill status-ok">全部正常</span>
         </div>
         <details class="panel-fold" id="alertDetailsFold">
@@ -1165,7 +1226,7 @@
     const cdpBindingsState = {targets:null,error:'',loading:false,loadedAt:0};
     let currentPageIdx = 0;
     let selectedRuleIdx = 0;
-    let currentTool = "rule";   // "crop" = ✂️ 擷取範圍、"rule" = 📏 警戒線、"pick_color" = 💧 取色 (點一次後回到 rule)
+    let currentTool = "rule";   // "crop" = ✂️ 擷取範圍、"rule" = 📏 監測項目、"pick_color" = 💧 取色 (點一次後回到 rule)
     let ruleDrag = null;        // 📏 模式拖曳狀態：{ kind: "new" | "line" | "move", ... }
     let zoomMode = "fit";
     let zoomLevel = 1.5;
@@ -1451,7 +1512,6 @@ const numericCache = new WeakMap();
         if (callback) callback();
         return;
       }
-      const sources = window.SAMPLE_IMAGES || {};
       const viaServer = location.protocol.startsWith("http");
       // 1. 有整頁原圖時以它為準，依目前擷取範圍重新裁切 (確保 <id>.png 與設定一致)
       if (viaServer) {
@@ -1464,12 +1524,9 @@ const numericCache = new WeakMap();
         } catch (e) {}
       }
       // 2. 沒有整頁原圖 (舊資料)：直接用同一頁已存的裁切圖，不拿別頁代替。
-      //    經本機服務開啟時只用 sample_images 的實際截圖；sample_data.js 的內建範例圖
-      //    (page1～page4) 只供直接開啟 HTML 的離線示範，避免同 id 的頁面把舊範例當成實際畫面。
-      const candidates = viaServer
-        ? [`/sample_images/${pageObj.id}.png?t=${Date.now()}`]
-        : [sources[pageObj.id]];
-      for (const src of candidates.filter(Boolean)) {
+      //    圖片只來自本機服務的 sample_images；直接開啟 HTML (file://) 時沒有圖可讀，顯示提示圖。
+      const candidates = viaServer ? [`/sample_images/${pageObj.id}.png?t=${Date.now()}`] : [];
+      for (const src of candidates) {
         try {
           setCroppedCanvas(pageObj.id, imageToCanvas(await loadImage(src)));
           break;
@@ -1559,6 +1616,9 @@ const numericCache = new WeakMap();
       document.getElementById('pageListCount').textContent = pages.length ? `${pageListOffset + 1}–${Math.min(pageListOffset + PAGE_LIST_SIZE, pages.length)} / ${pages.length} 頁面` : '沒有符合的頁面，可在此分類新增';
       document.getElementById('pageListPrev').disabled = pageListOffset === 0;
       document.getElementById('pageListNext').disabled = pageListOffset + PAGE_LIST_SIZE >= pages.length;
+      // 一頁放得下時不顯示「上一頁／下一頁」；沒有頁面時仍顯示提示文字
+      document.getElementById('pageListPrev').hidden = document.getElementById('pageListNext').hidden = pages.length <= PAGE_LIST_SIZE;
+      document.querySelector('.page-list-pager').hidden = pages.length > 0 && pages.length <= PAGE_LIST_SIZE;
       pages.slice(pageListOffset, pageListOffset + PAGE_LIST_SIZE).forEach(p => {
         const i = config.pages.indexOf(p);
         const div = document.createElement("div");
@@ -1569,15 +1629,22 @@ const numericCache = new WeakMap();
           ? "⏸️ 已停用"
           : activeRulesCount === 0
           ? "📸 只截圖"
-          : `警戒線 (${activeRulesCount})`;
+          : `監測 ${activeRulesCount} 項`;
+        // 還沒設定完的頁面在卡片上標出第一個缺的步驟
+        const missing = isEnabled ? firstMissingStep(p) : null;
         const name = document.createElement('div'); name.style.fontWeight = '700'; name.textContent = `#${i + 1} ${p.name}`;
         const detail = document.createElement('div'); detail.style.cssText = 'color:var(--muted);font-size:11px;'; detail.textContent = modeTag;
-        div.append(name, detail); div.title = p.name;
+        if (missing) {
+          const warn = document.createElement('span'); warn.style.color = '#fbbf24';
+          warn.textContent = `・⚠ ${missing.key === 'schedule' ? '未加入排程' : '缺' + missing.label}`;
+          detail.appendChild(warn);
+        }
+        div.append(name, detail); div.title = missing ? `${p.name}：${missing.todo}` : p.name;
         div.onclick = () => {
           currentPageIdx = i;
           selectedRuleIdx = 0;
           ensurePageImage(p, () => {
-            // ✂️ 工具只在有整頁畫面時可用；切到還沒抓圖的頁面時自動改回 📏 警戒線
+            // ✂️ 工具只在有整頁畫面時可用；切到還沒抓圖的頁面時自動改回 📏 監測項目
             if (currentTool === "crop" && !fullImages[p.id]) setToolMode("rule");
             renderAll();
           });
@@ -1639,6 +1706,8 @@ function renderCropFields() {
  
       const rulesList = document.getElementById("rulesList");
       rulesList.innerHTML = "";
+      const ruleCount = (page.rules || []).length;
+      document.getElementById("pageSecRuleCount").textContent = ruleCount ? `(${ruleCount})` : "(無)";
       (page.rules || []).forEach((r, idx) => {
         const res = evaluateRule(page.id, r);
         const card = document.createElement("div");
@@ -1646,15 +1715,22 @@ function renderCropFields() {
         const isRuleOn = r.enabled !== false;
         const badgeClass = !isRuleOn ? "" : res.exceeded || res.outOfRange || res.unknown ? "status-alert" : "status-ok";
         const badgeText = !isRuleOn ? "⏸️ 停用" : res.pending ? '⏳ 辨識中' : res.unknown ? '⚠️ 無法判定' : res.outOfRange ? "⚠️ 超出圖片範圍" : res.exceeded ? (r.measure_mode==='numeric'?'🚨 數值超標':`🚨 超標 (${res.count} px)`) : "✅ 正常";
-        card.innerHTML = `
-          <div class="rule-header">
-            <span>${r.name}</span>
-            <span class="status-pill ${badgeClass}">${badgeText}</span>
-          </div>
-          <div style="font-size:11px;color:var(--muted);">
-            監測框: (${r.roi.x}, ${r.roi.y}, ${r.roi.w}x${r.roi.h}) | ${r.measure_mode==='numeric'?'數值門檻':'警戒線 Y='+r.threshold_y}
-          </div>
-        `;
+        // 卡片寫判定方式、門檻與目前讀到的值；座標留在「進階」裡
+        const header = document.createElement('div'); header.className = 'rule-header';
+        const title = document.createElement('span'); title.textContent = r.name || '監測項目';
+        const pill = document.createElement('span'); pill.className = `status-pill ${badgeClass}`; pill.textContent = badgeText;
+        header.append(title, pill);
+        const fmt = v => Number(v).toLocaleString('zh-TW', { maximumSignificantDigits: 4 });
+        let detailText;
+        if (r.measure_mode === 'numeric') {
+          const thr = r.value_threshold === null || r.value_threshold === undefined || r.value_threshold === '' ? '未設定' : fmt(r.value_threshold);
+          const reading = typeof res.maximum === 'number' ? `・最近讀到最高約 ${fmt(res.maximum)}` : typeof res.below === 'number' ? `・最近最高低於約 ${fmt(res.below)}` : '';
+          detailText = `數值門檻 ${thr}${reading}`;
+        } else {
+          detailText = '警戒線（固定高度）' + (res.outOfRange ? '' : res.count ? `・越線 ${res.count} 點` : '・沒有越線');
+        }
+        const detail = document.createElement('div'); detail.style.cssText = 'font-size:11px;color:var(--muted);'; detail.textContent = detailText;
+        card.append(header, detail);
         card.onclick = () => {
           selectedRuleIdx = idx;
           renderAll();
@@ -2042,7 +2118,7 @@ function daysText(s) {
       const sel = document.getElementById("previewScheduleSelect");
       const current = getPreviewSchedule();
       sel.innerHTML = "";
-      // 唯一的排程選單：右側預覽與左側「傳給自己」兩個測試按鈕共用 previewScheduleId
+      // 唯一的排程選單：右欄「排程預覽與測試」的預覽與四個測試按鈕共用 previewScheduleId
       config.schedules.forEach(s => {
         const opt = document.createElement("option");
         opt.value = s.id;
@@ -2056,11 +2132,113 @@ function daysText(s) {
       sel.value = current ? current.id : ALL_PAGES_KEY;
       sel.disabled = selfTestStarting;
       document.getElementById('selfTestScheduleHint').textContent=current
-        ? `本次測試：${current.name || current.id}，預計擷取 ${pagesForSchedule(current).length} 張（在右上「預覽哪個排程」切換）。`
-        : '目前預覽「全部啟用頁面」，只能用「將目前預覽傳給自己」；要執行排程測試，請在右上「預覽哪個排程」選一個排程。';
+        ? `本次測試：${current.name || current.id}，預計擷取 ${pagesForSchedule(current).length} 張；四個按鈕都針對這個排程（在上方選單切換）。`
+        : '目前預覽「全部啟用頁面」，只能用「將目前預覽傳給自己」；要執行排程測試，請在上方選單選一個排程。';
     }
  
  
+    // ===== 此頁完成度：網址 → 抓圖 → 擷取範圍 →（監測項目，選填）→ 加入排程 =====
+    // 只看設定與已載入的圖：抓圖完成＝有本工具目前格式的 capture_view（排程會依它重播），
+    // 目前頁面另外要有實際畫面。缺的步驟標黃色，「下一步」帶到該步驟。
+    function pageSetupSteps(page) {
+      const isCurrent = config.pages[currentPageIdx] === page;
+      const canvas = pageImageCanvases[page.id];
+      const url = String(page.url || '').trim();
+      const sampleUrl = /your-internal-system\.corp/i.test(url);   // 「新增」時填入的範例網址
+      const hasUrl = /^https?:\/\/\S+/i.test(url) && !sampleUrl;
+      const captured = page.capture_view?.layout === 'native100-v1' && (!isCurrent || !canvas || !canvas.isPlaceholder);
+      const c = page.crop_region || {};
+      // 新頁面預設整頁範圍；要先有抓圖，框選才有意義
+      const cropped = captured && Number(c.w) > 0 && Number(c.h) > 0;
+      const activeRules = (page.rules || []).filter(r => r.enabled !== false).length;
+      const owners = (config.schedules || []).filter(s => (s.pages || []).includes(page.id));
+      const enabledOwners = owners.filter(s => s.enabled !== false);
+      return [
+        { key: 'url', label: '網址', done: hasUrl, todo: sampleUrl ? '把範例網址換成要監控的網址' : '填入網址（http:// 或 https:// 開頭）' },
+        { key: 'capture', label: '抓圖', done: captured, todo: page.capture_view && page.capture_view.layout !== 'native100-v1' ? '舊版抓圖範圍，排程會停止這一頁，請重新抓圖' : '按「📸 抓圖」在 Edge 捲到要的位置並擷取' },
+        { key: 'crop', label: '擷取範圍', done: cropped, todo: captured ? '用畫布上方「✂️ 擷取範圍」框出要傳送的部分' : '抓圖後用「✂️ 擷取範圍」框出要傳送的部分' },
+        { key: 'rules', label: activeRules ? `監測 ${activeRules} 項` : '監測項目（選填）', done: activeRules > 0, optional: true },
+        { key: 'schedule', label: enabledOwners.length ? `排程 ${enabledOwners.length} 個` : '加入排程', done: enabledOwners.length > 0,
+          todo: owners.length ? '所在的排程都已停用，排程時不會擷取這一頁' : '還沒有加入任何排程，排程時不會擷取這一頁' }
+      ];
+    }
+    function firstMissingStep(page) {
+      return pageSetupSteps(page).find(s => !s.done && !s.optional) || null;
+    }
+    function goToSetupStep(key) {
+      if (key === 'url') { const el = document.getElementById('pageUrlInput'); setPageSection('page'); el.focus(); el.classList.add('flash-attention'); setTimeout(() => el.classList.remove('flash-attention'), 2600); return; }
+      if (key === 'capture') { setPageSection('page'); fetchLiveUrlScreenshot(); return; }
+      if (key === 'crop') { setToolMode('crop'); renderCanvas(); if (currentTool === 'crop') showSaveToast('在中間的來源畫面上拖曳，框出要傳送的範圍'); return; }
+      if (key === 'rules') { setPageSection('rules'); setToolMode('rule'); renderCanvas(); showSaveToast('在中間圖上拖曳框出要監測的區域'); return; }
+      if (key === 'schedule') { setPageSection('page'); const el = document.getElementById('pageScheduleField'); el.scrollIntoView({ block: 'center' }); el.classList.add('flash-attention'); setTimeout(() => el.classList.remove('flash-attention'), 2600); }
+    }
+    function renderPageSetup(page) {
+      const box = document.getElementById('pageSetupSteps');
+      if (!box || !page) return;
+      box.innerHTML = '';
+      const steps = pageSetupSteps(page);
+      const row = document.createElement('div'); row.className = 'steps-row';
+      steps.forEach(s => {
+        const chip = document.createElement('span');
+        chip.className = 'step ' + (s.done ? 'done' : s.optional ? 'optional' : 'todo');
+        chip.textContent = (s.done ? '✓ ' : s.optional ? '○ ' : '⚠ ') + s.label;
+        chip.title = s.done ? '已完成' : s.optional ? '選填：沒有監測項目時只截圖' : s.todo;
+        row.appendChild(chip);
+      });
+      box.appendChild(row);
+      const next = steps.find(s => !s.done && !s.optional);
+      const line = document.createElement('div'); line.className = 'next-row';
+      const text = document.createElement('span');
+      if (page.enabled === false) {
+        text.textContent = '這一頁已停用，排程與手機指令都不會擷取。';
+      } else if (next) {
+        text.textContent = next.todo;
+        const btn = document.createElement('button'); btn.type = 'button';
+        btn.textContent = `下一步：${next.key === 'schedule' ? '加入排程' : next.label}`;
+        btn.onclick = () => goToSetupStep(next.key);
+        line.appendChild(btn);
+      } else {
+        const rules = steps.find(s => s.key === 'rules');
+        text.textContent = rules.done ? '✅ 設定完成，排程會擷取並判定這一頁。' : '✅ 設定完成，排程會擷取這一頁（只截圖）。要判定超標可到「📏 監測項目」畫框。';
+      }
+      line.prepend(text);
+      box.appendChild(line);
+      box.classList.toggle('complete', !next && page.enabled !== false);
+    }
+    // 在頁面設定裡直接勾選要加入哪些排程；加入時排在該排程最後，順序仍在排程中調整
+    function renderPageScheduleChecks(page) {
+      const wrap = document.getElementById('pageScheduleChecks');
+      if (!wrap || !page) return;
+      wrap.innerHTML = '';
+      const schedules = config.schedules || [];
+      if (!schedules.length) {
+        const none = document.createElement('div'); none.className = 'muted';
+        none.textContent = '還沒有任何排程，請到「📅 排程與發送」新增。';
+        wrap.appendChild(none); return;
+      }
+      schedules.forEach(s => {
+        const label = document.createElement('label'); label.className = 'chk-row';
+        const box = document.createElement('input'); box.type = 'checkbox';
+        s.pages = s.pages || [];
+        box.checked = s.pages.includes(page.id);
+        box.onchange = () => {
+          if (box.checked) {
+            if (!s.pages.includes(page.id)) s.pages.push(page.id);
+            showSaveToast(`已加入「${s.name || s.id}」，排在第 ${s.pages.indexOf(page.id) + 1} 張；順序可在排程中調整`);
+          } else {
+            s.pages = s.pages.filter(id => id !== page.id);
+            showSaveToast(`已從「${s.name || s.id}」移除這一頁`);
+          }
+          renderAll();
+        };
+        const text = document.createElement('span');
+        text.textContent = `${scheduleTimingText(s)} ${s.name || s.id}（${pagesForSchedule(s).length} 張）`;
+        label.append(box, text);
+        if (s.enabled === false) { const off = document.createElement('span'); off.className = 'muted'; off.textContent = '・排程已停用'; label.appendChild(off); }
+        wrap.appendChild(label);
+      });
+    }
+
     // 頁面表單下方顯示「實際會送到哪」，並列出會改送他處的排程
     function renderPageEffectiveTarget() {
       const el = document.getElementById("pageEffectiveTarget");
@@ -2114,9 +2292,90 @@ function daysText(s) {
       if (current.length || !batches.length) batches.push(current);
       return batches;
     }
+    // 右欄最上方：正在編輯的這一頁本身的判定，以及它屬於哪些排程。
+    // 下方的「排程判定結果」是所選排程的全部頁面，兩者分開才不會把別頁的結果看成這一頁的。
+    function judgeRuleLine(page, rule) {
+      if (rule.enabled === false) return { state: 'off', text: `⏸ ${rule.name || '監測項目'}：已停用` };
+      const canvas = pageImageCanvases[page.id];
+      if (!canvas || canvas.isPlaceholder) return { state: 'unknown', text: `⚠️ ${rule.name || '監測項目'}：還沒有畫面，請先抓圖` };
+      const res = evaluateRule(page.id, rule);
+      const name = rule.name || '監測項目';
+      if (rule.measure_mode === 'numeric') {
+        const desc = numericDescription(res);
+        const lead = (desc.match(/^(⏳|⚠️|🚨|✅)\s*/) || [''])[0];
+        return { state: res.pending ? 'pending' : res.unknown ? 'unknown' : res.exceeded ? 'alert' : 'ok', text: `${lead}${name}：${desc.slice(lead.length)}` };
+      }
+      if (res.outOfRange) return { state: 'unknown', text: `⚠️ ${name}：無法判定，範圍或高度無效，請重新框選` };
+      return res.exceeded
+        ? { state: 'alert', text: `🚨 ${name}：曲線越過警戒線（${res.count} 個點）` }
+        : { state: 'ok', text: `✅ ${name}：正常，沒有越過警戒線` };
+    }
+    function renderCurrentPageJudge(previewSched) {
+      const page = config.pages[currentPageIdx];
+      const title = document.getElementById('currentPageJudgeTitle');
+      const badge = document.getElementById('currentPageJudgeBadge');
+      const list = document.getElementById('currentPageJudgeList');
+      const hint = document.getElementById('currentPageScheduleHint');
+      list.innerHTML = ''; hint.innerHTML = '';
+      if (!page) { title.textContent = '🎯 目前頁面'; badge.textContent = ''; badge.className = 'status-pill'; list.textContent = '尚未新增頁面。'; return; }
+      title.textContent = `🎯 目前頁面：${page.name || page.id}`;
+      const rules = page.rules || [];
+      const counts = { alert: 0, unknown: 0, ok: 0, pending: 0 };
+      if (!rules.length) {
+        list.textContent = '📸 只截圖：這一頁沒有設定監測項目。';
+      }
+      rules.forEach((rule, idx) => {
+        const info = judgeRuleLine(page, rule);
+        if (counts[info.state] !== undefined) counts[info.state]++;
+        const line = document.createElement('div');
+        line.className = 'judge-line clickable' + (idx === selectedRuleIdx ? ' selected' : '');
+        line.textContent = info.text;
+        line.title = '點一下在左側編輯這個監測項目';
+        if (info.state === 'alert') line.style.color = '#f87171';
+        else if (info.state === 'unknown') line.style.color = '#fbbf24';
+        else if (info.state === 'off') line.style.color = 'var(--muted)';
+        line.onclick = () => { selectedRuleIdx = idx; setSideTab('pages'); setPageSection('rules'); setToolMode('rule'); renderAll(); };
+        list.appendChild(line);
+      });
+      const parts = [];
+      if (counts.alert) parts.push(`${counts.alert} 項超標`);
+      if (counts.unknown) parts.push(`${counts.unknown} 項無法判定`);
+      if (counts.pending) parts.push(`${counts.pending} 項辨識中`);
+      badge.className = 'status-pill ' + (counts.alert || counts.unknown ? 'status-alert' : 'status-ok');
+      badge.textContent = page.enabled === false ? '已停用' : !rules.length ? '只截圖' : parts.length ? parts.join('／') : '正常';
+      if (page.enabled === false) badge.className = 'status-pill';
+      // 這一頁屬於哪些排程；不在目前預覽的排程時說清楚，並可一鍵切換預覽
+      const owners = (config.schedules || []).filter(s => (s.pages || []).includes(page.id));
+      const add = (text, color) => { const d = document.createElement('div'); d.textContent = text; if (color) d.style.color = color; hint.appendChild(d); return d; };
+      hint.className = 'judge-hint';
+      if (page.enabled === false) add('這一頁已停用，排程與手機指令都不會擷取。', 'var(--muted)');
+      if (!owners.length) {
+        add('⚠️ 這一頁沒有加入任何排程，排程執行時不會被截到。可在左側「⚙️ 此頁設定」的「加入哪些排程」直接勾選。', '#fbbf24');
+        return;
+      }
+      if (previewSched && owners.includes(previewSched)) {
+        add(`包含在下方預覽的排程「${previewSched.name || previewSched.id}」${owners.length > 1 ? `，以及其他 ${owners.length - 1} 個排程` : ''}。`, 'var(--muted)');
+        return;
+      }
+      add(`下方預覽的是「${previewSched ? (previewSched.name || previewSched.id) : '全部啟用頁面'}」${previewSched ? '，這一頁不在其中' : ''}。包含這一頁的排程：`, previewSched ? '#fbbf24' : 'var(--muted)');
+      const row = document.createElement('div');
+      owners.forEach(s => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = `${scheduleTimingText(s)} ${s.name || s.id}`;
+        b.title = '把下方的排程預覽與測試切換到這個排程';
+        b.disabled = selfTestStarting;
+        b.onclick = () => { previewScheduleId = s.id; renderTeamsPreview(); };
+        row.appendChild(b);
+      });
+      hint.appendChild(row);
+    }
 function renderTeamsPreview() {
       renderPageEffectiveTarget();
+      renderPageSetup(config.pages[currentPageIdx]);
+      renderPageScheduleChecks(config.pages[currentPageIdx]);
       renderPreviewSelect();
+      renderCurrentPageJudge(getPreviewSchedule());
       const sched = getPreviewSchedule();
       const pages = pagesForSchedule(sched);
       const summaryEl = document.getElementById("allPagesStatusSummary");
@@ -2151,7 +2410,7 @@ function renderTeamsPreview() {
           totalProblems += outside.length;
           totalAlerts += hits.length;
           line.textContent = hits.length ? `🚨 #${pageNo} ${p.name}：${hits.length} 項超標` : `✅ #${pageNo} ${p.name}：正常`;
-          if (outside.length) line.textContent = `⚠️ #${pageNo} ${p.name}：${outside.length} 條警戒線無法判定` + (hits.length ? `，${hits.length} 項超標` : '');
+          if (outside.length) line.textContent = `⚠️ #${pageNo} ${p.name}：${outside.length} 項無法判定` + (hits.length ? `，${hits.length} 項超標` : '');
           if (hits.length || outside.length) line.style.color = hits.length ? "#f87171" : "#fbbf24";
         }
         const previewImage = getTeamsPreviewImage(p);
@@ -2665,9 +2924,19 @@ WEEK_DAYS.forEach(([code, label]) => {
  
     function setAutoSaveStatus(kind, text) {
       const chip = document.getElementById("autoSaveStatus");
-      chip.className = "save-chip" + (kind === "ok" ? "" : " " + kind);
-      chip.textContent = text;
+      // 排程未同步／同步失敗時，提示本身就是「立即同步」按鈕（與排程分頁的「重新套用」相同）
+      const canSync = kind === "error" && /排程未同步|排程同步失敗/.test(text) && autoSaveEnabled;
+      chip.className = "save-chip" + (kind === "ok" ? "" : " " + kind) + (canSync ? " actionable" : "");
+      chip.textContent = canSync ? `${text}（點此同步）` : text;
+      chip.title = canSync ? "點一下立即把排程寫入 Windows 工作排程器，並核對結果" : "所有修改都會自動存到 config.json";
+      chip.dataset.action = canSync ? "sync" : "";
     }
+    document.getElementById("autoSaveStatus").onclick = async () => {
+      const chip = document.getElementById("autoSaveStatus");
+      if (chip.dataset.action !== "sync" || saveInFlight || !autoSaveEnabled) return;
+      saveInFlight = true;
+      try { await applySchedules(); } finally { saveInFlight = false; }
+    };
  
  
     function scheduleTaskName(s) { return String(s.name || '').trim() || String(s.id); }
@@ -2996,7 +3265,7 @@ WEEK_DAYS.forEach(([code, label]) => {
       try {
         if (kind === 'schedule') {
           const sched = getPreviewSchedule();
-          if (!sched) throw new Error('請先在右上「預覽哪個排程」選擇一個排程，不能使用全部頁面。');
+          if (!sched) throw new Error('請先在右欄「排程預覽與測試」的選單選擇一個排程，不能使用全部頁面。');
           if (!Array.isArray(sched.pages) || !sched.pages.length) throw new Error('此排程尚未指定頁面。');
           payload = {scheduleId:sched.id, config:JSON.parse(JSON.stringify(config))};
         } else payload = buildSelfTestPreview();
@@ -3117,7 +3386,7 @@ async function cdpApiRequest(path, options={}) {
     }
  
  
-    // ===== 畫布滑鼠操作：✂️ 擷取範圍 / 📏 警戒線 兩種模式 =====
+    // ===== 畫布滑鼠操作：✂️ 擷取範圍 / 📏 監測項目 兩種模式 =====
     // 📏 模式：在空白處拖曳 = 新增一條警戒線；拖曳選取中的紅線 = 調整高度；拖曳框內 = 移動框
     function hitTestRules(page, pt) {
       const tol = Math.max(3, 6 / zoomLevel);   // 紅線可點範圍 (畫面上約 6px)
@@ -3155,6 +3424,7 @@ async function cdpApiRequest(path, options={}) {
         alert_message: `⚠️ [${page.name} - 監控小圖 #${n}] 昨日圖示超過警戒線，請相關人員協助查詢！`
       });
       selectedRuleIdx = page.rules.length - 1;
+      setPageSection("rules");   // 剛畫好的項目要能立刻在左側編輯
     }
  
  
@@ -3288,6 +3558,7 @@ async function cdpApiRequest(path, options={}) {
     }
     document.getElementById("modeCropBtn").onclick = () => {
       setToolMode("crop");
+      if (currentTool === "crop") setPageSection("page");   // 擷取範圍的數值與摘要在「此頁設定」
       renderCanvas();
     };
     document.getElementById("modeRuleBtn").onclick = () => {
@@ -3375,7 +3646,7 @@ async function cdpApiRequest(path, options={}) {
         return;
       }
       const removed = config.pages[currentPageIdx];
-      if (!confirm(`確定刪除頁面「${removed.name}」與它的 ${(removed.rules || []).length} 條警戒線？\n（刪除後會自動儲存，並從所有排程中移除）`)) return;
+      if (!confirm(`確定刪除頁面「${removed.name}」與它的 ${(removed.rules || []).length} 個監測項目？\n（刪除後會自動儲存，並從所有排程中移除）`)) return;
       const removedId = removed.id;
       config.pages.splice(currentPageIdx, 1);
       (config.schedules || []).forEach(s => {
@@ -3519,6 +3790,8 @@ async function cdpApiRequest(path, options={}) {
 document.getElementById("pageUrlInput").oninput = e => {
       config.pages[currentPageIdx].url = e.target.value;
       renderPageTime(config.pages[currentPageIdx]);
+      renderPageSetup(config.pages[currentPageIdx]);   // 完成度跟著網址即時更新
+      renderPageTabs();
     };
     document.getElementById("pageUrlInput").onkeydown = e => {
       if (e.key === "Enter") {
@@ -3998,7 +4271,7 @@ document.getElementById("pageUrlInput").oninput = e => {
     }
  
  
-    // 測試都以右側「預覽哪個排程」為準；預設只貼上不送出，正式送出需再次確認
+    // 測試都以右欄「排程預覽與測試」選定的排程為準；預設只貼上不送出，正式送出需再次確認
     function previewScheduleArg() {
       const s = getPreviewSchedule();
       return s ? s.id : "";
@@ -4028,6 +4301,21 @@ document.getElementById("pageUrlInput").oninput = e => {
       document.querySelectorAll("#sideTabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
       try { localStorage.setItem("e3_calibrator_tab", tab); } catch (e) {}
     }
+    // 頁面分頁內：「⚙️ 此頁設定」或「📏 監測項目」，一次只顯示一塊並記住選擇
+    function setPageSection(section) {
+      if (!["page", "rules"].includes(section)) section = "page";
+      document.querySelector(".sidebar").dataset.pageSection = section;
+      document.querySelectorAll(".page-section-switch button").forEach(b => {
+        const on = b.dataset.pagesec === section;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      try { localStorage.setItem("e3_calibrator_page_section", section); } catch (e) {}
+    }
+    document.querySelectorAll(".page-section-switch button").forEach(b => {
+      b.onclick = () => setPageSection(b.dataset.pagesec);
+    });
+    try { setPageSection(localStorage.getItem("e3_calibrator_page_section") || "page"); } catch (e) { setPageSection("page"); }
     document.querySelectorAll("#sideTabs button").forEach(b => {
       b.onclick = () => setSideTab(b.dataset.tab);
     });
@@ -4037,7 +4325,7 @@ document.getElementById("pageUrlInput").oninput = e => {
     } catch (e) {}
  
  
-    // 直接雙擊 calibrator.html (file://) 開啟時：圖片只能用內建舊範例、抓圖後的裁切圖也存不回去，
+    // 直接雙擊 calibrator.html (file://) 開啟時：讀不到截圖、抓圖後的裁切圖也存不回去，
     // 所以本機服務有開就自動轉到 http://127.0.0.1:8765/calibrator.html，沒開就顯示警告
     function showServiceBanner(msg) {
       let bar = document.getElementById("serviceBanner");
@@ -4059,7 +4347,7 @@ document.getElementById("pageUrlInput").oninput = e => {
           location.replace("http://127.0.0.1:8765/calibrator.html");
           return;
         } catch (e) {}
-        showServiceBanner("⚠️ 本機服務沒有啟動：畫面上是內建範例圖，抓圖與儲存都無法寫入 config.json。請關閉此頁，雙擊 open_calibrator.bat 開啟設定工具。");
+        showServiceBanner("⚠️ 本機服務沒有啟動：讀不到截圖，抓圖與儲存都無法寫入 config.json。請關閉此頁，雙擊 open_calibrator.bat 開啟設定工具。");
       }
       // 啟動時自動從本機 config.json 或瀏覽器記憶讀取最新設定
       let fromServer = false;

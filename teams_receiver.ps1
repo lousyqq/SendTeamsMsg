@@ -6,9 +6,30 @@ $ErrorActionPreference='Stop'
 if($Listen -and -not $LibraryOnly){
     Disable-E3ConsoleQuickEdit
     Write-Host '正在啟動日管指令接收，請稍候…' -ForegroundColor Cyan
+    # Files damaged in transfer (lost BOM, NBSP indentation, cut lines) otherwise end the receiver
+    # with a wall of parser errors. Check before loading them and name the file and the cause.
+    $checker=Join-Path $PSScriptRoot 'tools\check_files.ps1'
+    if(Test-Path -LiteralPath $checker){
+        $damaged=@()
+        try{$damaged=@(& $checker -PassThru|Where-Object{$_.level -eq 'error'})}catch{Write-Warning ('程式檔檢查無法執行（不影響啟動）：'+$_.Exception.Message)}
+        if($damaged.Count){
+            $summary=(@($damaged|Select-Object -First 5|ForEach-Object{[string]$_.file+'：'+[string]$_.message}) -join '；')
+            Write-Host '❌ 程式檔損壞，接收端沒有啟動：' -ForegroundColor Red
+            $damaged|ForEach-Object{Write-Host ('   '+[string]$_.file+'：'+[string]$_.message) -ForegroundColor Red}
+            Write-Host '請用 zip 或附件重新傳檔（不要經 Teams／Outlook／網頁複製貼上），再重新啟動。' -ForegroundColor Yellow
+            if($Continuous){
+                # Recorded as a setup problem: the watchdog reports this reason and does not restart in a loop.
+                try{Write-E3WorkJson (Join-Path $PSScriptRoot 'logs\teams_receiver\heartbeat.json') @{version=2;state='stopped';pid=$PID;computer=$env:COMPUTERNAME;intentional=$false;fatal=$true;utc=[DateTimeOffset]::UtcNow.ToString('O');stopReason=('程式檔損壞，接收端沒有啟動：'+$summary);sources=@()}}catch{}
+            }
+            exit 1
+        }
+    }
 }
 . (Join-Path $PSScriptRoot 'teams_cdp\Delivery.ps1')
 . (Join-Path $PSScriptRoot 'teams_receiver_commands.ps1')
+. (Join-Path $PSScriptRoot 'teams_receiver_queries.ps1')
+# Schedule result judgment and watchdog paths, shared with the status reply. Optional file.
+if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'teams_receiver_watchdog.ps1')){. (Join-Path $PSScriptRoot 'teams_receiver_watchdog.ps1')}
 $script:E3WorkEntryScript=$PSCommandPath
 $script:E3WorkMayTerminate=[bool]$Setup -and -not $LibraryOnly
 $script:E3ReceiverProfileRoot=Join-Path $env:LOCALAPPDATA 'E3TeamsCommandReceiver'
@@ -30,13 +51,101 @@ function Save-E3ReceiverStatus([string]$state,[string]$message) {
     # Status is informational. A log write failure must not terminate reception.
     try{Save-E3CdpState (Join-Path $script:E3CdpLogRoot 'status.json') @{state=$state;message=$message;at=[DateTimeOffset]::UtcNow.ToString('O')}}
     catch{Write-Warning ('接收狀態暫時無法寫入：'+$_.Exception.Message)}
+    Write-E3ReceiverEvent $state $message
+}
+function Write-E3ReceiverEvent([string]$kind,[string]$text) {
+    # Timestamped one-line history per day (the console copy has no times): every state change,
+    # command, failure reason and notice. Informational only: a write failure is ignored on purpose.
+    try{
+        $folder=Join-Path $script:E3CdpLogRoot ([DateTime]::Now.ToString('yyyy-MM-dd'))
+        [void][IO.Directory]::CreateDirectory($folder)
+        $line=[DateTime]::Now.ToString('HH:mm:ss')+"`t"+$kind+"`t"+(($text -replace '\s*[\r\n]+\s*',' / ').Trim())+"`r`n"
+        [IO.File]::AppendAllText((Join-Path $folder 'receiver_events.log'),$line,[Text.UTF8Encoding]::new($false))
+    }catch{}
+}
+function Start-E3ReceiverLog {
+    # The black window's text is gone once the window closes. Keep a copy per day; the dated
+    # folder is removed with the other 30-day records.
+    try{
+        $day=[DateTime]::Now.ToString('yyyy-MM-dd')
+        $folder=Join-Path $script:E3CdpLogRoot $day
+        [void][IO.Directory]::CreateDirectory($folder)
+        $file=Join-Path $folder ('receiver_console_'+[DateTime]::Now.ToString('HHmmss')+'_'+$PID+'.log')
+        Start-Transcript -Path $file -Append|Out-Null
+        $script:E3ReceiverLogDay=$day
+    }catch{$script:E3ReceiverLogDay=$null;Write-Warning ('接收端視窗紀錄無法開始寫入（不影響接收）：'+$_.Exception.Message)}
+}
+function Stop-E3ReceiverLog {
+    if(-not $script:E3ReceiverLogDay){return}
+    $script:E3ReceiverLogDay=$null
+    try{Stop-Transcript|Out-Null}catch{}
+}
+function Update-E3ReceiverLog {
+    # A receiver runs for days: start a new file when the date changes.
+    if($script:E3ReceiverLogDay -and $script:E3ReceiverLogDay -ne [DateTime]::Now.ToString('yyyy-MM-dd')){Stop-E3ReceiverLog;Start-E3ReceiverLog}
+}
+function Add-E3ReceiverOutbox([string]$text,[string]$route='',[string]$kind='') {
+    # Queue a notice for this receiver's own outbox loop. $route sends it to that bound chat only;
+    # without it the notice goes to the personal chat (or the first source). Never throws: a
+    # notice that cannot be queued must not break reception.
+    try{
+        if($text -notmatch '^✦'){throw '通知文字必須以 ✦ 開頭，避免被當成指令'}
+        if($text.Length -gt 1900){$text=$text.Substring(0,1900)+'…'}
+        $name=[DateTime]::UtcNow.ToString('yyyyMMddHHmmss')+'_'+[guid]::NewGuid().ToString('N')+'.json'
+        Write-E3WorkJson (Join-Path $script:E3CdpLogRoot ('outbox\'+$name)) @{text=$text;createdUtc=[DateTimeOffset]::UtcNow.ToString('O');route=$route;kind=$kind}
+        Write-E3ReceiverEvent 'notice_queued' ($(if($route){$route}else{'（本人對話）'})+'：'+$text)
+        return $true
+    }catch{Write-Warning ('說明訊息無法排入待送佇列：'+$_.Exception.Message);return $false}
+}
+function Save-E3ReceiverClaimState([string]$claim,[string]$state,$info,[hashtable]$extra=@{}) {
+    # Every state of a command keeps who asked what and when, so its outcome can be explained later.
+    $record=@{version=3;state=$state;route=[string]$info.route;command=[string]$info.command;messageTime=[string]$info.messageTime;at=[DateTimeOffset]::UtcNow.ToString('O')}
+    foreach($key in $extra.Keys){$record[$key]=$extra[$key]}
+    Save-E3CdpState $claim $record
+}
+function Resolve-E3ReceiverInterruptedClaims([DateTimeOffset]$now) {
+    # Called right after this process took the single-instance lock: no other receiver is running,
+    # so a claim still in a working state belongs to a receiver that ended mid-command (window
+    # closed, crash, forced stop, reboot). Mark it first, then queue one explanation for that chat.
+    # The command itself is never run or answered again.
+    $folder=Join-Path $script:E3CdpLogRoot 'commands'
+    if(-not [IO.Directory]::Exists($folder)){return}
+    foreach($file in @(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File -ErrorAction SilentlyContinue)){
+        if(($now.UtcDateTime-$file.LastWriteTimeUtc).TotalHours -gt 6){continue}
+        $c=$null;try{$c=Read-E3WorkJson $file.FullName}catch{continue}
+        if(-not $c -or [string]$c.state -notin @('claimed','ack_sending','acknowledged') -or -not [string]$c.route){continue}
+        try{Save-E3ReceiverClaimState $file.FullName 'interrupted' $c @{interruptedState=[string]$c.state}}catch{continue}
+        $null=Add-E3ReceiverOutbox (New-E3ReceiverFailureText $c 'interrupted' '接收端在處理這個指令時被中斷（視窗被關閉、程式結束或主機重新開機）') ([string]$c.route) 'command_failure'
+    }
+}
+function Get-E3ReceiverMissedCommands($snapshot,$binding,$from,[DateTimeOffset]$cutoff) {
+    # Commands still visible in the chat that arrived while no receiver was running. They are
+    # reported, never run: only messages after this start are commands.
+    if(-not $snapshot -or -not $from){return}
+    $folder=Join-Path $script:E3CdpLogRoot 'commands'
+    foreach($message in @($snapshot.commands)){
+        $time=[DateTimeOffset]::MinValue
+        if(-not [DateTimeOffset]::TryParse([string]$message.time,[ref]$time)){continue}
+        if($time -le $from -or $time -gt $cutoff){continue}
+        $key=$null;try{$key=Get-E3ReceiverKey $binding $message}catch{continue}
+        if(Test-Path -LiteralPath (Join-Path $folder ($key+'.json'))){continue}
+        @{messageTime=$time.ToString('O');command=[string]$message.text}
+    }
+}
+function New-E3ReceiverMissedText($missed,[DateTimeOffset]$from,[DateTimeOffset]$cutoff) {
+    $zone=[TimeZoneInfo]::FindSystemTimeZoneById('Taipei Standard Time')
+    $a=[TimeZoneInfo]::ConvertTimeFromUtc($from.UtcDateTime,$zone);$b=[TimeZoneInfo]::ConvertTimeFromUtc($cutoff.UtcDateTime,$zone)
+    $span=$a.ToString('MM/dd HH:mm')+'～'+$(if($a.Date -eq $b.Date){$b.ToString('HH:mm')}else{$b.ToString('MM/dd HH:mm')})
+    $lines=@('✦ [日管]',"接收端在 $span 之間沒有執行，這段時間有 $(@($missed).Count) 個指令沒有處理：")
+    $lines+=@(@($missed)|Select-Object -Last 5|ForEach-Object{'• '+(Format-E3ReceiverCommandLabel $_)})
+    $lines+='不會自動補做；需要的話請再下一次指令。'
+    return ($lines -join "`n")
 }
 function Clear-E3ReceiverOldLogs([int]$CaptureDays=7,[int]$RecordDays=30,[DateTime]$Today=[DateTime]::Today) {
     # Only dated folders this receiver creates and its own command claims. Never touches
     # teams_cdp (blocked/review), heartbeat, status or watchdog files.
     $root=$script:E3CdpLogRoot
     if(-not $root -or -not [IO.Directory]::Exists($root)){return}
-    $removed=0
     $remove={
         param([string]$parent,[int]$days)
         if(-not [IO.Directory]::Exists($parent)){return}
@@ -57,7 +166,7 @@ function Clear-E3ReceiverOldLogs([int]$CaptureDays=7,[int]$RecordDays=30,[DateTi
     if([IO.Directory]::Exists($outbox)){
         # Finished watchdog notifications (.sent/.failed/.expired/.invalid); pending *.json stay.
         foreach($file in Get-ChildItem -LiteralPath $outbox -File -ErrorAction SilentlyContinue){
-            if($file.Extension -in @('.sent','.failed','.expired','.invalid') -and $file.LastWriteTime -lt $Today.AddDays(-$RecordDays)){
+            if($file.Extension -in @('.sent','.failed','.expired','.invalid','.relaying','.relayed','.relayfailed') -and $file.LastWriteTime -lt $Today.AddDays(-$RecordDays)){
                 try{Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop;$script:E3ReceiverRemoved++}catch{}
             }
         }
@@ -94,7 +203,7 @@ function Save-E3ReceiverHeartbeat($sources,[string]$state,[int]$busySeconds=0,[s
         $script:E3ReceiverHeartbeatAt=$now
     }catch{Write-Warning ('接收心跳暫時無法寫入：'+$_.Exception.Message)}
 }
-function New-E3ReceiverClaim([string]$key,[string]$command='status') {
+function New-E3ReceiverClaim([string]$key,[string]$command='status',[string]$route='',[string]$messageTime='') {
     if($key -notmatch '^[a-f0-9]{64}$'){throw '指令識別不正確'}
     $folder=Join-Path $script:E3CdpLogRoot 'commands'
     [void][IO.Directory]::CreateDirectory($folder)
@@ -103,7 +212,7 @@ function New-E3ReceiverClaim([string]$key,[string]$command='status') {
     # Commit before sending: restart never retries a possibly sent response.
     $stream=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{
-        $bytes=[Text.Encoding]::UTF8.GetBytes((@{version=1;state='claimed';command=$command;at=[DateTimeOffset]::UtcNow.ToString('O')}|ConvertTo-Json -Compress))
+        $bytes=[Text.Encoding]::UTF8.GetBytes((@{version=3;state='claimed';route=$route;command=$command;messageTime=$messageTime;at=[DateTimeOffset]::UtcNow.ToString('O')}|ConvertTo-Json -Compress))
         $stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)
     }finally{$stream.Dispose()}
     return $path
@@ -131,7 +240,7 @@ function Get-E3ReceiverScheduleLines($cfg,$tasks) {
     foreach($s in @($cfg.schedules)){
         $name=([string]$s.name).Trim();if(-not $name){$name=[string]$s.id}
         $when=if($s.repeat.enabled -eq $true){"$($s.time)～$($s.repeat.end_time) 每 $($s.repeat.every) $(if($s.repeat.unit -eq 'hours'){'小時'}else{'分鐘'})"}else{[string]$s.time}
-        $days=if(@($s.days).Count){(@($s.days) -join ',')+' '}else{'每天 '}
+        $days=if(@($s.days|Where-Object{$_}).Count){(@($s.days|Where-Object{$_}) -join ',')+' '}else{'每天 '}
         if($s.enabled -eq $false){"• $name：已停用";continue}
         $task=@($tasks|Where-Object{
             $a=@($_.Actions)
@@ -142,14 +251,91 @@ function Get-E3ReceiverScheduleLines($cfg,$tasks) {
         $info=$null;try{$info=$task|Get-ScheduledTaskInfo -ErrorAction Stop}catch{}
         $last=if(-not $info -or -not $info.LastRunTime -or $info.LastRunTime.Year -lt 2000 -or $info.LastTaskResult -eq 267011){'尚未執行過'}
             else{
-                $result=switch([long]$info.LastTaskResult){0{'成功'}267009{'執行中'}1{'有頁面或傳送失敗，請查看主機紀錄'}124{'逾時被中止'}default{"結束代碼 $($info.LastTaskResult)"}}
+                $result=switch([long]$info.LastTaskResult){0{'成功'}267009{'執行中'}1{'有頁面或傳送失敗'}124{'逾時被中止'}default{"結束代碼 $($info.LastTaskResult)"}}
+                # Same judgment as the settings page card and the "not delivered" notice, with its reason.
+                if(Get-Command Get-E3ScheduleRunSummary -ErrorAction SilentlyContinue){
+                    try{
+                        $record=Read-E3WorkJson (Join-Path (Split-Path $script:E3CdpLogRoot -Parent) ('schedule_results\'+[string]$s.id+'.json'))
+                        $summary=Get-E3ScheduleRunSummary $info.LastRunTime ([long]$info.LastTaskResult) $record
+                        $result=[string]$summary.text
+                        if([string]$summary.reason -and $summary.status -in @('bad','warn')){$result+='（'+(Format-E3ReceiverReason ([string]$summary.reason) 160)+'）'}
+                    }catch{}
+                }
                 '上次 '+$info.LastRunTime.ToString('MM/dd HH:mm')+' '+$result
             }
         $next=if($info -and $info.NextRunTime -and $info.NextRunTime.Year -gt 2000){'；下次 '+$info.NextRunTime.ToString('MM/dd HH:mm')}else{''}
         "• $name（$days$when）：$last$next"
     }
 }
-function Get-E3ReceiverReply {
+function Get-E3ReceiverWatchdogTaskState($tasks,[scriptblock]$InfoOf=$null,[DateTime]$Now=[DateTime]::Now) {
+    # $tasks: the root-folder Windows tasks, or $null when Task Scheduler could not be read.
+    if($null -eq $tasks){return @{known=$false}}
+    $task=@($tasks|Where-Object{$_.TaskName -eq 'E3 日管接收監看'})|Select-Object -First 1
+    if(-not $task){return @{known=$true;registered=$false}}
+    if([string]$task.State -eq 'Disabled'){return @{known=$true;registered=$true;enabled=$false}}
+    $info=$null;try{$info=if($InfoOf){& $InfoOf $task}else{$task|Get-ScheduledTaskInfo -ErrorAction Stop}}catch{}
+    $last=if($info -and $info.LastRunTime -and $info.LastRunTime.Year -gt 2000 -and $info.LastTaskResult -ne 267011){[DateTime]$info.LastRunTime}else{$null}
+    return @{known=$true;registered=$true;enabled=$true;lastRun=$last;minutes=$(if($last){[int]($Now-$last).TotalMinutes}else{$null})}
+}
+function Test-E3ReceiverWatchdogLate($state) {
+    # The task runs every 10 minutes; more than 30 minutes without a run means nobody is watching.
+    return [bool]($state.known -and $state.registered -and $state.enabled -and ($null -eq $state.minutes -or $state.minutes -gt 30))
+}
+function Get-E3ReceiverWatchdogLine($state) {
+    if(-not $state.known){return '離線監看：無法讀取 Windows 工作排程'}
+    if(-not $state.registered){return '離線監看：尚未註冊（接收端停止或排程沒送達時不會有通知；可在設定頁「手機遙控」註冊）'}
+    if(-not $state.enabled){return '離線監看：任務已停用（接收端停止或排程沒送達時不會有通知）'}
+    if($null -eq $state.minutes){return '離線監看：⚠ 已註冊但還沒有執行過'}
+    if(Test-E3ReceiverWatchdogLate $state){return "離線監看：⚠ 已 $($state.minutes) 分鐘沒有執行（應該每 10 分鐘一次），請到主機的工作排程器檢查"}
+    return '離線監看：正常（上次 '+$state.lastRun.ToString('HH:mm')+' 檢查）'
+}
+function Test-E3ReceiverWatchdogTask([scriptblock]$Read=$null) {
+    # Runs every 10 minutes inside the receiver. The watchdog reports a dead receiver; this is the
+    # other direction. Two late readings in a row (so a wake from sleep has had time to catch up)
+    # queue one notice; nothing more until the task has run again.
+    $tasks=$null
+    try{
+        if($Read){$tasks=@(& $Read)}
+        else{Import-Module ScheduledTasks -ErrorAction Stop;$tasks=@(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -eq '\'})}
+    }catch{$tasks=$null}
+    $state=Get-E3ReceiverWatchdogTaskState $tasks
+    if(-not (Test-E3ReceiverWatchdogLate $state)){$script:E3ReceiverWatchLate=0;$script:E3ReceiverWatchWarned=$false;return}
+    $script:E3ReceiverWatchLate=[int]$script:E3ReceiverWatchLate+1
+    if($script:E3ReceiverWatchLate -lt 2 -or $script:E3ReceiverWatchWarned){return}
+    $script:E3ReceiverWatchWarned=$true
+    $age=if($null -eq $state.minutes){'註冊後一直沒有執行'}else{"已 $($state.minutes) 分鐘沒有執行"}
+    $null=Add-E3ReceiverOutbox ("✦ [日管]`n離線監看任務「E3 日管接收監看」$age（應該每 10 分鐘一次）。`n主機：$env:COMPUTERNAME`n在它恢復之前，接收端停止、排程沒送達或排程登入過期都不會有通知。`n請到主機的工作排程器檢查這個任務，或重新執行 register_receiver_watchdog.bat。") '' 'watchdog_task'
+}
+function Get-E3ReceiverHealthLines($cfg,$tasks,[string]$route) {
+    # Extra lines of the status reply: the other Teams login, the watchdog task, queued notices
+    # and recent commands of this chat that did not finish.
+    $root=$script:E3CdpLogRoot
+    if($cfg.teams.prefer_window -eq 'cdp'){
+        $sender=$null;try{$sender=Read-E3WorkJson (Join-Path $root 'sender_login_state.json')}catch{}
+        $checked=[DateTimeOffset]::MinValue
+        if($sender -and [DateTimeOffset]::TryParse([string]$sender.lastCheckUtc,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal,[ref]$checked)){
+            $at=[TimeZoneInfo]::ConvertTimeFromUtc($checked.UtcDateTime,[TimeZoneInfo]::FindSystemTimeZoneById('Taipei Standard Time')).ToString('MM/dd HH:mm')
+            if($sender.ok -eq $true){"排程用的 Teams 登入：正常（$at 檢查）"}
+            elseif($sender.pending -eq $true -and $sender.alerted -ne $true){"排程用的 Teams 登入：$at 檢查沒有通過，等下一次確認"}
+            else{"排程用的 Teams 登入：⚠ 需要處理（$at 檢查）："+(Format-E3ReceiverReason ([string]$sender.reason) 200)}
+        }else{'排程用的 Teams 登入：尚未檢查（需註冊離線監看任務）'}
+    }
+    Get-E3ReceiverWatchdogLine (Get-E3ReceiverWatchdogTaskState $tasks)
+    $pending=0;try{$box=Join-Path $root 'outbox';if([IO.Directory]::Exists($box)){$pending=@(Get-ChildItem -LiteralPath $box -Filter '*.json' -File).Count}}catch{}
+    if($pending){"待送通知：$pending 則（對話可用時會送出）"}
+    $failed=0
+    try{
+        $folder=Join-Path $root 'commands'
+        if($route -and [IO.Directory]::Exists($folder)){
+            foreach($file in @(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File|Where-Object{$_.LastWriteTimeUtc -gt [DateTime]::UtcNow.AddHours(-24)})){
+                $c=$null;try{$c=Read-E3WorkJson $file.FullName}catch{continue}
+                if($c -and [string]$c.route -ceq $route -and [string]$c.state -in @('not_retried','interrupted')){$failed++}
+            }
+        }
+    }catch{}
+    if($failed){"最近 24 小時這個對話有 $failed 個指令沒有完成；輸入「@日管 上一個指令」可以看原因。"}
+}
+function Get-E3ReceiverReply([string]$route='') {
     $cfg=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Raw -Encoding UTF8|ConvertFrom-Json
     $total=@($cfg.schedules).Count;$enabled=@($cfg.schedules|Where-Object{$_.enabled -ne $false}).Count
     $zone=[TimeZoneInfo]::FindSystemTimeZoneById('Taipei Standard Time')
@@ -165,6 +351,7 @@ function Get-E3ReceiverReply {
     # Get-ScheduledTask -TaskPath '\' throws when the root folder is empty; list all and filter.
     try{Import-Module ScheduledTasks -ErrorAction Stop;$tasks=@(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -eq '\'})}catch{}
     $lines+=@(Get-E3ReceiverScheduleLines $cfg $tasks)
+    try{$lines+=@(Get-E3ReceiverHealthLines $cfg $tasks $route)}catch{$lines+='其他狀態暫時無法讀取：'+$_.Exception.Message}
     $lines+='本次只查詢狀態，未執行排程。'
     return ($lines -join "`n")
 }
@@ -454,6 +641,7 @@ function Invoke-E3ReceiverVisit($sources,$source) {
     $first=Read-E3ReceiverSettled $source.target $context
     Start-Sleep -Milliseconds 500
     $second=Read-E3ReceiverSettled $source.target $context 4000
+    $source.lastSnapshot=$second
     return Select-E3ReceiverCommand $second $source.target.binding $source.cutoff $first $source.seen
 }
 function Get-E3ReceiverNextSource($sources,[DateTimeOffset]$now) {
@@ -505,7 +693,7 @@ function Send-E3ReceiverOutbox($sources,$shared) {
     if(-not [IO.Directory]::Exists($folder)){return}
     $files=@(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File -ErrorAction SilentlyContinue|Sort-Object Name)
     if(-not $files.Count){return}
-    $source=Get-E3ReceiverNotifySource $sources
+    $default=Get-E3ReceiverNotifySource $sources
     foreach($file in $files){
         $base=Join-Path $folder ([IO.Path]::GetFileNameWithoutExtension($file.Name))
         $item=$null;try{$item=Read-E3WorkJson $file.FullName}catch{}
@@ -515,7 +703,14 @@ function Send-E3ReceiverOutbox($sources,$shared) {
         if(-not [DateTimeOffset]::TryParse([string]$item.createdUtc,[ref]$created) -or ([DateTimeOffset]::UtcNow-$created).TotalHours -gt 6){
             try{[IO.File]::Move($file.FullName,$base+'.expired')}catch{};continue
         }
-        if(-not $source){return}   # keep queued until the chosen chat is connected
+        $source=$default
+        if([string]$item.route){
+            # An explanation about one command goes back to that chat only, never to another one.
+            $match=@($sources|Where-Object{[string]$_.target.route -ceq [string]$item.route})
+            if($match.Count -ne 1){try{[IO.File]::Move($file.FullName,$base+'.invalid')}catch{};continue}
+            $source=if($match[0].active){$match[0]}else{$null}
+        }
+        if(-not $source){continue}   # keep queued until its chat is connected; other notices go on
         # Take the shared lock before claiming. While a schedule or another reply is sending,
         # the message stays queued and is tried again on the next pass (every 5 seconds);
         # it is never marked failed without an attempt.
@@ -529,28 +724,37 @@ function Send-E3ReceiverOutbox($sources,$shared) {
             $null=Enter-E3ReceiverChat $sources $source
             Send-GroupToTeamsCdp $source.target.route @() (Format-E3ReceiverText $text) @{cdp_headless=$false;auto_press_enter=$true} $false
             try{[IO.File]::Move($claimed,$base+'.sent')}catch{}
-            Write-Host "✅ 已轉送日管監看通知：$($source.target.route)" -ForegroundColor Green
+            Write-Host "✅ 已送出待送通知：$($source.target.route)" -ForegroundColor Green
+            Write-E3ReceiverEvent 'notice_sent' ([string]$source.target.route)
         }catch{
             try{[IO.File]::Move($claimed,$base+'.failed')}catch{}
-            Write-Warning ('日管監看通知未送出（不重送）：'+$_.Exception.Message)
+            Write-Warning ('待送通知未送出（接收端不重送；指令失敗說明會由監看任務改用排程的 Teams 登入轉達一次）：'+$_.Exception.Message)
+            Write-E3ReceiverEvent 'notice_failed' ([string]$source.target.route+'：'+$_.Exception.Message)
         }finally{if($locked){Unregister-E3WorkOwner 'cdp';$shared.ReleaseMutex()}}
     }
 }
-function Send-E3ReceiverAcknowledgement($sources,$source,$request,[string]$claim,[string]$command,$progress) {
+function Send-E3ReceiverAcknowledgement($sources,$source,$request,[string]$claim,$info,$progress) {
     $ackMutex=[Threading.Mutex]::new($false,'Local\E3TeamsCdpShared');$ackLocked=$false
     try{
         $ackLocked=Enter-E3WorkLock $ackMutex 'cdp' ('回覆 Teams 指令：'+$source.target.route)
         $target=$source.target
         $null=Enter-E3ReceiverChat $sources $source
         $progress.phase='acknowledgement'
-        Save-E3CdpState $claim @{version=3;state='ack_sending';route=$target.route;command=$command;at=[DateTimeOffset]::UtcNow.ToString('O')}
+        Save-E3ReceiverClaimState $claim 'ack_sending' $info
         Send-GroupToTeamsCdp $target.route @() (Format-E3ReceiverText (Get-E3ReceiverAcknowledgement $request)) @{cdp_headless=$false;auto_press_enter=$true} $false
         $progress.acknowledged=$true;$progress.phase='capture'
-        Save-E3CdpState $claim @{version=3;state='acknowledged';route=$target.route;command=$command;at=[DateTimeOffset]::UtcNow.ToString('O')}
+        Save-E3ReceiverClaimState $claim 'acknowledged' $info
     }finally{if($ackLocked){Unregister-E3WorkOwner 'cdp';$ackMutex.ReleaseMutex()};$ackMutex.Dispose()}
 }
 function Get-E3ReceiverStopPath {return (Join-Path $script:E3CdpLogRoot 'stop.request')}
-function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
+function Test-E3ReceiverStopRequest {
+    if(-not(Test-Path -LiteralPath (Get-E3ReceiverStopPath))){return $false}
+    $script:E3ReceiverIntentional=$true;$script:E3ReceiverStopReason='已由 stop_teams_receiver.bat 要求停止'
+    try{Remove-Item -LiteralPath (Get-E3ReceiverStopPath) -Force}catch{}
+    Write-Host '⏹ 收到停止要求，接收端結束。' -ForegroundColor Cyan
+    return $true
+}
+function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous,[switch]$PreserveStopRequest) {
     $listener=[Threading.Mutex]::new($false,'Local\E3TeamsCommandReceiver')
     $shared=[Threading.Mutex]::new($false,'Local\E3TeamsCdpShared')
     $owned=$false;$locked=$false;$sources=@();$exit='interrupted'
@@ -559,13 +763,29 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
         if(-not $owned){throw 'E3_RECEIVER_FATAL：指令接收已開啟，請勿重複啟動'}
         $script:E3ReceiverContinuous=[bool]$Continuous
         $script:E3ReceiverStopReason='';$script:E3ReceiverIntentional=$false;$script:E3ReceiverFatal=$false
+        # An explicit new start may clear an old stop marker only after owning
+        # the listener lock. Internal restarts must preserve every stop request.
+        if(-not $PreserveStopRequest){try{if(Test-Path -LiteralPath (Get-E3ReceiverStopPath)){Remove-Item -LiteralPath (Get-E3ReceiverStopPath) -Force}}catch{}}
+        if(Test-E3ReceiverStopRequest){$exit='stopped';Save-E3ReceiverStatus 'stopped' $script:E3ReceiverStopReason;return}
         $script:E3ReceiverCleanupAt=[DateTimeOffset]::MinValue
         $script:E3ReceiverOutboxAt=[DateTimeOffset]::MinValue
         $script:E3ReceiverTab=$null
         $script:E3ReceiverHold=@{until=[DateTimeOffset]::MinValue;reason=''}
         if(-not $script:E3ReceiverStartedUtc){$script:E3ReceiverStartedUtc=[DateTimeOffset]::UtcNow.ToString('O')}
         # Commands are accepted from the first start of this process; an internal restart keeps that line.
-        if(-not $script:E3ReceiverCutoff){$script:E3ReceiverCutoff=[DateTimeOffset]::UtcNow}
+        if(-not $script:E3ReceiverCutoff){
+            $script:E3ReceiverCutoff=[DateTimeOffset]::UtcNow
+            # The previous receiver's last sign of life (read before this process overwrites it):
+            # commands between then and now were never read, and their senders are told so once.
+            $script:E3ReceiverOfflineFrom=$null
+            try{
+                $previous=Read-E3WorkJson (Join-Path $script:E3CdpLogRoot 'heartbeat.json');$beat=[DateTimeOffset]::MinValue
+                if($previous -and [DateTimeOffset]::TryParse([string]$previous.utc,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::AssumeUniversal,[ref]$beat) -and $beat -lt $script:E3ReceiverCutoff -and ($script:E3ReceiverCutoff-$beat).TotalDays -lt 7){$script:E3ReceiverOfflineFrom=$beat}
+            }catch{}
+        }
+        if(-not $script:E3ReceiverMissedDone){$script:E3ReceiverMissedDone=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)}
+        $script:E3ReceiverWatchTaskAt=[DateTimeOffset]::UtcNow.AddMinutes(20)
+        try{Resolve-E3ReceiverInterruptedClaims ([DateTimeOffset]::UtcNow)}catch{Write-Warning ('上次中斷的指令無法檢查：'+$_.Exception.Message)}
         $script:E3ReceiverHeadless=Get-E3ReceiverHeadless
         # Idle sleep would stop remote control. Lock / screen-off stay allowed; the
         # request ends with this process and does not change the power plan.
@@ -578,12 +798,12 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
             $sources+=@{target=$target;active=$false;cutoff=$script:E3ReceiverCutoff;retryAt=[DateTimeOffset]::MinValue;visitedAt=[DateTimeOffset]::MinValue
                 seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal);lastOkUtc=$null;error=$null;failures=0;reload=$false;warned=$null}
         }
+        $script:E3ReceiverLiveSources=$sources   # read by the "@日管 主機" reply
         $script:E3ReceiverBindingsStamp=Get-E3ReceiverBindingsStamp
-        try{if(Test-Path -LiteralPath (Get-E3ReceiverStopPath)){Remove-Item -LiteralPath (Get-E3ReceiverStopPath) -Force}}catch{}
         Save-E3ReceiverStatus 'connecting' '正在開啟接收端工作分頁；暫時失敗會自動重試'
         Save-E3ReceiverHeartbeat $sources 'listening' -Force
         Write-Host ("接收 {0} 個對話，使用一個{1}工作分頁輪流讀取；不需要讓任何對話保持開啟。" -f $sources.Count,$(if($script:E3ReceiverHeadless){'無視窗'}else{'有視窗'}))
-        Write-Host '可輸入 @日管 狀態、@日管 截圖清單，或 @日管 幫我截圖 名稱。'
+        Write-Host '可輸入 @日管 截圖 名稱、@日管 檢查 名稱、@日管 排程結果、@日管 主機、@日管 連線、@日管 狀態；輸入 @日管 說明 看全部用法。'
         Write-Host $(if($Continuous){'持續接收。專用 Edge、分頁或登入出問題時會自動重試；要停止請按 Ctrl+C 或執行 stop_teams_receiver.bat。'}else{'回覆一個指令後結束；Ctrl+C 停止。'})
         $deadline=[DateTimeOffset]::UtcNow.AddSeconds($timeout);$checkAt=[DateTimeOffset]::MinValue
         while($Continuous -or [DateTimeOffset]::UtcNow -lt $deadline){
@@ -592,13 +812,13 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
             Save-E3ReceiverHeartbeat $sources 'listening'
             if($now -ge $checkAt){
                 $checkAt=$now.AddSeconds(3)
-                if(Test-Path -LiteralPath (Get-E3ReceiverStopPath)){
-                    $script:E3ReceiverIntentional=$true;$script:E3ReceiverStopReason='已由 stop_teams_receiver.bat 要求停止'
-                    try{Remove-Item -LiteralPath (Get-E3ReceiverStopPath) -Force}catch{}
-                    Write-Host '⏹ 收到停止要求，接收端結束。' -ForegroundColor Cyan
-                    $exit='stopped';break
-                }
+                if(Test-E3ReceiverStopRequest){$exit='stopped';break}
                 if((Get-E3ReceiverBindingsStamp) -ne $script:E3ReceiverBindingsStamp){throw 'E3_RECEIVER_RELOAD：接收綁定已更新，重新載入'}
+                Update-E3ReceiverLog
+            }
+            if($Continuous -and $now -ge $script:E3ReceiverWatchTaskAt){
+                $script:E3ReceiverWatchTaskAt=$now.AddMinutes(10)
+                try{Test-E3ReceiverWatchdogTask}catch{Write-Warning ('離線監看任務無法檢查：'+$_.Exception.Message)}
             }
             if($now -ge $script:E3ReceiverCleanupAt){
                 $script:E3ReceiverCleanupAt=$now.AddHours(24)
@@ -608,7 +828,7 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
             if($source){
                 try{$locked=$shared.WaitOne(0)}catch [Threading.AbandonedMutexException]{$locked=$true}
                 if($locked){
-                    $claim=$null;$replied=$false;$target=$source.target;$progress=@{phase='received';acknowledged=$false};$command=''
+                    $claim=$null;$replied=$false;$target=$source.target;$progress=@{phase='received';acknowledged=$false};$command='';$info=$null
                     try{
                         # Opening or reloading a chat can hold the lock for a while; publish the owner then.
                         if(-not $script:E3ReceiverTab -or -not $script:E3ReceiverTab.ready -or $source.reload){Register-E3WorkOwner 'cdp' ('接收 Teams 指令（開啟對話）：'+$target.route)}
@@ -620,27 +840,45 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
                             Save-E3ReceiverStatus 'listening' ("已接收："+$target.route)
                             Save-E3ReceiverHeartbeat $sources 'listening' -Force
                         }
+                        if($script:E3ReceiverOfflineFrom -and $script:E3ReceiverMissedDone.Add([string]$target.route)){
+                            # First good read of this chat since the start: report commands that
+                            # arrived while no receiver was running. Once per chat and process.
+                            try{
+                                $missed=@(Get-E3ReceiverMissedCommands $source.lastSnapshot $target.binding $script:E3ReceiverOfflineFrom $source.cutoff)
+                                if($missed.Count){$null=Add-E3ReceiverOutbox (New-E3ReceiverMissedText $missed $script:E3ReceiverOfflineFrom $source.cutoff) ([string]$target.route) 'missed'}
+                            }catch{Write-Warning ('離線期間的指令無法檢查：'+$_.Exception.Message)}
+                        }
                         if($candidate){
-                            [void]$source.seen.Add($candidate.key)
                             $command=[string]$candidate.message.text
-                            $claim=New-E3ReceiverClaim $candidate.key $command
+                            $info=@{route=[string]$target.route;command=$command;messageTime=[string]$candidate.message.time}
+                            $claim=New-E3ReceiverClaim $candidate.key $command $info.route $info.messageTime
+                            # Only a committed claim or an already existing claim
+                            # may suppress this command. A creation exception must
+                            # leave it eligible after storage becomes available.
+                            [void]$source.seen.Add($candidate.key)
                         }
                         if($claim){
                             Unregister-E3WorkOwner 'cdp';$shared.ReleaseMutex();$locked=$false
+                            Write-E3ReceiverEvent 'command' ($info.route+'：'+$command)
                             Save-E3ReceiverStatus 'processing' ("正在處理："+$target.route)
-                            # Capture (max 330 s) plus two lock waits and sends stay within 20 minutes.
-                            Save-E3ReceiverHeartbeat $sources 'processing' 1200 -Force
-                            $response=Get-E3ReceiverResponse $candidate.message $candidate.key -BeforeCapture {
+                            # Ack lock (180 s) + ack send + capture (330 s) + reply lock (420 s) + reply send
+                            # stay within 25 minutes, so the watchdog never restarts a working reply.
+                            Save-E3ReceiverHeartbeat $sources 'processing' 1500 -Force
+                            $response=Get-E3ReceiverResponse $candidate.message $candidate.key -route $info.route -BeforeCapture {
                                 param($request)
-                                Send-E3ReceiverAcknowledgement $sources $source $request $claim $command $progress
+                                Send-E3ReceiverAcknowledgement $sources $source $request $claim $info $progress
                             }
+                            if(-not $response){Save-E3ReceiverClaimState $claim 'ignored' $info}
                             if($response){
-                                $locked=Enter-E3WorkLock $shared 'cdp' ('回覆 Teams 指令：'+$target.route)
+                                # A scheduled send can hold the lock for Edge start + chat load + one batch
+                                # (about 5 minutes at worst). The reply only waits; it is never sent twice.
+                                # Ack + capture + this wait + send stays under busyUntil (1500 s, set above).
+                                $locked=Enter-E3WorkLock $shared 'cdp' ('回覆 Teams 指令：'+$target.route) -TimeoutSeconds 420
                                 $null=Enter-E3ReceiverChat $sources $source
                                 $progress.phase='result'
-                                Send-GroupToTeamsCdp $target.route @($response.images) (Format-E3ReceiverText $response.text -ImageReply:($response.images.Count -gt 0)) @{cdp_headless=$false;auto_press_enter=$true} $false
+                                Send-GroupToTeamsCdp $target.route @($response.images) (Format-E3ReceiverText $response.text) @{cdp_headless=$false;auto_press_enter=$true} $false
                                 $replied=$true
-                                Save-E3CdpState $claim @{version=3;state='replied';acknowledged=$progress.acknowledged;route=$target.route;command=$command;at=[DateTimeOffset]::UtcNow.ToString('O')}
+                                Save-E3ReceiverClaimState $claim 'replied' $info @{acknowledged=$progress.acknowledged;images=@($response.images).Count;problems=@($response.problems|Where-Object{$_}|ForEach-Object{[string]$_})}
                                 Save-E3ReceiverStatus $(if($Continuous){'listening'}else{'replied'}) ("已回覆："+$target.route)
                                 Write-Host "✅ 已回覆：$($target.route)" -ForegroundColor Green
                                 Save-E3ReceiverHeartbeat $sources 'listening' -Force
@@ -649,14 +887,20 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
                         }
                     }catch{
                         $reason=$_.Exception.Message
-                        if($reason -match 'E3_RECEIVER_RELOAD'){throw}
-                        $failure=Set-E3ReceiverSourceFailure $source $reason ([DateTimeOffset]::UtcNow)
+                        $reloading=$reason -match 'E3_RECEIVER_RELOAD'
+                        $failure=if($reloading){$null}else{Set-E3ReceiverSourceFailure $source $reason ([DateTimeOffset]::UtcNow)}
                         # Claims remain durable even if updating their outcome fails. Never retry
                         # this command; recovery only reopens the chat and reads for new commands.
                         if($claim -and -not $replied){
-                            try{Save-E3CdpState $claim @{version=3;state='not_retried';phase=$progress.phase;acknowledged=$progress.acknowledged;route=$target.route;command=$command;at=[DateTimeOffset]::UtcNow.ToString('O')}}
+                            try{Save-E3ReceiverClaimState $claim 'not_retried' $info @{phase=$progress.phase;acknowledged=$progress.acknowledged;error=(Format-E3ReceiverReason $reason 500)}}
                             catch{Write-Warning ('指令結果暫時無法更新；保留原紀錄，不重送：'+$_.Exception.Message)}
+                            # The person on the phone cannot see this window. Queue one separate plain-text
+                            # explanation for the same chat; it is sent once that chat can be read again.
+                            # This is a new message about the failure, never the failed reply or its pictures.
+                            $null=Add-E3ReceiverOutbox (New-E3ReceiverFailureText $info $progress.phase $reason) $info.route 'command_failure'
+                            Write-E3ReceiverEvent 'command_failed' ($info.route+'：'+$command+'；階段 '+$progress.phase+'；'+$reason)
                         }
+                        if($reloading){throw}
                         if($failure.announce -or $claim){
                             Write-Host "⚠ $($target.route)：$($source.error)；$($failure.seconds) 秒後自動重試，其他對話不受影響$(if($claim){'；本次指令不重送'})。" -ForegroundColor Yellow
                             Save-E3ReceiverStatus 'recovering' ("等待重試："+$target.route+"；"+$source.error)
@@ -693,14 +937,26 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous) {
 function Start-E3ReceiverSupervised([int]$timeout,[switch]$Continuous) {
     # Continuous mode never gives up on an unexpected error: it restarts listening inside
     # this process. Only setup problems (no binding, duplicate start) and a requested stop end it.
+    $preserveStop=$false
     while($true){
-        try{Invoke-E3ReceiverTest $timeout -Continuous:$Continuous;return}
+        try{Invoke-E3ReceiverTest $timeout -Continuous:$Continuous -PreserveStopRequest:$preserveStop;return}
         catch{
             $reason=$_.Exception.Message
             if(-not $Continuous -or $reason -match 'E3_RECEIVER_FATAL'){throw ($reason -replace '^E3_RECEIVER_FATAL：','')}
+            $preserveStop=$true
             $reload=$reason -match 'E3_RECEIVER_RELOAD'
+            Write-E3ReceiverEvent 'restart' $reason
             Write-Host ("🔄 {0}；{1} 秒後重新開始接收，不重送任何指令。" -f ($reason -replace '^E3_RECEIVER_RELOAD：',''),$(if($reload){2}else{15})) -ForegroundColor Yellow
-            Start-Sleep -Seconds $(if($reload){2}else{15})
+            $wait=[Diagnostics.Stopwatch]::StartNew()
+            $delay=if($reload){2000}else{15000}
+            try{
+                while($wait.ElapsedMilliseconds -lt $delay){
+                    # Leave consumption and stopped heartbeat to the next entry,
+                    # which checks the marker before loading targets or Edge.
+                    if(Test-Path -LiteralPath (Get-E3ReceiverStopPath)){break}
+                    Start-Sleep -Milliseconds ([Math]::Max(1,[Math]::Min(250,$delay-[int]$wait.ElapsedMilliseconds)))
+                }
+            }finally{$wait.Stop()}
         }
     }
 }
@@ -715,7 +971,17 @@ if(-not $LibraryOnly){
             if([Threading.Mutex]::TryOpenExisting('Local\E3TeamsCommandReceiver',[ref]$busy)){$busy.Dispose();throw '接收端正在執行。請先執行 stop_teams_receiver.bat（或在接收視窗按 Ctrl+C）停止，再進行綁定'}
             Write-Host '接收端使用獨立登入視窗。綁定完成後可以關閉分頁；接收時只用一個工作分頁輪流讀取各對話，回覆會回到下指令的對話。'
             Set-E3CdpBinding @{teams=@{cdp_headless=$false};pages=@();schedules=@()} -SelectInBrowser
-        }elseif($Listen){Start-E3ReceiverSupervised $TimeoutSeconds -Continuous:$Continuous}
+        }elseif($Listen){
+            Start-E3ReceiverLog
+            Write-E3ReceiverEvent 'start' ("接收端啟動，PID $PID"+$(if($Continuous){'（持續接收）'}else{'（單次測試）'}))
+            Start-E3ReceiverSupervised $TimeoutSeconds -Continuous:$Continuous
+            Write-E3ReceiverEvent 'end' '接收端正常結束'
+            Stop-E3ReceiverLog
+        }
         else{throw '請使用 -Setup 設定接收來源、-Listen 接收 @日管 指令，或 -Stop 停止接收'}
-    }catch{Write-Host ('❌ '+$_.Exception.Message) -ForegroundColor Red;exit 1}
+    }catch{
+        Write-Host ('❌ '+$_.Exception.Message) -ForegroundColor Red
+        if($Listen){Write-E3ReceiverEvent 'fatal' $_.Exception.Message;Stop-E3ReceiverLog}
+        exit 1
+    }
 }

@@ -138,7 +138,7 @@ $numericJson = ConvertTo-Json -InputObject $numeric -Depth 8 -Compress
 
 # ---- 3. 頁面需要的靜態檔（只允許白名單） ----
 $static = @{}
-foreach ($name in 'calibrator.html', 'work_control.js', 'sample_data.js') {
+foreach ($name in 'calibrator.html', 'work_control.js') {
     $path = Join-Path $root $name
     if (Test-Path -LiteralPath $path) { $static["/$name"] = [IO.File]::ReadAllBytes($path) }
 }
@@ -317,24 +317,24 @@ try {
     $numericPage2 = "(() => { const all = config.pages.map((p, i) => i).filter(i => (config.pages[i].rules || []).some(r => r.enabled !== false && r.measure_mode === 'numeric')); if (!all.length) throw new Error('目前設定沒有數值門檻頁面'); return all[all.length - 1]; })()"
     $pixelPage = "pageIndex(p => (p.rules || []).some(r => (r.measure_mode || 'pixel') === 'pixel'))"
     $cropPage = "pageIndex(p => pageImageCanvases[p.id] && !pageImageCanvases[p.id].isPlaceholder && p.crop_region && p.crop_region.w > 0)"
-    $selectNumeric = "const ni = $numericPage; selectPage(ni); selectedRuleIdx = ruleIndex(config.pages[ni], r => r.measure_mode === 'numeric'); setSideTab('pages'); setToolMode('rule')"
+    $selectNumeric = "const ni = $numericPage; selectPage(ni); selectedRuleIdx = ruleIndex(config.pages[ni], r => r.measure_mode === 'numeric'); setSideTab('pages'); setPageSection('rules'); setToolMode('rule')"
     $firstSched = "(config.schedules.find(s => s.enabled !== false) || config.schedules[0] || {}).id"
     $repeatSched = "(config.schedules.find(s => s.repeat && s.repeat.enabled === true) || config.schedules.find(s => s.enabled !== false) || config.schedules[0] || {}).id"
 
     Shot '01_overview' 1600 900 "$selectNumeric; previewScheduleId = config.schedules.find(s => (s.pages || []).includes(config.pages[ni].id))?.id ?? $firstSched; renderAll()"
-    Shot '02_page_form' 1600 1450 "const pi = $numericPage; selectPage(pi); const pid = config.pages[pi].id; openFold(JSON.stringify(['sidebarLogin', pid])); openFold(JSON.stringify(['sidebarZoom', pid])); openFold(JSON.stringify(['sidebarTime', pid])); setSideTab('pages'); renderAll(); document.querySelector('details.advanced').open = true; document.querySelector('.sidebar').scrollTop = 0" '.sidebar'
-    Shot '03_crop_tool' 1600 900 "selectPage($cropPage); setSideTab('pages'); renderAll(); setToolMode('crop'); renderCanvas()"
-    Shot '04_rules' 1600 1500 "const xi = $pixelPage; selectPage(xi); selectedRuleIdx = ruleIndex(config.pages[xi], r => (r.measure_mode || 'pixel') === 'pixel'); setSideTab('pages'); setToolMode('rule'); renderAll(); document.querySelectorAll('#ruleEditor details.advanced').forEach(d => d.open = true); document.querySelector('.sidebar').scrollTop = 0" '.sidebar'
+    Shot '02_page_form' 1600 1450 "const pi = $numericPage; selectPage(pi); const pid = config.pages[pi].id; openFold(JSON.stringify(['sidebarLogin', pid])); openFold(JSON.stringify(['sidebarZoom', pid])); openFold(JSON.stringify(['sidebarTime', pid])); setSideTab('pages'); setPageSection('page'); renderAll(); document.querySelector('details.advanced').open = true; document.querySelector('.sidebar').scrollTop = 0" '.sidebar'
+    Shot '03_crop_tool' 1600 900 "selectPage($cropPage); setSideTab('pages'); setPageSection('page'); renderAll(); setToolMode('crop'); renderCanvas()"
+    Shot '04_rules' 1600 1500 "const xi = $pixelPage; selectPage(xi); selectedRuleIdx = ruleIndex(config.pages[xi], r => (r.measure_mode || 'pixel') === 'pixel'); setSideTab('pages'); setPageSection('rules'); setToolMode('rule'); renderAll(); document.querySelectorAll('#ruleEditor details.advanced').forEach(d => d.open = true); document.querySelector('.sidebar').scrollTop = 0" '.sidebar'
     Shot '05_schedule_tab' 1600 1000 "setSideTab('send'); const rs = $repeatSched; expandedScheduleIdx = config.schedules.findIndex(s => s.id === rs); previewScheduleId = rs; openFold('sidebar:schedulesFold:v2'); openFold(JSON.stringify(['pages', rs])); renderAll(); await refreshScheduleStatus(); document.getElementById('scheduleList').scrollIntoView({block: 'start'})"
     Shot '06_preview_panel' 1600 1000 "setSideTab('send'); previewScheduleId = $firstSched; renderAll()" '.right-panel'
     Shot '07_global_tab' 1600 700 "setSideTab('global'); renderAll()" '.sidebar'
-    Shot '08_placeholder' 1600 700 "setSideTab('pages'); document.getElementById('addPageBtn').click(); await sleep(400)"
+    Shot '08_placeholder' 1600 700 "setSideTab('pages'); setPageSection('page'); document.getElementById('addPageBtn').click(); await sleep(400)"
     $reportJs = ConvertTo-Json -InputObject $detectReport -Compress
-    Shot '09_detect_teams' 1600 1000 "setSideTab('send'); openFold('sidebar:teamsSettingsFold'); renderAll(); const o = document.getElementById('detectTeamsResult'); o.hidden = false; o.textContent = $reportJs" '.sidebar'
-    Shot '10_cdp_mode' 1600 1000 "setSideTab('send'); openFold('sidebar:teamsSettingsFold'); renderAll(); await refreshSavedCdpTargets(true); renderAll()" '.sidebar'
-    Shot '11_numeric' 1600 1000 "const qi = $numericPage2; selectPage(qi); selectedRuleIdx = ruleIndex(config.pages[qi], r => r.measure_mode === 'numeric'); previewScheduleId = config.schedules.find(s => (s.pages || []).includes(config.pages[qi].id))?.id ?? $repeatSched; setSideTab('pages'); setToolMode('rule'); renderAll(); document.querySelectorAll('#ruleEditor details.advanced').forEach(d => d.open = true); document.getElementById('numericEditor').scrollIntoView({block: 'start'})"
-    Shot '12_self_test' 1600 1000 "setSideTab('send'); previewScheduleId = $repeatSched; openFold('sidebar:selfHelpFold'); renderAll()" '.section-box[data-tab=send]'
-    Shot '13_receiver' 1600 1000 "setSideTab('send'); openFold('sidebar:receiverFold'); renderAll(); await refreshReceiverStatus(true); await waitFor(() => receiverState.data, '手機遙控狀態')" '#receiverFold'
+    Shot '09_detect_teams' 1600 1000 "setSideTab('send'); openFold('sidebar:teamsSettingsFold'); renderAll(); const o = document.getElementById('detectTeamsResult'); o.hidden = false; o.textContent = $reportJs; document.getElementById('teamsSettingsFold').scrollIntoView({block: 'start'})" '.sidebar'
+    Shot '10_cdp_mode' 1600 1000 "setSideTab('send'); openFold('sidebar:teamsSettingsFold'); renderAll(); await refreshSavedCdpTargets(true); renderAll(); document.getElementById('teamsSettingsFold').scrollIntoView({block: 'start'})" '.sidebar'
+    Shot '11_numeric' 1600 1000 "const qi = $numericPage2; selectPage(qi); selectedRuleIdx = ruleIndex(config.pages[qi], r => r.measure_mode === 'numeric'); previewScheduleId = config.schedules.find(s => (s.pages || []).includes(config.pages[qi].id))?.id ?? $repeatSched; setSideTab('pages'); setPageSection('rules'); setToolMode('rule'); renderAll(); document.querySelectorAll('#ruleEditor details.advanced').forEach(d => d.open = true); document.getElementById('numericEditor').scrollIntoView({block: 'start'})"
+    Shot '12_self_test' 1600 1000 "setSideTab('send'); previewScheduleId = $repeatSched; openFold('sidebar:selfHelpFold'); renderAll()" '.preview-controls'
+    Shot '13_receiver' 1600 1000 "setSideTab('send'); openFold('sidebar:receiverFold'); renderAll(); await refreshReceiverStatus(true); await waitFor(() => receiverState.data, '手機遙控狀態'); document.getElementById('receiverFold').scrollIntoView({block: 'start'})" '#receiverFold'
     $script:ws.Dispose()
 
     # ---- 7. 核對後原子替換手冊的 MANUAL_IMAGES 區塊 ----

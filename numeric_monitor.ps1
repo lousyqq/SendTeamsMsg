@@ -51,8 +51,32 @@ function Get-E3OcrContext([string]$languageTag) {
 function Read-E3OcrContext([string]$text, $context) {
     $prefix=[regex]::Escape($context.prefix);$suffix=[regex]::Escape($context.suffix)
     if($text -match ('^('+$prefix+')?('+$suffix+')?$')){return $null}
-    if($text -notmatch ('^'+$prefix+'(.+)'+$suffix+'$')){throw '刻度文字辨識不完整，請重新框選清晰的數字'}
+    # A row not framed exactly by the known prefix/suffix gives no calibration point.
+    # Skip only that row; the remaining rows still need a strict linear fit and a
+    # second independent reading that agrees, so a misread row is never used.
+    if($text -notmatch ('^'+$prefix+'(.+)'+$suffix+'$')){Write-Verbose "略過辨識不完整的刻度列：$text";return $null}
     return $Matches[1]
+}
+
+
+
+function Get-E3AxisBands($bitmap, $roi) {
+    # Horizontal rows of label ink inside the axis box, top to bottom. Geometry only; no OCR.
+    $bands=@();$start=-1;$last=-1
+    for($row=0;$row -lt $roi.h;$row++) {
+        $ink=$false
+        for($col=0;$col -lt $roi.w;$col++) {
+            $c=$bitmap.GetPixel(($roi.x+$col),($roi.y+$row))
+            if ([Math]::Max($c.R,[Math]::Max($c.G,$c.B)) -lt 190 -and ([Math]::Max($c.R,[Math]::Max($c.G,$c.B))-[Math]::Min($c.R,[Math]::Min($c.G,$c.B))) -lt 65) {$ink=$true;break}
+        }
+        if($ink){if($start -lt 0){$start=$row};$last=$row}
+        if($start -ge 0 -and (($row-$last -ge 2) -or $row -eq $roi.h-1)) {
+            if($last-$start -ge 3){$bands+=@{top=$start;h=($last-$start+1);y=($roi.y+($start+$last)/2)}}
+            $start=-1
+        }
+    }
+    if($bands.Count -lt 3 -or $bands.Count -gt 40){throw '請框選至少三個左側刻度數字，不要包含軸線或標題'}
+    return ,$bands
 }
 
 
@@ -69,20 +93,7 @@ function Get-E3AxisWords($bitmap, $roi, [int]$scale, [switch]$NoBinarize) {
     $scaled=$null; $g=$null; $memory=$null; $stream=$null; $writer=$null; $software=$null
     try {
         # OCR drops isolated one-digit lines. Segment label ink, then arrange labels in a padded sheet.
-        $bands=@();$start=-1;$last=-1
-        for($row=0;$row -lt $roi.h;$row++) {
-            $ink=$false
-            for($col=0;$col -lt $roi.w;$col++) {
-                $c=$bitmap.GetPixel(($roi.x+$col),($roi.y+$row))
-                if ([Math]::Max($c.R,[Math]::Max($c.G,$c.B)) -lt 190 -and ([Math]::Max($c.R,[Math]::Max($c.G,$c.B))-[Math]::Min($c.R,[Math]::Min($c.G,$c.B))) -lt 65) {$ink=$true;break}
-            }
-            if($ink){if($start -lt 0){$start=$row};$last=$row}
-            if($start -ge 0 -and (($row-$last -ge 2) -or $row -eq $roi.h-1)) {
-                if($last-$start -ge 3){$bands+=@{top=$start;h=($last-$start+1);y=($roi.y+($start+$last)/2)}}
-                $start=-1
-            }
-        }
-        if($bands.Count -lt 3 -or $bands.Count -gt 40){throw '請框選至少三個左側刻度數字，不要包含軸線或標題'}
+        $bands=Get-E3AxisBands $bitmap $roi
         $inkLeft=[int]$roi.w;$inkRight=0
         foreach($band in $bands){$band.left=[int]$roi.w;$band.right=0;for($row=$band.top;$row -lt $band.top+$band.h;$row++){for($col=0;$col -lt $roi.w;$col++){
             $c=$bitmap.GetPixel(($roi.x+$col),($roi.y+$row))
@@ -120,7 +131,10 @@ function Get-E3AxisWords($bitmap, $roi, [int]$scale, [switch]$NoBinarize) {
         $software=Wait-E3OcrOperation ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
         $result=Wait-E3OcrOperation ($engine.RecognizeAsync($software)) ([Windows.Media.Ocr.OcrResult])
         Write-Verbose "OCR scale $scale`: $($result.Text)"
-        if ($result.TextAngle -and [Math]::Abs([double]$result.TextAngle) -gt 2) { throw '不支援旋轉的刻度數字' }
+        # The sheet is built here from horizontal ink rows, so it is never rotated. Windows OCR
+        # reports +-1..3 degrees on such sheets even when every digit is read correctly; each
+        # word is still mapped to exactly one label cell below, so the estimate is not used.
+        if ($result.TextAngle) { Write-Verbose "OCR 角度估計 $($result.TextAngle)（自建水平刻度表，不採用）" }
         $recognized=@{}
         foreach ($line in $result.Lines) { foreach($word in $line.Words) {
             $rect=$word.BoundingRect;$column=[int][Math]::Floor(($rect.X+$rect.Width/2)/$cellW);$row=[int][Math]::Floor(($rect.Y+$rect.Height/2)/$cellH)
@@ -242,7 +256,10 @@ function Test-E3NumericRegion($roi, $bitmap) {
 
 function Get-E3VerifiedAxisFit($bitmap,$roi) {
     $fits=@();$readings=@();$errors=@()
-    foreach($attempt in @(@{scale=4;raw=$false},@{scale=6;raw=$false},@{scale=4;raw=$true},@{scale=6;raw=$true})){
+    # Windows OCR reads small one-digit labels well at some scales and poorly at others,
+    # and which scale works varies by chart. Try several; still require two that agree.
+    $attempts=@(foreach($raw in @($false,$true)){foreach($scale in @(4,6,5,3,8)){@{scale=$scale;raw=$raw}}})
+    foreach($attempt in $attempts){
         try{
             $words=@(Get-E3AxisWords $bitmap $roi $attempt.scale -NoBinarize:$attempt.raw)
             $readings+= (($words|Sort-Object y|ForEach-Object{$_.text}) -join '、')
@@ -284,7 +301,21 @@ function Measure-E3NumericRule($bitmap, $rule) {
         Initialize-E3NumericPixels
         $r=$rule.roi
         $peak=[E3NumericPixels]::Peak($bitmap,$r.x,$r.y,$r.w,$r.h,$target,$tol)
-        if ($null -eq $peak) { throw '監測範圍內找不到可可靠辨識的藍色曲線' }
+        if ($null -eq $peak) {
+            # No blue inside the box. That proves "below threshold" only when nothing can be
+            # hiding above the box (its top reaches the axis' top label, the chart maximum)
+            # and the box bottom is not above the threshold. The colour must exist elsewhere
+            # in the picture (legend or curve), so a wrong colour pick stays unknown.
+            $axisTop=(Get-E3AxisBands $bitmap $rule.axis_roi)[0].y
+            $bottomValue=$fit.intercept+$fit.slope*($r.y+$r.h-1)
+            $threshold=[double]$rule.value_threshold
+            if ($null -eq [E3NumericPixels]::Peak($bitmap,0,0,$bitmap.Width,$bitmap.Height,$target,$tol)) { throw '圖片中找不到指定的藍色；請用取色工具重新指定藍色曲線' }
+            if ($r.y -gt $axisTop+1.5) { throw '監測範圍內找不到藍色曲線；框的上緣低於左軸最上方刻度，無法排除框外較高的曲線，請把框拉到最上方刻度' }
+            if ($bottomValue -gt $threshold) { throw '監測範圍內找不到藍色曲線；框的下緣高於門檻，無法確認曲線是否低於門檻，請把框往下拉到底部' }
+            $uncertainty=[Math]::Abs($fit.slope)*([Math]::Max(1.5,$fit.error+1))
+            $detail=('框內沒有藍色曲線（貼近底部），最高值低於約 {0:G5}／門檻 {1:G5}；刻度 {2:G5}～{3:G5}' -f $bottomValue,$threshold,$fit.min,$fit.max)
+            return @{status='normal';exceeded=$false;unknown=$false;maximum=$null;below=$bottomValue;threshold=$threshold;axis_min=$fit.min;axis_max=$fit.max;uncertainty=$uncertainty;peak_x=$null;peak_y=$null;threshold_y=(($threshold-$fit.intercept)/$fit.slope);ticks=@($fit.ticks);detail=$detail;reason=''}
+        }
         if ($peak[1] -le $r.y -or $peak[1] -lt $fit.top-1.5 -or $peak[1] -gt $fit.bottom+1.5) { throw '藍色峰頂被框選範圍裁切，或超出已辨識刻度範圍' }
         $maximum=$fit.intercept+$fit.slope*$peak[1]
         $uncertainty=[Math]::Abs($fit.slope)*([Math]::Max(1.5,$fit.error+1))

@@ -25,8 +25,7 @@
     [switch]$DryRun = $false,
     [switch]$DetectTeams = $false,     # 只偵測 Teams 或 CDP 連線，不傳送
     [string]$DetectJobId = "",         # Internal asynchronous detection report ID
-    [switch]$CdpSetup = $false,        # 互動設定 CDP 登入與各收件對象的固定分頁
-    [int]$CountdownSeconds = 0
+    [switch]$CdpSetup = $false         # 互動設定 CDP 登入與各收件對象的固定分頁
 )
  
  
@@ -1214,7 +1213,7 @@ $selfTestJobs=Restore-E3SelfTestWorkers (Join-Path $PSScriptRoot 'logs\self_test
             # 靜態檔案白名單：只提供設定工具、使用手冊與其圖片；config.json 等其他檔案一律不直接提供
             $relPath = $path.TrimStart('/')
             if ($relPath -eq "") { $relPath = "calibrator.html" }
-            $allowed = $relPath -in @("calibrator.html", "sample_data.js", "work_control.js", "USER_MANUAL.html") -or
+            $allowed = $relPath -in @("calibrator.html", "work_control.js", "USER_MANUAL.html") -or
                 $relPath -match '^sample_images/[A-Za-z0-9_-]+\.png$'
             $filePath = Join-Path $rootDir ($relPath -replace '/', '\')
  
@@ -1306,29 +1305,85 @@ $profileDir = Join-Path $PSScriptRoot "edge_profile"
 if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Force -Path $profileDir | Out-Null }
  
  
+function Test-CaptureProcessAlive([int]$ProcessId) {
+    $proc = $null
+    try {
+        $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+        return ($null -ne $proc -and -not $proc.HasExited)
+    } catch {
+        return $false
+    } finally {
+        if ($proc) { $proc.Dispose() }
+    }
+}
+
 # 關閉上一次殘留、使用本專案 edge_profile 的 Edge (只比對命令列中的 profile 路徑，不影響日常瀏覽器)
 # 若殘留的 Edge 還開著，新的 Edge 會被併入舊程序，導致 CDP 除錯埠打不開
 function Stop-ProfileEdge {
     $needle = $profileDir.ToLower()
     $procs = @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains("--user-data-dir=`"$needle`"") })
+        Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains("--user-data-dir=`"$needle`"") -and (Test-CaptureProcessAlive ([int]$_.ProcessId)) })
     if ($procs.Count -gt 0) {
         Write-Host "🧹 關閉專用 Edge，等待正常結束" -ForegroundColor DarkGray
-        $running = @($procs | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
-        foreach ($edgeProcess in $running) {
-            try { $edgeProcess.CloseMainWindow() | Out-Null } catch {}
+        $ids = @($procs | ForEach-Object { [int]$_.ProcessId })
+        foreach ($id in $ids) {
+            $edgeProcess = $null
+            try {
+                $edgeProcess = Get-Process -Id $id -ErrorAction SilentlyContinue
+                if ($edgeProcess -and -not $edgeProcess.HasExited) { $edgeProcess.CloseMainWindow() | Out-Null }
+            } catch {} finally {
+                if ($edgeProcess) { $edgeProcess.Dispose() }
+            }
+        }
+        $portFile = Join-Path $profileDir 'DevToolsActivePort'
+        if ([IO.File]::Exists($portFile)) {
+            $ws = $null; $cts = $null
+            try {
+                $lines = [IO.File]::ReadAllLines($portFile)
+                $port = 0
+                if ($lines.Count -ge 2 -and [int]::TryParse($lines[0], [ref]$port) -and $port -ge 1 -and $port -le 65535 -and $lines[1] -match '^/devtools/browser/[A-Za-z0-9-]+$') {
+                    $owners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.OwningProcess })
+                    if (@($owners | Where-Object { $ids -contains $_ }).Count -gt 0) {
+                        $version = Invoke-CaptureLocalJson "http://127.0.0.1:$port/json/version" 'GET' 2000
+                        $uri = [Uri]$version.webSocketDebuggerUrl
+                        if ($uri.Scheme -eq 'ws' -and $uri.IsLoopback -and $uri.Port -eq $port -and $uri.AbsolutePath -ceq $lines[1]) {
+                            $ws = [System.Net.WebSockets.ClientWebSocket]::new()
+                            $cts = [System.Threading.CancellationTokenSource]::new(2000)
+                            $ws.ConnectAsync($uri, $cts.Token).GetAwaiter().GetResult() | Out-Null
+                            $bytes = [System.Text.Encoding]::UTF8.GetBytes('{"id":2147483647,"method":"Browser.close"}')
+                            $ws.SendAsync([System.ArraySegment[byte]]::new($bytes), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $cts.Token).GetAwaiter().GetResult() | Out-Null
+                        }
+                    }
+                }
+            } catch {} finally {
+                if ($ws) { $ws.Dispose() }
+                if ($cts) { $cts.Dispose() }
+            }
         }
         $closeDeadline = (Get-Date).AddSeconds(5)
         do {
-            $remaining = @($running | Where-Object { -not $_.HasExited })
+            $remaining = @($ids | Where-Object { Test-CaptureProcessAlive $_ })
             if ($remaining.Count -eq 0) { break }
             Start-Sleep -Milliseconds 200
         } while ((Get-Date) -lt $closeDeadline)
-        $remaining = @($running | Where-Object { -not $_.HasExited })
+        $remaining = @($ids | Where-Object { Test-CaptureProcessAlive $_ })
         if ($remaining.Count -gt 0) {
             Write-Host "  ⚠️ 專用 Edge 關閉逾時，強制清理剩餘程序" -ForegroundColor Yellow
-            $remaining | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
-            Start-Sleep -Seconds 2
+            $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+            $killIds = @(
+                $all | Where-Object {
+                    ($_.CommandLine -and $_.CommandLine.ToLower().Contains("--user-data-dir=`"$needle`"")) -or
+                    ($ids -contains [int]$_.ParentProcessId)
+                } | ForEach-Object { [int]$_.ProcessId }
+            ) + $remaining | Select-Object -Unique
+            foreach ($id in $killIds) {
+                Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+            }
+            $killDeadline = (Get-Date).AddSeconds(5)
+            do {
+                if (@($killIds | Where-Object { Test-CaptureProcessAlive $_ }).Count -eq 0) { break }
+                Start-Sleep -Milliseconds 200
+            } while ((Get-Date) -lt $killDeadline)
         }
     }
 }
@@ -1351,13 +1406,69 @@ function Close-CaptureBrowser($ws) {
         $closeToken.Dispose()
     }
 }
-# 等待 Edge CDP 除錯埠就緒 (公司電腦防毒掃描時 Edge 啟動可能較慢)
+# 專用 Edge 的本機除錯請求：只連 127.0.0.1、不經系統 Proxy（公司 Proxy／自動設定腳本不影響本機連線）
+function Invoke-CaptureLocalJson([string]$url, [string]$method = 'GET', [int]$timeoutMs = 3000) {
+    $uri = [Uri]$url
+    if (-not $uri.IsLoopback) { throw '拒絕非本機的除錯位址' }
+    $request = [Net.HttpWebRequest]::Create($uri)
+    $request.Proxy = $null; $request.Method = $method; $request.Timeout = $timeoutMs; $request.ReadWriteTimeout = $timeoutMs
+    $response = $null; $reader = $null
+    try {
+        $response = $request.GetResponse()
+        $reader = [IO.StreamReader]::new($response.GetResponseStream(), [Text.Encoding]::UTF8)
+        $body = $reader.ReadToEnd()
+        if ([string]::IsNullOrWhiteSpace($body)) { return $null }
+        return ($body | ConvertFrom-Json)
+    } finally { if ($reader) { $reader.Dispose() }; if ($response) { $response.Dispose() } }
+}
+# 這個 profile 的 Edge 程序（命令列帶 --user-data-dir="edge_profile"）
+function Get-CaptureEdgeProcessIds {
+    $needle = $profileDir.ToLower()
+    return @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" -ErrorAction Stop |
+        Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains("--user-data-dir=`"$needle`"") -and (Test-CaptureProcessAlive ([int]$_.ProcessId)) } |
+        ForEach-Object { [int]$_.ProcessId })
+}
+# 等待專用 Edge 的除錯端點：Edge 以 --remote-debugging-port=0 自選連接埠並寫入 profile 的 DevToolsActivePort。
+# 只接受「這個 profile 的 Edge 自己寫的檔案、且監聽該埠的正是這個 profile 的 Edge」，不會連到占用其他埠的瀏覽器。
+# 防毒掃描時 Edge 啟動可能較慢，總共最多等 60 秒；回傳實際花費秒數供 log 記錄。
+function Wait-CaptureDevTools([int]$timeoutSec = 60) {
+    $portFile = Join-Path $profileDir 'DevToolsActivePort'
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $last = 'Edge 尚未寫出連線檔案（DevToolsActivePort）'
+    while ($timer.Elapsed.TotalSeconds -lt $timeoutSec) {
+        try {
+            if (-not [IO.File]::Exists($portFile)) { throw $last }
+            $stream = [IO.File]::Open($portFile, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            try { $lines = [IO.StreamReader]::new($stream).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
+            $port = 0
+            if ($lines.Count -lt 2 -or -not [int]::TryParse($lines[0], [ref]$port) -or $port -lt 1 -or $port -gt 65535 -or $lines[1] -notmatch '^/devtools/browser/[A-Za-z0-9-]+$') { throw '連線檔案尚未寫入完整' }
+            $owners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.OwningProcess })
+            if (-not $owners.Count) { throw "Edge 的除錯埠 $port 尚未開始監聽" }
+            $mine = @(Get-CaptureEdgeProcessIds)
+            if (-not @($owners | Where-Object { $mine -contains $_ }).Count) {
+                throw "CAPTURE_PORT_OWNER：除錯埠 $port 不是專用 Edge（edge_profile）在監聽（PID $($owners -join ', ')），為避免連到其他瀏覽器，本次停止"
+            }
+            $remaining = [Math]::Max(500, [int](($timeoutSec - $timer.Elapsed.TotalSeconds) * 1000))
+            $version = Invoke-CaptureLocalJson "http://127.0.0.1:$port/json/version" 'GET' ([Math]::Min(5000, $remaining))
+            $ws = [Uri]$version.webSocketDebuggerUrl
+            if ($ws.Scheme -ne 'ws' -or -not $ws.IsLoopback -or $ws.Port -ne $port -or $ws.AbsolutePath -cne $lines[1]) { throw '除錯端點資訊和連線檔案不一致' }
+            return @{ port = $port; seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 1) }
+        } catch {
+            $last = $_.Exception.Message
+            if ($last -match '^CAPTURE_PORT_OWNER：') { throw ($last -replace '^CAPTURE_PORT_OWNER：', '') }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    throw ("等待專用 Edge 啟動逾時（{0} 秒）：{1}。可能是防毒掃描讓 Edge 啟動太慢，或 edge_profile 被其他程序占用" -f $timeoutSec, $last)
+}
+# 取得分頁清單（端點已由 Wait-CaptureDevTools 核對過；重新連線時再確認仍可讀）
 function Wait-CdpTargets([int]$port, [int]$timeoutSec = 20) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
+    $last = ''
     while ((Get-Date) -lt $deadline) {
-        try { return Invoke-RestMethod -Uri "http://127.0.0.1:$port/json" -TimeoutSec 3 } catch { Start-Sleep -Milliseconds 500 }
+        try { return Invoke-CaptureLocalJson "http://127.0.0.1:$port/json" 'GET' 3000 } catch { $last = $_.Exception.Message; Start-Sleep -Milliseconds 500 }
     }
-    throw "等待 Edge 除錯埠 $port 逾時 ($timeoutSec 秒)，請確認 Edge 是否被其他程序佔用"
+    throw "讀取專用 Edge 分頁清單逾時（埠 $port，$timeoutSec 秒）：$last"
 }
  
  
@@ -1630,7 +1741,7 @@ function Reset-CaptureProfileZoom {
     # zoom rounds font/table row metrics differently even after DPR compensation.
     $profilePath=[IO.Path]::GetFullPath($profileDir)
     $running=@(Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" -ErrorAction Stop |
-        Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($profilePath,[StringComparison]::OrdinalIgnoreCase) -ge 0 })
+        Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($profilePath,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and (Test-CaptureProcessAlive ([int]$_.ProcessId)) })
     if($running.Count){throw '專用擷取瀏覽器尚未結束，不能重設排版縮放；請關閉抓圖視窗後重試'}
     $path=Join-Path $profilePath 'Default\Preferences'
     if(-not [IO.File]::Exists($path)){return}
@@ -1910,9 +2021,9 @@ function Connect-CdpPage([int]$port, [ref]$commandId, [switch]$NewTab) {
     # PowerShell 5.1 的 Invoke-RestMethod 把 JSON 陣列當成單一物件輸出，經過管線展開成各個分頁
     $targets = @(Wait-CdpTargets $port | ForEach-Object { $_ })
     if ($NewTab) {
-        $pageTarget = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json/new?about:blank" -Method Put -TimeoutSec 10
+        $pageTarget = Invoke-CaptureLocalJson "http://127.0.0.1:$port/json/new?about:blank" 'PUT' 10000
         foreach ($old in @($targets | Where-Object { $_.type -eq "page" -and $_.id -ne $pageTarget.id })) {
-            try { Invoke-RestMethod -Uri "http://127.0.0.1:$port/json/close/$($old.id)" -TimeoutSec 5 | Out-Null } catch {}
+            try { Invoke-CaptureLocalJson "http://127.0.0.1:$port/json/close/$($old.id)" 'GET' 5000 | Out-Null } catch {}
         }
     } else {
         $pageTarget = $targets | Where-Object { $_.type -eq "page" -and $_.url -notlike "chrome-extension://*" -and $_.url -notlike "edge://*" } | Select-Object -First 1
@@ -1971,13 +2082,17 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
  
     Stop-ProfileEdge
     Reset-CaptureProfileZoom
-    $debugPort = 9333
+    # 除錯埠由 Edge 自選（port=0），實際埠從 profile 的 DevToolsActivePort 讀取並核對擁有者；
+    # 先刪掉上一次留下的檔案，避免讀到舊埠。
+    $portFile = Join-Path $profileDir 'DevToolsActivePort'
+    if (Test-Path -LiteralPath $portFile) { Remove-Item -LiteralPath $portFile -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $portFile) { throw '無法清除上一次的 Edge 連線檔案（DevToolsActivePort），edge_profile 可能仍被其他程序使用' }
     # 參考公司內部 46518 實測經驗：加入防止 Edge 背景分頁休眠/凍結參數
     # --force-device-scale-factor=1：筆電顯示比例 125%/150% 時，截圖座標仍與設定工具一致
     # Translate (Chromium) / msEdgeTranslate (Edge)：停用翻譯提示，避免詢問中文是否轉英文。
-    $argList = "--remote-debugging-port=$debugPort --user-data-dir=`"$profileDir`" --disable-features=Translate,msEdgeTranslate --window-size=1920,1080 --force-device-scale-factor=1 --hide-crash-restore-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding about:blank"
+    $argList = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=0 --user-data-dir=`"$profileDir`" --disable-features=Translate,msEdgeTranslate --window-size=1920,1080 --force-device-scale-factor=1 --hide-crash-restore-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding about:blank"
     if ($Headless) { $argList += ' --headless=new' }
-    $proc = Start-Process -FilePath $browserExe -ArgumentList $argList -WindowStyle Hidden -PassThru
+    Start-Process -FilePath $browserExe -ArgumentList $argList -WindowStyle Hidden
  
  
     $capturedMap = @{}
@@ -1985,6 +2100,9 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
     $ws = $null
     try {
         $cmdId = 1
+        $ready = Wait-CaptureDevTools
+        $debugPort = $ready.port
+        Write-Host ("🚀 專用 Edge 已就緒：{0} 秒（除錯埠 {1}）" -f $ready.seconds, $debugPort) -ForegroundColor DarkGray
         $ws = Connect-CdpPage $debugPort ([ref]$cmdId)
  
  
@@ -2019,10 +2137,10 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
                 $pageAuth = Get-PageAuth $p $authCfg
                 $triedLogin = Test-AuthConfigured $pageAuth
                 if ($pageAuth.enabled -and -not $triedLogin -and ($p.PSObject.Properties.Name -contains 'auth')) {
-                    throw "已啟用此頁帳密自動登入，但未填有效帳號（請到「📄 頁面與警戒線」填寫此頁帳密）"
+                    throw "已啟用此頁帳密自動登入，但未填有效帳號（請到「📄 頁面與監測」填寫此頁帳密）"
                 }
                 if (-not $triedLogin) {
-                    Write-Host "  ⚠️ 頁面需要登入 ($loginState)，但未啟用此頁帳密或未填帳號：請到「📄 頁面與警戒線」設定此頁登入，或按 🔐 登入監控網站" -ForegroundColor Yellow
+                    Write-Host "  ⚠️ 頁面需要登入 ($loginState)，但未啟用此頁帳密或未填帳號：請到「📄 頁面與監測」設定此頁登入，或按 🔐 登入監控網站" -ForegroundColor Yellow
                 } else {
                     if ($loginState -eq "LOGIN_BUTTON") {
                         Invoke-CdpEval $ws ($cmdId++) $JsClickLoginButton | Out-Null
@@ -2047,7 +2165,7 @@ function Capture-PagesNative($pagesToCapture, $authCfg, [string]$outDir, [switch
                 # 仍有密碼框 = 停在登入畫面；試過自動登入後仍有 Login 按鈕 = 登入沒有成功。
                 # 沒設定帳密、只有 Login / Sign in 連結時，可能是允許訪客瀏覽的頁面，照常截圖。
                 if ($loginState -eq "PASSWORD" -or ($triedLogin -and $loginState -ne "NONE")) {
-                    if ($triedLogin) { throw "停在登入畫面，自動登入沒有成功（請確認「📄 頁面與警戒線」此頁的帳密，或按 🔐 登入監控網站）" }
+                    if ($triedLogin) { throw "停在登入畫面，自動登入沒有成功（請確認「📄 頁面與監測」此頁的帳密，或按 🔐 登入監控網站）" }
                     throw "停在登入畫面，且未啟用此頁帳密或未填帳號（請設定此頁登入，或按 🔐 登入監控網站）"
                 }
                 if ($triedLogin) { Write-Host "  ✅ 自動登入成功" -ForegroundColor Green }
@@ -2112,6 +2230,135 @@ function Test-CurvePixel($r, $g, $b, $rule) {
  
  
     return ($lum -lt 192 -or $sat -ge 30)
+}
+
+
+# ==============================================================================
+# 函數：一頁截圖的警戒線／數值判定（排程與 @日管 檢查共用）
+# 驗證 PNG、套用全部啟用規則、寫出 annotated_<檔名>。圖片本身無效時丟出例外，由呼叫端決定如何回報。
+# 回傳 captureOnly、alerts／failures（排程訊息用的文字）、hasAlert、annotated，以及 rules（每條規則的結構化結果）。
+# ==============================================================================
+function Invoke-E3PageAnalysis($page, [string]$imgPath, [string]$label = '') {
+    $result = @{ captureOnly=$false; alerts=@(); failures=@(); hasAlert=$false; annotated=$null; rules=@() }
+    $fileInfo=Get-Item -LiteralPath $imgPath -ErrorAction Stop
+    if($fileInfo.Length -lt 8 -or $fileInfo.Length -gt 10MB){throw '圖片檔大小無效或超過 10 MiB'}
+    $check=[Drawing.Bitmap]::new($imgPath)
+    try {
+        if($check.RawFormat.Guid -ne [Drawing.Imaging.ImageFormat]::Png.Guid){throw '截圖不是 PNG 格式'}
+        if($check.Width -gt 4096 -or $check.Height -gt 4096 -or [long]$check.Width*$check.Height -gt 16000000){throw '截圖超過邊長 4096 或 1600 萬畫素'}
+    } finally {$check.Dispose()}
+
+
+    # 沒有啟用中的警戒線 = 只截圖 (設定工具不再有「處理模式」選項；舊設定的 capture_only 仍然有效)
+    $hasActiveRules = @($page.rules | Where-Object { $_ -and $_.enabled -ne $false }).Count -gt 0
+    if ($page.mode -eq "capture_only" -or -not $hasActiveRules) {
+        Write-Host "📸 [$($page.id)] $($page.name)$label -> 純擷取畫面" -ForegroundColor Gray
+        $result.captureOnly = $true
+        return $result
+    }
+
+
+    $bmp=$null;$annotated=$null;$g=$null
+    try {
+    $bmp = [System.Drawing.Bitmap]::new($imgPath)
+    $annotated = [System.Drawing.Bitmap]::new($bmp)
+    $g = [System.Drawing.Graphics]::FromImage($annotated)
+
+
+    $enabledRules = @($page.rules | Where-Object { $_.enabled -ne $false })
+    foreach ($rule in $enabledRules) {
+        if ($rule.measure_mode -eq 'numeric') {
+            $numeric=Measure-E3NumericRule $bmp $rule
+            $prefix="$($page.name)／$($rule.name)"
+            Write-Host "  [$($page.id)] $($rule.name)：$($numeric.status) $($numeric.detail) $($numeric.reason)"
+            $result.rules += @{ name=[string]$rule.name; mode='numeric'; status=$(if($numeric.unknown){'unknown'}elseif($numeric.exceeded){'exceeded'}else{'normal'})
+                maximum=$numeric.maximum; below=$numeric.below; threshold=$numeric.threshold; uncertainty=$numeric.uncertainty; detail=[string]$numeric.detail; reason=[string]$numeric.reason }
+            if ($numeric.unknown) {
+                $result.failures += "⚠️ ${prefix}：數值門檻無法判定；$($numeric.reason) $($numeric.detail)"
+            } elseif ($numeric.exceeded) {
+                $result.hasAlert=$true
+                $message=if ([string]::IsNullOrWhiteSpace($rule.alert_message)) {"🚨 ${prefix}：超過數值門檻"} else {$rule.alert_message}
+                $result.alerts += "$message（$($numeric.detail)）"
+            }
+            if (-not $numeric.unknown) {
+                $numericPen=[Drawing.Pen]::new($(if($numeric.exceeded){[Drawing.Color]::Red}else{[Drawing.Color]::LimeGreen}),2)
+                try {
+                    $g.DrawRectangle($numericPen,[int]$rule.roi.x,[int]$rule.roi.y,[int]$rule.roi.w,[int]$rule.roi.h)
+                    if ($null -ne $numeric.peak_x -and $null -ne $numeric.peak_y) { $g.DrawEllipse($numericPen,([int]$numeric.peak_x-4),([int]$numeric.peak_y-4),8,8) }
+                } finally {$numericPen.Dispose()}
+            }
+            continue
+        }
+        # 無法完整判定的規則不能當成正常，保留原截圖並發送監控失敗提醒。
+        if ($null -eq $rule.roi -or $null -eq $rule.threshold_y -or
+            [double]$rule.roi.x -lt 0 -or [double]$rule.roi.y -lt 0 -or
+            [double]$rule.roi.w -le 0 -or [double]$rule.roi.h -le 0 -or
+            ([double]$rule.roi.x + [double]$rule.roi.w) -gt $bmp.Width -or
+            ([double]$rule.roi.y + [double]$rule.roi.h) -gt $bmp.Height -or
+            [double]$rule.threshold_y -lt [double]$rule.roi.y -or
+            [double]$rule.threshold_y -gt ([double]$rule.roi.y + [double]$rule.roi.h)) {
+            $problem = "⚠️ $($page.name)／$($rule.name)：警戒線無法判定（範圍或高度無效），請重新框選"
+            $result.failures += $problem
+            $result.rules += @{ name=[string]$rule.name; mode='pixel'; status='unknown'; reason='警戒線範圍或高度無效，請在設定工具重新框選' }
+            Write-Host $problem -ForegroundColor Yellow
+            continue
+        }
+        $rx = [Math]::Max(0, [int]$rule.roi.x)
+        $ry = [Math]::Max(0, [int]$rule.roi.y)
+        if ($rx -ge $bmp.Width -or $ry -ge $bmp.Height) {
+            # 擷取範圍縮小後，警戒線框可能落在圖外；略過此條並提醒，不讓整次執行失敗
+            Write-Host "  ⚠️ [$($page.id)] $($rule.name) : 警戒線框 ($rx, $ry) 超出截圖範圍 ($($bmp.Width)x$($bmp.Height))，已略過，請在設定工具重新框選" -ForegroundColor Yellow
+            $result.rules += @{ name=[string]$rule.name; mode='pixel'; status='unknown'; reason='警戒線框超出截圖範圍，請在設定工具重新框選' }
+            continue
+        }
+        $rw = [Math]::Max(1, [Math]::Min($bmp.Width - $rx, [int]$rule.roi.w))
+        $rh = [Math]::Max(1, [Math]::Min($bmp.Height - $ry, [int]$rule.roi.h))
+        $threshY = [int]$rule.threshold_y
+        $minPx = if ($rule.min_pixels) { [int]$rule.min_pixels } else { 2 }
+
+
+        $hitCount = 0
+        $maxCheckY = [Math]::Min($ry + $rh - 1, $threshY)
+
+
+        for ($y = $ry; $y -le $maxCheckY; $y++) {
+            for ($x = $rx; $x -lt ($rx + $rw); $x++) {
+                $c = $bmp.GetPixel($x, $y)
+                if (Test-CurvePixel $c.R $c.G $c.B $rule) {
+                    $hitCount++
+                }
+            }
+        }
+
+
+        $exceeded = ($hitCount -ge $minPx)
+        $result.rules += @{ name=[string]$rule.name; mode='pixel'; status=$(if($exceeded){'exceeded'}else{'normal'}); hits=$hitCount; minPixels=$minPx }
+        if ($exceeded) {
+            $result.hasAlert = $true
+            Write-Host "  🚨 [$($page.id)] $($rule.name) : 超過警戒線! (越線像素: $hitCount px, Y=$threshY)" -ForegroundColor Red
+            $result.alerts += $(if ([string]::IsNullOrWhiteSpace($rule.alert_message)) { "🚨 $($page.name)／$($rule.name)：超過警戒線" } else { $rule.alert_message })
+            $penBox = [System.Drawing.Pen]::new([System.Drawing.Color]::Red, 2)
+        } else {
+            Write-Host "  ✅ [$($page.id)] $($rule.name) : 正常 (越線像素: $hitCount px, Y=$threshY)" -ForegroundColor Green
+            $penBox = [System.Drawing.Pen]::new([System.Drawing.Color]::LimeGreen, 2)
+        }
+
+
+        $g.DrawRectangle($penBox, $rx, $ry, $rw, $rh)
+        $penLine = [System.Drawing.Pen]::new([System.Drawing.Color]::Red, 2)
+        $g.DrawLine($penLine, $rx - 5, $threshY, $rx + $rw + 5, $threshY)
+        $penBox.Dispose()
+        $penLine.Dispose()
+    }
+
+
+    $outAnnotated = Join-Path ([System.IO.Path]::GetDirectoryName($imgPath)) "annotated_$([System.IO.Path]::GetFileName($imgPath))"
+    $annotated.Save($outAnnotated, [System.Drawing.Imaging.ImageFormat]::Png)
+    $result.annotated = $outAnnotated
+    } finally {
+        if($g){$g.Dispose()};if($annotated){$annotated.Dispose()};if($bmp){$bmp.Dispose()}
+    }
+    return $result
 }
  
  
@@ -2759,14 +3006,21 @@ if ($ReceiverWatchdog -or $RegisterReceiverWatchdog -or $UnregisterReceiverWatch
     try {
         if ($RegisterReceiverWatchdog) { Register-E3ReceiverWatchdog $ConfigPath $config; exit 0 }
         if ($UnregisterReceiverWatchdog) { Unregister-E3ReceiverWatchdog; exit 0 }
-        $watchdogResult = @(Invoke-E3ReceiverWatchdog $config)
-        # 排程用 Teams 登入預警：約每 6 小時、每個排程前約 1 小時檢查一次；異常時交給接收端用它自己的登入通知
-        $loginResult = @(0)
-        try { $loginResult = @(Invoke-E3SenderLoginCheck $config) } catch { Write-Host "⚠️ 排程登入檢查失敗：$($_.Exception.Message)" -ForegroundColor Yellow; $loginResult = @(1) }
-        # 排程傳送結果：上一輪沒送達（失敗、結果不明、逾時、等不到執行權）時，經接收端通知一次
+        # 順序：只讀檔案與任務狀態的檢查先做。後面的步驟會開 Edge／傳訊息，各有自己的期限
+        #（逾時直接結束本程序），而 Windows 任務上限是 10 分鐘；放在前面才不會被拖累而跳過。
+        # 1. 排程傳送結果：上一輪沒送達（失敗、結果不明、逾時、等不到執行權）時，經接收端通知一次
         $scheduleResult = @(0)
         try { $scheduleResult = @(Invoke-E3ScheduleResultCheck $config) } catch { Write-Host "⚠️ 排程結果檢查失敗：$($_.Exception.Message)" -ForegroundColor Yellow; $scheduleResult = @(1) }
-        exit ([Math]::Max([Math]::Max([int]$watchdogResult[-1], [int]$loginResult[-1]), [int]$scheduleResult[-1]))
+        # 2. 接收端心跳：異常時先自動重啟，仍異常才通知
+        $watchdogResult = @(0)
+        try { $watchdogResult = @(Invoke-E3ReceiverWatchdog $config) } catch { Write-Host "❌ 接收端監看：$($_.Exception.Message)" -ForegroundColor Red; $watchdogResult = @(1) }
+        # 3. 接收端自己送不出去的「指令失敗說明」：改用排程的 Teams 登入代發一次
+        $relayResult = @(0)
+        try { $relayResult = @(Invoke-E3FailedNoticeRelay $config) } catch { Write-Host "⚠️ 指令失敗說明代發失敗：$($_.Exception.Message)" -ForegroundColor Yellow; $relayResult = @(1) }
+        # 4. 排程用 Teams 登入預警：約每 6 小時、每個排程前約 1 小時檢查一次；異常時交給接收端用它自己的登入通知
+        $loginResult = @(0)
+        try { $loginResult = @(Invoke-E3SenderLoginCheck $config) } catch { Write-Host "⚠️ 排程登入檢查失敗：$($_.Exception.Message)" -ForegroundColor Yellow; $loginResult = @(1) }
+        exit ([int](@([int]$watchdogResult[-1], [int]$loginResult[-1], [int]$scheduleResult[-1], [int]$relayResult[-1]) | Measure-Object -Maximum).Maximum)
     } catch { Write-Host "❌ 接收端監看：$($_.Exception.Message)" -ForegroundColor Red; exit 1 }
 }
 if ($ReceiverCaptureJob) {
@@ -2995,7 +3249,7 @@ if ($captureFailures.Count -gt 0) { $exitCode = 1 }
 # 排程收件清單優先；空清單沿用頁面／預設對象。每頁只分析一次，再分派相同結果。
 $defaultChat = if ($config.teams.target_chat_name) { $config.teams.target_chat_name } else { "預設Teams群組" }
 $scheduleTargets = @(if($SelfScheduleJob){'自己'}else{Get-TeamsScheduleTargets $runSchedule})
-if($SelfScheduleJob){Save-E3SelfTestStatus 'analyzing' '擷取完成，正在執行排程警戒線判定並整理本次圖片。'}
+if($SelfScheduleJob){Save-E3SelfTestStatus 'analyzing' '擷取完成，正在執行排程判定並整理本次圖片。'}
 $scheduleChat = if ($scheduleTargets.Count) { $scheduleTargets[0] } else { "" }
 # 用有序字典，讓多個群組依頁面順序發送
 $chatGroups = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
@@ -3036,133 +3290,25 @@ foreach ($page in $enabledPages) {
         continue
     }
  
-    $bmp=$null;$annotated=$null;$g=$null;$pageAlerts=@();$pageRuleFailures=@()
     try {
-    $fileInfo=Get-Item -LiteralPath $imgPath -ErrorAction Stop
-    if($fileInfo.Length -lt 8 -or $fileInfo.Length -gt 10MB){throw '圖片檔大小無效或超過 10 MiB'}
-    $check=[Drawing.Bitmap]::new($imgPath)
-    try {
-        if($check.RawFormat.Guid -ne [Drawing.Imaging.ImageFormat]::Png.Guid){throw '截圖不是 PNG 格式'}
-        if($check.Width -gt 4096 -or $check.Height -gt 4096 -or [long]$check.Width*$check.Height -gt 16000000){throw '截圖超過邊長 4096 或 1600 萬畫素'}
-    } finally {$check.Dispose()}
- 
- 
-    # 沒有啟用中的警戒線 = 只截圖 (設定工具不再有「處理模式」選項；舊設定的 capture_only 仍然有效)
-    $hasActiveRules = @($page.rules | Where-Object { $_ -and $_.enabled -ne $false }).Count -gt 0
-    if ($page.mode -eq "capture_only" -or -not $hasActiveRules) {
-        Write-Host "📸 [$($page.id)] $($page.name) (目標Teams: $targetChat) -> 純擷取畫面" -ForegroundColor Gray
+    $analysis = Invoke-E3PageAnalysis $page $imgPath " (目標Teams: $targetChat)"
+    if ($analysis.captureOnly) {
         $chatGroups[$targetChat].images += $imgPath
         continue
     }
- 
- 
-    $bmp = [System.Drawing.Bitmap]::new($imgPath)
-    $annotated = [System.Drawing.Bitmap]::new($bmp)
-    $g = [System.Drawing.Graphics]::FromImage($annotated)
-    $pageHasAlert = $false
- 
- 
-    $enabledRules = @($page.rules | Where-Object { $_.enabled -ne $false })
-    foreach ($rule in $enabledRules) {
-        if ($rule.measure_mode -eq 'numeric') {
-            $numeric=Measure-E3NumericRule $bmp $rule
-            $prefix="$($page.name)／$($rule.name)"
-            Write-Host "  [$($page.id)] $($rule.name)：$($numeric.status) $($numeric.detail) $($numeric.reason)"
-            if ($numeric.unknown) {
-                $pageRuleFailures += "⚠️ ${prefix}：數值門檻無法判定；$($numeric.reason) $($numeric.detail)"
-            } elseif ($numeric.exceeded) {
-                $pageHasAlert=$true
-                $message=if ([string]::IsNullOrWhiteSpace($rule.alert_message)) {"🚨 ${prefix}：超過數值門檻"} else {$rule.alert_message}
-                $pageAlerts += "$message（$($numeric.detail)）"
-            }
-            if (-not $numeric.unknown) {
-                $numericPen=[Drawing.Pen]::new($(if($numeric.exceeded){[Drawing.Color]::Red}else{[Drawing.Color]::LimeGreen}),2)
-                try {
-                    $g.DrawRectangle($numericPen,[int]$rule.roi.x,[int]$rule.roi.y,[int]$rule.roi.w,[int]$rule.roi.h)
-                    $g.DrawEllipse($numericPen,([int]$numeric.peak_x-4),([int]$numeric.peak_y-4),8,8)
-                } finally {$numericPen.Dispose()}
-            }
-            continue
-        }
-        # 無法完整判定的規則不能當成正常，保留原截圖並發送監控失敗提醒。
-        if ($null -eq $rule.roi -or $null -eq $rule.threshold_y -or
-            [double]$rule.roi.x -lt 0 -or [double]$rule.roi.y -lt 0 -or
-            [double]$rule.roi.w -le 0 -or [double]$rule.roi.h -le 0 -or
-            ([double]$rule.roi.x + [double]$rule.roi.w) -gt $bmp.Width -or
-            ([double]$rule.roi.y + [double]$rule.roi.h) -gt $bmp.Height -or
-            [double]$rule.threshold_y -lt [double]$rule.roi.y -or
-            [double]$rule.threshold_y -gt ([double]$rule.roi.y + [double]$rule.roi.h)) {
-            $problem = "⚠️ $($page.name)／$($rule.name)：警戒線無法判定（範圍或高度無效），請重新框選"
-            $pageRuleFailures += $problem
-            Write-Host $problem -ForegroundColor Yellow
-            continue
-        }
-        $rx = [Math]::Max(0, [int]$rule.roi.x)
-        $ry = [Math]::Max(0, [int]$rule.roi.y)
-        if ($rx -ge $bmp.Width -or $ry -ge $bmp.Height) {
-            # 擷取範圍縮小後，警戒線框可能落在圖外；略過此條並提醒，不讓整次執行失敗
-            Write-Host "  ⚠️ [$($page.id)] $($rule.name) : 警戒線框 ($rx, $ry) 超出截圖範圍 ($($bmp.Width)x$($bmp.Height))，已略過，請在設定工具重新框選" -ForegroundColor Yellow
-            continue
-        }
-        $rw = [Math]::Max(1, [Math]::Min($bmp.Width - $rx, [int]$rule.roi.w))
-        $rh = [Math]::Max(1, [Math]::Min($bmp.Height - $ry, [int]$rule.roi.h))
-        $threshY = [int]$rule.threshold_y
-        $minPx = if ($rule.min_pixels) { [int]$rule.min_pixels } else { 2 }
- 
- 
-        $hitCount = 0
-        $maxCheckY = [Math]::Min($ry + $rh - 1, $threshY)
- 
- 
-        for ($y = $ry; $y -le $maxCheckY; $y++) {
-            for ($x = $rx; $x -lt ($rx + $rw); $x++) {
-                $c = $bmp.GetPixel($x, $y)
-                if (Test-CurvePixel $c.R $c.G $c.B $rule) {
-                    $hitCount++
-                }
-            }
-        }
- 
- 
-        $exceeded = ($hitCount -ge $minPx)
-        if ($exceeded) {
-            $pageHasAlert = $true
-            Write-Host "  🚨 [$($page.id)] $($rule.name) : 超過警戒線! (越線像素: $hitCount px, Y=$threshY)" -ForegroundColor Red
-            $pageAlerts += $(if ([string]::IsNullOrWhiteSpace($rule.alert_message)) { "🚨 $($page.name)／$($rule.name)：超過警戒線" } else { $rule.alert_message })
-            $penBox = [System.Drawing.Pen]::new([System.Drawing.Color]::Red, 2)
-        } else {
-            Write-Host "  ✅ [$($page.id)] $($rule.name) : 正常 (越線像素: $hitCount px, Y=$threshY)" -ForegroundColor Green
-            $penBox = [System.Drawing.Pen]::new([System.Drawing.Color]::LimeGreen, 2)
-        }
- 
- 
-        $g.DrawRectangle($penBox, $rx, $ry, $rw, $rh)
-        $penLine = [System.Drawing.Pen]::new([System.Drawing.Color]::Red, 2)
-        $g.DrawLine($penLine, $rx - 5, $threshY, $rx + $rw + 5, $threshY)
-        $penBox.Dispose()
-        $penLine.Dispose()
-    }
- 
- 
-    $outAnnotated = Join-Path ([System.IO.Path]::GetDirectoryName($imgPath)) "annotated_$([System.IO.Path]::GetFileName($imgPath))"
-    $annotated.Save($outAnnotated, [System.Drawing.Imaging.ImageFormat]::Png)
- 
- 
-    if ($pageHasAlert -and $config.teams.attach_annotated_image_on_alert) {
-        if((Get-Item -LiteralPath $outAnnotated).Length -gt 10MB){throw '警戒線標記圖片超過 10 MiB'}
-        $chatGroups[$targetChat].images += $outAnnotated
+    if ($analysis.hasAlert -and $config.teams.attach_annotated_image_on_alert) {
+        if((Get-Item -LiteralPath $analysis.annotated).Length -gt 10MB){throw '警戒線標記圖片超過 10 MiB'}
+        $chatGroups[$targetChat].images += $analysis.annotated
     } else {
         $chatGroups[$targetChat].images += $imgPath
     }
-    $chatGroups[$targetChat].alerts += $pageAlerts
-    $chatGroups[$targetChat].failures += $pageRuleFailures
-    if ($pageRuleFailures.Count -gt 0) { $exitCode = 1 }
+    $chatGroups[$targetChat].alerts += $analysis.alerts
+    $chatGroups[$targetChat].failures += $analysis.failures
+    if (@($analysis.failures).Count -gt 0) { $exitCode = 1 }
     } catch {
         $exitCode=1
         $chatGroups[$targetChat].failures += "⚠️ $($page.name) 圖片處理失敗，本頁圖片未附上，請檢查：$($_.Exception.Message)"
         Write-Host "⚠️ [$($page.id)] 圖片處理失敗，繼續下一頁：$($_.Exception.Message)" -ForegroundColor Yellow
-    } finally {
-        if($g){$g.Dispose()};if($annotated){$annotated.Dispose()};if($bmp){$bmp.Dispose()}
     }
 }
  

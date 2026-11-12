@@ -13,9 +13,24 @@ $script:E3SendNetwork=$null
 $script:CdpEndpoint=$null
 $script:E3CdpLastCommand=$null
 function Get-E3LocalJson([string]$url) {
-    $req=[Net.HttpWebRequest]::Create($url); $req.Proxy=$null; $req.Timeout=1500; $req.ReadWriteTimeout=1500
-    $res=$req.GetResponse()
-    try {$reader=[IO.StreamReader]::new($res.GetResponseStream()); try{return ($reader.ReadToEnd()|ConvertFrom-Json)}finally{$reader.Dispose()}}finally{$res.Dispose()}
+    # Read-only GET of the dedicated Edge's local /json endpoints. A busy Teams renderer on the
+    # company host answered slower than 1.5 s (GetResponse "作業逾時"), which failed replies and
+    # login checks. Allow 5 s and repeat a timed-out/refused read once; nothing is sent to Teams.
+    $u=[Uri]$url
+    if($u.Host -notin @('127.0.0.1','localhost')){throw '拒絕非本機 CDP 位址'}
+    for($attempt=1;;$attempt++){
+        try{
+            $req=[Net.HttpWebRequest]::Create($url); $req.Proxy=$null; $req.Timeout=5000; $req.ReadWriteTimeout=5000
+            $res=$req.GetResponse()
+            try {$reader=[IO.StreamReader]::new($res.GetResponseStream()); try{return ($reader.ReadToEnd()|ConvertFrom-Json)}finally{$reader.Dispose()}}finally{$res.Dispose()}
+        }catch{
+            $web=$null;$e=$_.Exception
+            while($e -and -not $web){$web=$e -as [Net.WebException];$e=$e.InnerException}
+            $transient=$web -and $web.Status -in @([Net.WebExceptionStatus]::Timeout,[Net.WebExceptionStatus]::ConnectFailure,[Net.WebExceptionStatus]::ReceiveFailure,[Net.WebExceptionStatus]::ConnectionClosed,[Net.WebExceptionStatus]::KeepAliveFailure)
+            if(-not $transient -or $attempt -ge 2){throw}
+            Start-Sleep -Milliseconds 500
+        }
+    }
 }
 function Connect-E3Cdp([string]$url,[ValidateRange(250,60000)][int]$TimeoutMs=10000) {
     $u=[Uri]$url
@@ -184,7 +199,7 @@ function Get-E3ServerReceipt([string]$messageId) {
         }
         # A numeric DOM ID, an empty editor or HTTP 202 alone is not a delivery receipt.
         if(-not $r.failed -and $r.serverId -and ($messageId -ceq $r.serverId -or ($r.clientId -and $messageId -ceq $r.clientId))){
-            return @{ok=$true;reason='server_accepted';status=$r.status;messageId=$messageId;serverId=$r.serverId;serverAcceptanceObserved=$true;domMessageMatched=$true}
+            return @{ok=$true;reason='server_accepted';status=$r.status;messageId=$messageId;serverId=$r.serverId;clientId=[string]$r.clientId;serverAcceptanceObserved=$true;domMessageMatched=$true}
         }
     }
     $reason='server_ack_not_confirmed'
@@ -227,9 +242,19 @@ function Get-E3SelfBinding([int]$context,[switch]$AllowGroup) {
         $frame=Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('start','$token')"
         if(-not $frame.ok){return @{ok=$false;error='帳號選單背景處理初始化失敗，請關閉測試 Edge 後重開'}}
         $started=[DateTime]::UtcNow
-        $begin=Invoke-E3Js 'E3Cdp.beginBinding()' $context
+        # Teams renders the account avatar after the chat itself. Wait (read-only) until exactly
+        # one avatar exists instead of failing on the first read; still fail if it never settles.
+        do {
+            $begin=Invoke-E3Js 'E3Cdp.beginBinding()' $context
+            if($begin.ok -or $begin.error -cne 'ACCOUNT_PROFILE_AMBIGUOUS'){break}
+            Start-Sleep -Milliseconds 250
+        }while(([DateTime]::UtcNow-$started).TotalSeconds -lt 10)
         $began=$true
-        if(-not $begin.ok){return $begin}
+        if(-not $begin.ok){
+            if($begin.error -ceq 'ACCOUNT_PROFILE_AMBIGUOUS'){return @{ok=$false;error="ACCOUNT_PROFILE_AMBIGUOUS（等待 10 秒後帳號頭像仍為 $($begin.profileCount) 個；0 個通常是頁面未載入完成或登入已失效）";profileCount=$begin.profileCount}}
+            return $begin
+        }
+        $bindStarted=[DateTime]::UtcNow
         $last=$null
         do {
             $elapsed=[int]([DateTime]::UtcNow-$started).TotalMilliseconds
@@ -238,7 +263,7 @@ function Get-E3SelfBinding([int]$context,[switch]$AllowGroup) {
             $last=Invoke-E3Js "E3Cdp.bind($allow)" $context
             if($last.ok){return $last}
             Start-Sleep -Milliseconds 150
-        }while(([DateTime]::UtcNow-$started).TotalSeconds -lt 10)
+        }while(([DateTime]::UtcNow-$bindStarted).TotalSeconds -lt 10)
         return $last
     } finally {
         if($began){try{Invoke-E3Js 'E3Cdp.endBinding()' $context|Out-Null}catch{}}
@@ -317,25 +342,81 @@ function Request-E3ProfileRestart([string]$profile) {
     do {if(-not @(Get-E3ProfileEdgeProcesses $profile).Count){return $true};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $until)
     throw '專用 Edge 仍被占用，未啟動另一個瀏覽器；請檢查程序權限或稍後再試'
 }
-function Wait-E3DevToolsEndpoint([string]$portFile,[int]$TimeoutMs=30000) {
-    $until=[DateTime]::UtcNow.AddMilliseconds($TimeoutMs);$last='尚未產生連線檔案'
+function Get-E3StartupLocalJson([string]$url,[ValidateRange(1,60000)][int]$TimeoutMs) {
+    # One deadline covers both HTTP headers and body. Used only while finding a
+    # browser endpoint; ordinary polling/sending keeps Get-E3LocalJson unchanged.
+    $timer=[Diagnostics.Stopwatch]::StartNew();$response=$null;$reader=$null
+    $request=[Net.HttpWebRequest]::Create($url);$request.Proxy=$null
+    $request.Timeout=$TimeoutMs;$request.ReadWriteTimeout=$TimeoutMs
+    try {
+        $pending=$request.GetResponseAsync()
+        if(-not $pending.Wait($TimeoutMs)){throw [TimeoutException]::new('本機 Edge HTTP 回應標頭逾時')}
+        $response=$pending.GetAwaiter().GetResult()
+        $remaining=$TimeoutMs-[int]$timer.ElapsedMilliseconds
+        if($remaining -le 0){throw [TimeoutException]::new('本機 Edge HTTP 回應逾時')}
+        $reader=[IO.StreamReader]::new($response.GetResponseStream())
+        $body=$reader.ReadToEndAsync()
+        if(-not $body.Wait($remaining)){throw [TimeoutException]::new('本機 Edge HTTP 回應內容逾時')}
+        return ($body.GetAwaiter().GetResult()|ConvertFrom-Json)
+    } finally {
+        $request.Abort()
+        if($reader){$reader.Dispose()}
+        if($response){$response.Dispose()}
+        $timer.Stop()
+    }
+}
+function Wait-E3DevToolsEndpoint([string]$portFile,[ValidateRange(1,60000)][int]$TimeoutMs=30000,[ValidateRange(1,60000)][int]$RequestTimeoutMs=1500,[hashtable]$Diagnostics) {
+    $timer=[Diagnostics.Stopwatch]::StartNew();$last='尚未產生連線檔案'
+    if($null -eq $Diagnostics){$Diagnostics=@{}}
+    $Diagnostics.timeoutMs=$TimeoutMs;$Diagnostics.requestTimeoutMs=$RequestTimeoutMs
+    $Diagnostics.attempts=0;$Diagnostics.stage='port_file';$Diagnostics.ready=$false
+    $Diagnostics.errors=@{};$Diagnostics.observations=@()
+    try {
     do {
         $stream=$null;$reader=$null
+        $Diagnostics.attempts++;$attemptAt=$timer.ElapsedMilliseconds
+        $Diagnostics.stage='port_file'
         try {
             $stream=[IO.File]::Open($portFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
             $reader=[IO.StreamReader]::new($stream);$portText=$reader.ReadLine();$browserPath=$reader.ReadLine()
             $reader.Dispose();$reader=$null;$stream=$null
             $port=0
             if(-not [int]::TryParse($portText,[ref]$port) -or $port -lt 1 -or $port -gt 65535 -or $browserPath -notmatch '^/devtools/browser/[a-zA-Z0-9-]+$'){throw '連線檔案尚未寫入完整'}
-            $version=Get-E3LocalJson "http://127.0.0.1:$port/json/version"
+            $Diagnostics.stage='http_version'
+            $remaining=$TimeoutMs-[int]$timer.ElapsedMilliseconds
+            if($remaining -le 0){throw [TimeoutException]::new('Edge 啟動等待時間已用完')}
+            $version=Get-E3StartupLocalJson "http://127.0.0.1:$port/json/version" ([Math]::Min($RequestTimeoutMs,$remaining))
+            $Diagnostics.stage='endpoint_identity'
             $uri=[Uri]$version.webSocketDebuggerUrl
             if($uri.Scheme -ne 'ws' -or $uri.Host -notin @('127.0.0.1','localhost') -or $uri.Port -ne $port -or $uri.AbsolutePath -cne $browserPath){throw '瀏覽器連線資訊尚未一致'}
+            $Diagnostics.ready=$true;$Diagnostics.stage='ready'
             return @{port=$port;version=$version}
-        } catch {$last=$_.Exception.Message}
+        } catch {
+            $last=$_.Exception.Message
+            $kind=[string]$Diagnostics.stage
+            $Diagnostics.errors[$kind]=1+[int]$Diagnostics.errors[$kind]
+            # Fixed stage/type summaries only: never log the HTTP body or browser URL.
+            $cause=$_.Exception;$webStatus=$null
+            while($cause){
+                if($cause -is [Net.WebException]){$webStatus=[string]$cause.Status}
+                if(-not $cause.InnerException){break}
+                $cause=$cause.InnerException
+            }
+            $observation=@{attempt=$Diagnostics.attempts;stage=$kind;elapsedMs=$timer.ElapsedMilliseconds;durationMs=($timer.ElapsedMilliseconds-$attemptAt);exceptionType=$cause.GetType().Name;webStatus=$webStatus}
+            $Diagnostics.lastFailure=$observation
+            if($Diagnostics.observations.Count -lt 32){$Diagnostics.observations+=@($observation)}
+        }
         finally {if($reader){$reader.Dispose()}elseif($stream){$stream.Dispose()}}
-        Start-Sleep -Milliseconds 100
-    }while([DateTime]::UtcNow -lt $until)
+        $remaining=$TimeoutMs-[int]$timer.ElapsedMilliseconds
+        if($remaining -gt 0){Start-Sleep -Milliseconds ([Math]::Min(100,$remaining))}
+    }while($timer.ElapsedMilliseconds -lt $TimeoutMs)
     throw "等待 Edge 連線就緒逾時：$last"
+    } finally {$timer.Stop();$Diagnostics.elapsedMs=$timer.ElapsedMilliseconds}
+}
+function Save-E3BrowserStartupDiagnostic([string]$path,[hashtable]$diagnostic) {
+    # Logging must never turn a working browser into a failed startup.
+    try{Save-E3CdpState $path $diagnostic;return $true}
+    catch{Write-Warning ('Edge 啟動診斷暫時無法寫入：'+$_.Exception.Message);return $false}
 }
 function Reset-E3HeadlessBrowserForNewDelivery {
     # Called only after the sender owns E3TeamsCdpShared. Never close interactive setup/day-to-day Edge.
@@ -383,6 +464,9 @@ function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$Interac
         $stderrLog=Join-Path $diagnostics ($logId+'.stderr.log')
         $stdoutLog=Join-Path $diagnostics ($logId+'.stdout.log')
     }
+    $startupPath=Join-Path $script:E3CdpLogRoot ([DateTime]::Now.ToString('yyyy-MM-dd')+'\startup_edge_'+[guid]::NewGuid().ToString('N')+'.json')
+    $startup=@{version='edge-startup1';utc=[DateTime]::UtcNow.ToString('o');headless=[bool]$Headless;stage='launch_process';ok=$false;timings=@{};endpoint=@{};processId=$null;processExited=$null;exitCode=$null;pasteAttempted=$false;sendAttempted=$false;edgeStderr=$stderrLog}
+    $startupTimer=[Diagnostics.Stopwatch]::StartNew();$stageTimer=[Diagnostics.Stopwatch]::StartNew()
     $process=$null;$ver=$null
     try {
     if($rawDiagnostics){
@@ -400,16 +484,35 @@ function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$Interac
         $process.BeginOutputReadLine()
         $process.BeginErrorReadLine()
     }
-    $ready=Wait-E3DevToolsEndpoint $portFile
+    $startup.processId=$process.Id
+    $startup.timings.launch_process=$stageTimer.ElapsedMilliseconds;$stageTimer.Restart()
+    $startup.stage='wait_endpoint'
+    $ready=Wait-E3DevToolsEndpoint $portFile -TimeoutMs 60000 -RequestTimeoutMs 5000 -Diagnostics $startup.endpoint
     $port=$ready.port;$ver=$ready.version
-    $targets=@(Get-E3LocalJson "http://127.0.0.1:$port/json/list"|ForEach-Object{$_})
+    $startup.timings.wait_endpoint=$stageTimer.ElapsedMilliseconds;$stageTimer.Restart()
+    $startup.stage='list_targets'
+    $targets=@(Get-E3StartupLocalJson "http://127.0.0.1:$port/json/list" 5000|ForEach-Object{$_})
     $target=$targets|Where-Object{$_.type -eq 'page' -and $_.url -eq 'about:blank'}|Select-Object -First 1
     if(-not $target){throw '找不到空白分頁'}
-    Connect-E3Cdp $target.webSocketDebuggerUrl
-    Invoke-E3Cdp 'Page.enable'|Out-Null
-    return @{port=$port;targetId=$target.id;browserUrl=$ver.webSocketDebuggerUrl;process=$process;profile=$fullProfile;version=$ver.Browser;stderrLog=$stderrLog;stdoutLog=$stdoutLog;restartedProfile=$restartedProfile}
+    $startup.timings.list_targets=$stageTimer.ElapsedMilliseconds;$stageTimer.Restart()
+    $startup.stage='connect_cdp'
+    # The first about:blank Page.enable can time out just like the later Teams
+    # page setup. Use the same bounded, identity-checked recovery here too.
+    $null=Connect-E3CdpPageContext @{port=$port;browserUrl=$ver.webSocketDebuggerUrl} @{targetId=$target.id} -InitialBlank
+    $startup.timings.connect_cdp=$stageTimer.ElapsedMilliseconds
+    $startup.ok=$true;$startup.stage='ready';$startup.elapsedMs=$startupTimer.ElapsedMilliseconds
+    try{$startup.processExited=$process.HasExited;if($startup.processExited){$startup.exitCode=$process.ExitCode}}catch{}
+    $saved=Save-E3BrowserStartupDiagnostic $startupPath $startup
+    return @{port=$port;targetId=$target.id;browserUrl=$ver.webSocketDebuggerUrl;process=$process;profile=$fullProfile;version=$ver.Browser;stderrLog=$stderrLog;stdoutLog=$stdoutLog;restartedProfile=$restartedProfile;startupDiagnostic=$(if($saved){$startupPath}else{$null})}
     } catch {
         $reason=$_.Exception.Message
+        $startup.timings[$startup.stage]=$stageTimer.ElapsedMilliseconds
+        $startup.elapsedMs=$startupTimer.ElapsedMilliseconds
+        $startup.exceptionType=$_.Exception.GetType().Name
+        # Observe BEFORE cleanup, otherwise our own Kill would look like an Edge crash.
+        if($process){try{$startup.processExited=$process.HasExited;if($startup.processExited){$startup.exitCode=$process.ExitCode}}catch{}}
+        $saved=Save-E3BrowserStartupDiagnostic $startupPath $startup
+        $detail=if($saved){'；啟動診斷：'+$startupPath}else{'；啟動診斷無法寫入'}
         # Startup failed before any website navigation/paste. Clean up only this newly launched process.
         if($ver -and $ver.webSocketDebuggerUrl){try{Connect-E3Cdp $ver.webSocketDebuggerUrl;Invoke-E3Cdp 'Browser.close'|Out-Null}catch{}}
         if($process){
@@ -417,9 +520,9 @@ function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$Interac
             $process.Dispose()
         }
         if($script:CdpSocket){$script:CdpSocket.Dispose();$script:CdpSocket=$null}
-        if($rawDiagnostics){throw "專用 Edge 啟動失敗：$reason；Edge 診斷目錄：$diagnostics"}
-        throw "專用 Edge 啟動失敗：$reason（Edge 原始輸出未記錄）"
-    }
+        if($rawDiagnostics){throw "專用 Edge 啟動失敗：$reason$detail；Edge 原始診斷目錄：$diagnostics"}
+        throw "專用 Edge 啟動失敗：$reason$detail（Edge 原始輸出未記錄）"
+    } finally {$startupTimer.Stop();$stageTimer.Stop()}
 }
 function Initialize-E3DesktopProbe {
     if('E3CdpDesktop' -as [type]){return}
@@ -468,57 +571,9 @@ function Assert-E3CdpNotBlocked($target) {
     $path=Get-E3CdpBlockPath $target
     if(Test-Path -LiteralPath $path){throw "此收件對象有舊工作紀錄。連線檢查不解除紀錄；再次傳給自己或執行正式新工作時，會先確認舊工作已停止、對話正確且無草稿或傳送中訊息，通過即可執行本次內容。紀錄：$path"}
 }
-function Set-E3CdpPending($target,[string]$id,[string]$receipt) {
-    Save-E3CdpState (Get-E3CdpBlockPath $target) @{id=$id;receipt=$receipt;utc=[DateTime]::UtcNow.ToString('o');reason='delivery_started_not_yet_confirmed';endpoint=$script:CdpEndpoint}
-}
 function Clear-E3CdpPending($target) {
     $path=Get-E3CdpBlockPath $target
     if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -ErrorAction Stop}
-}
-# Called under the shared send mutex, after connection; readiness checks never release blocks.
-function Resume-E3CdpPendingForNewDelivery($target,[int]$context,[string]$nextId,$ownedBrowser=$null) {
-    $path=Get-E3CdpBlockPath $target
-    if(-not(Test-Path -LiteralPath $path)){return}
-    $original=[IO.File]::ReadAllText($path)
-    try{$pending=$original|ConvertFrom-Json -ErrorAction Stop}catch{throw '舊工作紀錄無法讀取，保留阻擋；請人工核對，本次未送出'}
-    if($pending.id -notmatch '^[a-f0-9]{32}$' -or $nextId -notmatch '^[a-f0-9]{32}$' -or $nextId -ceq $pending.id){throw '舊／新工作識別不完整或相同，保留阻擋；不重送舊工作'}
-    $actual=Get-E3SelfBinding $context -AllowGroup
-    if(-not $actual.ok){throw '無法核對目前 Teams 帳號與聊天室，保留舊工作阻擋'}
-    foreach($key in @('accountId','chatId','label')){if($actual.binding.$key -cne $target.binding.$key){throw "Teams $key 不符，保留舊工作阻擋，本次未送出"}}
-    $status=Invoke-E3Js 'E3Cdp.recover()' $context
-    if($status -and $status.stage -notin @('idle','finished') -and $status.cancelled){
-        $until=[DateTime]::UtcNow.AddSeconds(3)
-        do{Start-Sleep -Milliseconds 100;$status=Invoke-E3Js 'E3Cdp.recover()' $context}while($status.stage -ne 'finished' -and [DateTime]::UtcNow -lt $until)
-    }
-    if(-not $status -or $status.stage -notin @('idle','finished')){throw '上一筆 CDP 工作仍在執行或無法確認已停止；保留阻擋，本次未貼圖、未送出'}
-    if($status.stage -eq 'finished' -and (-not $status.id -or -not $status.result)){throw '上一筆 CDP 結束證據不完整，保留阻擋'}
-    $receipt=$null
-    if($pending.receipt){try{$receipt=[IO.File]::ReadAllText([string]$pending.receipt)|ConvertFrom-Json -ErrorAction Stop}catch{}}
-    if($receipt -and $receipt.id -cne $pending.id){throw '舊收據與工作 ID 不符，保留阻擋，請人工核對'}
-    $receiptStopped=$receipt -and (($receipt.stage -eq 'finished' -and $receipt.result) -or ($receipt.stage -eq 'cleanup' -and $receipt.previous.stage -eq 'finished' -and $receipt.previous.id -ceq $pending.id -and $receipt.previous.result))
-    $liveStopped=$status.stage -eq 'finished' -and $status.id -ceq $pending.id
-    $samePageIdle=$status.stage -eq 'idle' -and $pending.endpoint -and $pending.endpoint -ceq $script:CdpEndpoint
-    # A fresh owned browser starts only after proving no process owns this exact profile.
-    $freshProfile=$ownedBrowser -and $ownedBrowser.profile -and [IO.Path]::GetFullPath($ownedBrowser.profile) -ieq [IO.Path]::GetFullPath((Join-Path (Get-E3CdpStateRoot) 'profile'))
-    if(-not ($receiptStopped -or $liveStopped -or $samePageIdle -or $freshProfile)){throw '無法證明舊工作已停止（可能是其他分頁）；保留阻擋，請人工核對'}
-    $bindingJson=ConvertTo-Json -InputObject $target.binding -Depth 8 -Compress
-    $check=(Get-E3CdpRuntimeSource 'resume-check.js').Replace('/*E3_BINDING*/null',$bindingJson)
-    $proof=Invoke-E3Js $check $context
-    if(-not $proof -or -not $proof.ok){throw '聊天室或傳送中訊息狀態無法核對，保留舊工作阻擋'}
-    if($proof.pendingRows -ne 0){throw 'Teams 還有傳送中／等待中的訊息，保留舊工作阻擋；不自動取消或重送'}
-    Assert-E3CdpComposerEmpty $context
-    $evidence=if($liveStopped){'runtime_finished'}elseif($receiptStopped){'saved_terminal_receipt'}elseif($samePageIdle){'original_page_idle'}else{'fresh_exclusive_profile'}
-    $reviewRoot=Join-Path (Get-E3CdpRecordRoot) 'review'
-    $stem=$pending.id+'_'+[guid]::NewGuid().ToString('N')
-    $review=Join-Path $reviewRoot ($stem+'.review.json')
-    $archived=Join-Path $reviewRoot ($stem+'.pending.json')
-    $reviewState=if($receipt.result.outcome -eq 'sent' -and $receipt.serverReceipt.ok){'previous_delivery_confirmed'}else{'pending_manual_review'}
-    Save-E3CdpState $review @{version='pending2';state=$reviewState;decision='eligible_for_new_delivery';oldWorkRetried=$false;nextDeliveryId=$nextId;target=$target.route;binding=$target.binding;previousPending=$pending;previousReceipt=$receipt;previousRuntime=$status;stopEvidence=$evidence;pendingRows=$proof.pendingRows;composerEmpty=$true;utc=[DateTime]::UtcNow.ToString('o')}
-    # Preserve original bytes. Any write/move failure leaves the block and stops the new send.
-    if([IO.File]::ReadAllText($path) -cne $original){throw '舊工作紀錄已變更，停止解除阻擋，請重新檢查'}
-    [IO.File]::Move($path,$archived)
-    Write-Host "⚠️ 舊工作 $($pending.id) 已停止，已保留原結果與檢查紀錄：$review" -ForegroundColor Yellow
-    Write-Host '  不補送舊內容；帳號、聊天室、空白輸入框及無傳送中訊息已核對，接續本次新工作。' -ForegroundColor Yellow
 }
 function Assert-E3CdpComposerEmpty([int]$context) {
     $d=Invoke-E3Js 'BridgeAdapter.diagnostics(document,location.href,true).deliveryEvidence' $context
@@ -579,19 +634,6 @@ function Clear-E3HeadlessDraftForNewDelivery($target,[int]$context,$ownedBrowser
         Start-Sleep -Milliseconds 250
     }while([DateTime]::UtcNow -lt $until)
     throw '清除舊草稿逾時，未確認輸入區完全清空；本次未貼圖、未送出'
-}
-function Retire-E3HeadlessPending($target,[string]$nextId,$discardProof) {
-    if($nextId -notmatch '^[a-f0-9]{32}$' -or -not $discardProof.composerEmpty -or $discardProof.oldRuntime.stage -notin @('idle','finished')){throw '缺少舊工作停止與草稿清除證據'}
-    $path=Get-E3CdpBlockPath $target
-    if(-not(Test-Path -LiteralPath $path)){return}
-    $original=[IO.File]::ReadAllBytes($path)
-    $reviewRoot=Join-Path (Get-E3CdpRecordRoot) 'review'
-    $stem='discard_'+[guid]::NewGuid().ToString('N')
-    $review=Join-Path $reviewRoot ($stem+'.review.json')
-    Save-E3CdpState $review @{version='discard1';decision='user_requested_new_content';nextDeliveryId=$nextId;oldWorkRetried=$false;previousOutcome='not_reclassified';binding=$target.binding;cleanup=$discardProof;utc=[DateTime]::UtcNow.ToString('o')}
-    if([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -cne [Convert]::ToBase64String($original)){throw '舊工作紀錄被其他程序修改，停止本次傳送'}
-    [IO.File]::Move($path,(Join-Path $reviewRoot ($stem+'.pending.json')))
-    Write-Host '🧹 舊工作紀錄已封存，不補送、不把不確定結果改成成功；接續本次選定內容。' -ForegroundColor Gray
 }
 function Close-E3OwnedBrowser($browser) {
     if(-not $browser){return}
@@ -844,9 +886,10 @@ function Stop-E3PriorPreparation([int]$context) {
     if($state.id){$id=$state.id|ConvertTo-Json -Compress;Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('stop',$id)"|Out-Null}
 }
 function Update-E3CdpReceiptRuntime([int]$context) {
-    # Upgrade the compatible receipttext1 runtime without refreshing the Teams tab.
+    # Upgrade the compatible idle runtime and adapter without refreshing the Teams tab.
     # Check and replace in one JS evaluation; never replace an in-flight delivery.
     $receiptSource=Get-E3CdpRuntimeSource 'receipt.js'
+    $adapterSource=Get-E3CdpRuntimeSource 'vendor\adapter.js'
     $runtimeSource=Get-E3CdpRuntimeSource 'runtime.js'
     $version=[regex]::Match($runtimeSource,"version:'([^']+)'").Groups[1].Value
     if(-not $version){throw 'CDP runtime version missing'}
@@ -855,8 +898,9 @@ function Update-E3CdpReceiptRuntime([int]$context) {
 (() => {
 const current=globalThis.E3Cdp;
 if(current?.version===$expected)return {updated:false,version:current.version};
-if(current?.version!=='2026-11-11-receipttext1')throw Error('CDP_RUNTIME_REFRESH_REQUIRED');
+if(!['2026-11-11-receipttext1','2026-11-10-receiptbreak1'].includes(current?.version))throw Error('CDP_RUNTIME_REFRESH_REQUIRED');
 if(!['idle','finished'].includes(current.status()?.stage))throw Error('DELIVERY_STILL_ACTIVE');
+$adapterSource
 $receiptSource
 delete globalThis.E3Cdp;
 $runtimeSource
@@ -874,20 +918,82 @@ return {updated:true,version:globalThis.E3Cdp.version};
     if($result.version -cne $version){throw 'CDP runtime update verification failed'}
     if($result.updated){Write-Host "CDP 已載入更新：$version" -ForegroundColor Cyan}
 }
+function Get-E3CdpSetupTimeout($timer,[int]$totalMs,[int]$stepMs=20000) {
+    $remaining=$totalMs-[int]$timer.ElapsedMilliseconds
+    if($remaining -lt 250){throw 'CDP_SETUP_DEADLINE：送出前分頁初始化已達總等待上限'}
+    return [Math]::Min($stepMs,$remaining)
+}
+function Connect-E3CdpPageContext($session,$target,[ValidateRange(250,60000)][int]$TimeoutMs=60000,[switch]$InitialBlank) {
+    # This retry boundary contains ONLY endpoint checks, idempotent page setup,
+    # and a read-only runtime probe. Never wrap injection, cancellation or delivery.
+    if($script:E3SendNetwork){throw 'CDP_SETUP_RECOVERY_FORBIDDEN：傳送階段禁止重新初始化分頁'}
+    $expected=[Uri]$session.browserUrl
+    if($expected.Scheme -ne 'ws' -or $expected.Host -notin @('127.0.0.1','localhost') -or $expected.UserInfo -or $expected.Port -ne [int]$session.port -or $expected.AbsolutePath -notmatch '^/devtools/browser/[a-zA-Z0-9-]+$'){
+        throw '無法確認原專用 Edge 的連線識別，未連接'
+    }
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    $path=Join-Path $script:E3CdpLogRoot ([DateTime]::Now.ToString('yyyy-MM-dd')+'\connect_'+[guid]::NewGuid().ToString('N')+'.json')
+    $diagnostic=@{version='connect1';utc=[DateTime]::UtcNow.ToString('o');initialBlank=[bool]$InitialBlank;ok=$false;stage='browser_identity';attempts=0;recoveries=0;timeoutMs=$TimeoutMs;events=@();pasteAttempted=$false;sendAttempted=$false}
+    try {
+        for($attempt=1;$attempt -le 3;$attempt++){
+            $diagnostic.attempts=$attempt;$script:E3CdpLastCommand=$null
+            try {
+                if($script:E3SendNetwork){throw 'CDP_SETUP_RECOVERY_FORBIDDEN：傳送階段禁止重新初始化分頁'}
+                $diagnostic.stage='browser_identity'
+                $version=Get-E3StartupLocalJson "http://127.0.0.1:$($session.port)/json/version" (Get-E3CdpSetupTimeout $timer $TimeoutMs 5000)
+                $actual=[Uri]$version.webSocketDebuggerUrl
+                if($actual.Scheme -ne 'ws' -or $actual.Host -notin @('127.0.0.1','localhost') -or $actual.UserInfo -or $actual.Port -ne $expected.Port -or $actual.AbsolutePath -cne $expected.AbsolutePath){throw '原專用 Edge 識別已變更；不連接其他瀏覽器'}
+                $diagnostic.stage='list_targets'
+                $tabs=@(Get-E3StartupLocalJson "http://127.0.0.1:$($session.port)/json/list" (Get-E3CdpSetupTimeout $timer $TimeoutMs 5000)|ForEach-Object{$_})
+                $matches=@($tabs|Where-Object{$_.id -ceq $target.targetId -and $_.type -eq 'page'})
+                if($matches.Count -ne 1){throw '原專用分頁不存在或識別不唯一；不改用其他分頁'}
+                $tab=$matches[0];$wsUri=[Uri]$tab.webSocketDebuggerUrl
+                $expectedPage=if($InitialBlank){$tab.url -ceq 'about:blank'}else{Test-E3TeamsPage $tab.url}
+                if(-not $expectedPage -or $wsUri.Scheme -ne 'ws' -or $wsUri.Host -notin @('127.0.0.1','localhost') -or $wsUri.UserInfo -or $wsUri.Port -ne $expected.Port -or $wsUri.AbsolutePath -cne ('/devtools/page/'+$target.targetId)){
+                    throw '專用分頁已離開預期頁面或連線識別不符；請檢查啟動狀態、登入與綁定'
+                }
+                $diagnostic.stage='connect'
+                Connect-E3Cdp $tab.webSocketDebuggerUrl -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)
+                $diagnostic.stage='page_enable'
+                Invoke-E3Cdp 'Page.enable' -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)|Out-Null
+                $diagnostic.stage='page_active'
+                Invoke-E3Cdp 'Page.setWebLifecycleState' @{state='active'} -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)|Out-Null
+                $diagnostic.stage='focus'
+                Invoke-E3Cdp 'Emulation.setFocusEmulationEnabled' @{enabled=$true} -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)|Out-Null
+                $diagnostic.stage='frame'
+                $frame=(Invoke-E3Cdp 'Page.getFrameTree' -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)).frameTree.frame.id
+                if(-not $frame){throw '無法辨識原分頁的主框架'}
+                $diagnostic.stage='world'
+                $world=Invoke-E3Cdp 'Page.createIsolatedWorld' @{frameId=$frame;worldName='E3ProductionCdp'} -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)
+                $context=[int]$world.executionContextId
+                if($context -le 0){throw '無法建立原分頁的控制環境'}
+                $diagnostic.stage='runtime_probe'
+                $runtime=Invoke-E3Js '({exists:!!globalThis.E3Cdp,version:globalThis.E3Cdp?.version})' $context -TimeoutMs (Get-E3CdpSetupTimeout $timer $TimeoutMs)
+                if($null -eq $runtime){throw '無法讀取原分頁控制環境'}
+                $diagnostic.ok=$true;$diagnostic.stage='ready'
+                return @{context=$context;runtime=$runtime}
+            }catch{
+                $reason=$_.Exception.Message;$cause=$_.Exception;$transient=$false
+                while($cause){
+                    if($cause -is [TimeoutException] -or ($cause -is [Net.WebException] -and $cause.Status -in @([Net.WebExceptionStatus]::Timeout,[Net.WebExceptionStatus]::ConnectFailure,[Net.WebExceptionStatus]::ConnectionClosed))){$transient=$true}
+                    if(-not $cause.InnerException){break};$cause=$cause.InnerException
+                }
+                if($reason -match 'CDP_TIMEOUT|CDP_CONNECT_FAILED|CDP_CLOSED|Execution context was destroyed|Cannot find context|Inspected target navigated'){$transient=$true}
+                $diagnostic.events+=@(@{attempt=$attempt;stage=$diagnostic.stage;elapsedMs=$timer.ElapsedMilliseconds;exceptionType=$cause.GetType().Name;lastCommand=$script:E3CdpLastCommand})
+                if(-not $transient -or $attempt -ge 3 -or $timer.ElapsedMilliseconds -ge ($TimeoutMs-250) -or $script:E3SendNetwork){throw}
+                $diagnostic.recoveries++
+                Write-Host "⚠️ 送出前分頁初始化暫時失敗（$($diagnostic.stage)）；重新核對並連接原分頁 $($diagnostic.recoveries)/2，尚未貼上或送出。" -ForegroundColor Yellow
+                # Connect-E3Cdp will dispose the failed socket and use the freshly
+                # verified endpoint. An Aborted ClientWebSocket is never reused.
+            }
+        }
+    }catch{throw "送出前分頁初始化失敗（$($diagnostic.stage)）：$($_.Exception.Message)；連線診斷：$path"}
+    finally{$timer.Stop();$diagnostic.elapsedMs=$timer.ElapsedMilliseconds;$null=Save-E3BrowserStartupDiagnostic $path $diagnostic}
+}
 function Connect-E3CdpTarget($session,$target,[switch]$PrepareNew) {
-    $tabs=@(Get-E3LocalJson "http://127.0.0.1:$($session.port)/json/list"|ForEach-Object{$_})
-    $matches=@($tabs|Where-Object{$_.id -ceq $target.targetId -and $_.type -eq 'page'})
-    if($matches.Count -ne 1){throw "CDP 專用分頁已關閉：$($target.route)。請重新設定該收件對象"}
-    $tab=$matches[0];$uri=[Uri]$tab.url;$wsUri=[Uri]$tab.webSocketDebuggerUrl
-    if(-not(Test-E3TeamsPage $tab.url) -or $wsUri.Port -ne [int]$session.port){throw '專用分頁不是 Teams 或已離開登入頁；請重新登入並綁定'}
-    Connect-E3Cdp $tab.webSocketDebuggerUrl
-    Invoke-E3Cdp 'Page.enable'|Out-Null
-    Enable-E3CdpBackgroundFocus
-    $frame=(Invoke-E3Cdp 'Page.getFrameTree').frameTree.frame.id
-    $world=Invoke-E3Cdp 'Page.createIsolatedWorld' @{frameId=$frame;worldName='E3ProductionCdp'}
-    $context=[int]$world.executionContextId
-    $runtime=Invoke-E3Js '({exists:!!globalThis.E3Cdp,version:globalThis.E3Cdp?.version})' $context
-    if($runtime.exists -and $runtime.version -notin @('2026-11-05-headless1','2026-11-06-optionaltext1','2026-11-06-receipt2','2026-11-09-preflight1','2026-11-10-preparation1','2026-11-10-captionspace1','2026-11-11-receipttext1','2026-11-10-receiptbreak1')){throw 'Teams 分頁控制程式版本不符。請先核對已送訊息與草稿，再重新整理原分頁並回到綁定對話；不用清除登入資料'}
+    $prepared=Connect-E3CdpPageContext $session $target
+    $context=[int]$prepared.context;$runtime=$prepared.runtime
+    if($runtime.exists -and $runtime.version -notin @('2026-11-05-headless1','2026-11-06-optionaltext1','2026-11-06-receipt2','2026-11-09-preflight1','2026-11-10-preparation1','2026-11-10-captionspace1','2026-11-11-receipttext1','2026-11-10-receiptbreak1','2026-11-12-history1')){throw 'Teams 分頁控制程式版本不符。請先核對已送訊息與草稿，再重新整理原分頁並回到綁定對話；不用清除登入資料'}
     if(-not $runtime.exists){
         foreach($file in @('vendor\adapter.js','vendor\outbound-images.js','receipt.js','runtime.js')) {
             Invoke-E3Js (Get-E3CdpRuntimeSource $file) $context|Out-Null
@@ -974,7 +1080,10 @@ function Test-E3CdpRoutesReady([string[]]$Routes,[bool]$Headless,[switch]$Config
                 $target=Resolve-E3CdpTarget $route -Headless
                 if(-not $ConfigurationOnly){Assert-E3CdpNotBlocked $target}
                 $phase='browser'
-                if(-not $browser){$browser=Open-E3HeadlessBrowser}
+                # A schedule killed by its deadline, or one whose Edge was slow to exit, can leave a
+                # background Edge on this profile. Sending clears it first; the check must too, or it
+                # reports "profile in use" as a login problem. Windowed setup Edge is never closed.
+                if(-not $browser){Reset-E3HeadlessBrowserForNewDelivery;$browser=Open-E3HeadlessBrowser}
                 $phase='chat'
                 $context=Open-E3HeadlessChat $browser $target
                 if(-not $ConfigurationOnly){Assert-E3CdpComposerEmpty $context}
@@ -1235,7 +1344,7 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
             $init=Invoke-E3Js "E3Cdp.start($itemJson,$bindingJson,$payloadJson)" $context
             if(-not $init.ok){throw $init.error};$started=$true
             Write-Host "🌐 CDP 傳送 $targetChatName 第 $($i+1)/$count 批，共 $($batch.Count) 張圖（文字選填；工作 $token；版本 $($activeRuntime.version)；核對 receipt2；診斷 worker1；headless=$headless），不需解鎖" -ForegroundColor Cyan
-            $grant=0;$armed=$false;$lastStage='';$serverUntil=$null;$finalUntil=$null;$finalStableSince=$null;$finalHistory=[Collections.Generic.List[object]]::new();$deadline=[DateTime]::UtcNow.AddSeconds(135);$nextLog=[DateTime]::UtcNow.AddSeconds(20)
+            $grant=0;$armed=$false;$lastStage='';$serverUntil=$null;$finalUntil=$null;$finalStart=$null;$finalExtended=$false;$finalStableSince=$null;$finalStableId=$null;$finalHistory=[Collections.Generic.List[object]]::new();$deadline=[DateTime]::UtcNow.AddSeconds(135);$nextLog=[DateTime]::UtcNow.AddSeconds(20)
             $model=(Get-E3CdpRuntimeSource 'model-ready.js').Replace('/*E3_IMAGE_COUNT*/1',[string]$batch.Count)
             while([DateTime]::UtcNow -lt $deadline){
                 Assert-E3WorkNotCancelled
@@ -1254,18 +1363,29 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
                     }
                     if($status.result.outcome -eq 'sent' -and $serverProof.ok){
                         # Reconcile only this message after server acknowledgement. Never click/paste again.
-                        if(-not $finalUntil){$finalUntil=[DateTime]::UtcNow.AddSeconds(12);Write-Host '  伺服器已回應，等待圖片與訊息畫面穩定核對…' -ForegroundColor Yellow}
+                        if(-not $finalUntil){$finalStart=[DateTime]::UtcNow;$finalUntil=$finalStart.AddSeconds(12);Write-Host '  伺服器已回應，等待圖片與訊息畫面穩定核對…' -ForegroundColor Yellow}
                         $freshProof=Invoke-E3Js 'E3Receipt.inspect()' $context
                         $status.receipt=Invoke-E3Js 'E3Receipt.diagnostics()' $context
                         $now=[DateTime]::UtcNow
-                        if($finalHistory.Count -lt 32 -and ($finalHistory.Count -eq 0 -or $finalHistory[$finalHistory.Count-1].reason -cne $status.receipt.reason)){
-                            $finalHistory.Add(@{utc=$now.ToString('o');reason=$status.receipt.reason;images=$status.receipt.images})
+                        # Teams may first show a sent message under its client ID and re-render it
+                        # under the server ID. Both IDs come from the one matched POST, so either is
+                        # the same message; any other ID is still a different row (uncertain).
+                        $sameIds=@(@([string]$status.result.messageId,[string]$serverProof.serverId,[string]$serverProof.clientId)|Where-Object{$_})
+                        $freshId=if($freshProof){[string]$freshProof.messageId}else{''}
+                        $idRelation=if(-not $freshId){'none'}elseif($freshId -ceq [string]$status.result.messageId){'same'}elseif($freshId -ceq [string]$serverProof.serverId){'server_id'}elseif($serverProof.clientId -and $freshId -ceq [string]$serverProof.clientId){'client_id'}else{'other'}
+                        if($finalHistory.Count -lt 32 -and ($finalHistory.Count -eq 0 -or $finalHistory[$finalHistory.Count-1].reason -cne $status.receipt.reason -or $finalHistory[$finalHistory.Count-1].idRelation -cne $idRelation)){
+                            $finalHistory.Add(@{utc=$now.ToString('o');reason=$status.receipt.reason;idRelation=$idRelation;images=$status.receipt.images})
                         }
-                        $sameMessage=$freshProof -and $freshProof.messageId -ceq $status.result.messageId
-                        if($sameMessage){if(-not $finalStableSince){$finalStableSince=$now}}else{$finalStableSince=$null}
+                        $sameMessage=$freshId -and ($sameIds -ccontains $freshId)
+                        if($sameMessage){if(-not $finalStableSince -or $finalStableId -cne $freshId){$finalStableSince=$now;$finalStableId=$freshId}}else{$finalStableSince=$null;$finalStableId=$null}
                         $stable=$sameMessage -and ($now-$finalStableSince).TotalMilliseconds -ge 1500
                         $terminal=$status.receipt.reason -in @('binding_changed','message_failed') -or ($freshProof -and -not $sameMessage)
-                        if(-not $stable -and -not $terminal -and $now -lt $finalUntil -and $now -lt $deadline.AddSeconds(-1)){
+                        # The server already accepted this message; attachment previews in a background
+                        # tab can take longer than 12 s to load or to replace a temporary preview.
+                        # Wait up to 45 s for image evidence only. Nothing is pasted or sent again.
+                        if($status.receipt.reason -in @('image_count_or_loading_mismatch','image_shape_mismatch')){$finalExtended=$true}
+                        $finalLimit=if($finalExtended){$finalStart.AddSeconds(45)}else{$finalUntil}
+                        if(-not $stable -and -not $terminal -and $now -lt $finalLimit -and $now -lt $deadline.AddSeconds(-1)){
                             Start-Sleep -Milliseconds 200
                             continue
                         }
@@ -1276,7 +1396,7 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
                     if($status.result.outcome -eq 'uncertain' -and $status.receipt.reason -eq 'message_text_mismatch'){
                         $status.result.error=if($serverProof.serverAcceptanceObserved){'Teams 伺服器已接受訊息，但送出後文字核對不符；可能已送達，請查看收件內容，不自動重送'}else{'已按送出，但送出後文字核對不符；請查看收件內容，不自動重送'}
                     }
-                    Save-E3CdpState $path @{id=$token;target=$targetChatName;stage='finished';runtime=$activeRuntime.version;verification='2026-11-06-receipt2';finalReceiptHistory=@($finalHistory.ToArray());diagnostics='worker1';workerObserver=(Get-E3WorkerSummary);desktopAtStart=$desktopAtStart;desktopBeforeClick=$desktopBeforeClick;headless=$headless;imageCount=$batch.Count;result=$status.result;receipt=$status.receipt;serverReceipt=$serverProof;network=(Get-E3NetworkSummary);preparationCleanup=$discard;editor=$status.editor;preSend=$status.preSend;imageObservations=$status.imageObservations;modelReady=$status.modelReady;focus=$status.focus;visibility=$status.visibility;desktop=[E3CdpDesktop]::State();utc=[DateTime]::UtcNow.ToString('o')}
+                    Save-E3CdpState $path @{id=$token;target=$targetChatName;stage='finished';runtime=$activeRuntime.version;verification='2026-11-06-receipt2';finalReceiptHistory=@($finalHistory.ToArray());diagnostics='worker1';workerObserver=(Get-E3WorkerSummary);desktopAtStart=$desktopAtStart;desktopBeforeClick=$desktopBeforeClick;headless=$headless;imageCount=$batch.Count;result=$status.result;receipt=$status.receipt;serverReceipt=$serverProof;network=(Get-E3NetworkSummary);preparationCleanup=$discard;editor=$status.editor;preSend=$status.preSend;history=$status.history;imageObservations=$status.imageObservations;modelReady=$status.modelReady;focus=$status.focus;visibility=$status.visibility;desktop=[E3CdpDesktop]::State();utc=[DateTime]::UtcNow.ToString('o')}
                     $finished=$true
                     if($status.result.outcome -eq 'not_sent' -and -not $status.clicked -and $status.receipt.reason -in @('not_armed','not_clicked')){
                         # This attempt provably never clicked Send. Remove its partial draft,
@@ -1308,7 +1428,10 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
                 Start-Sleep -Milliseconds 100
             }
             if(-not $finished){throw 'CDP 逾時、結果不明；請檢查 Teams，停止後續圖片且不重送'}
-            Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('stop','$token')"|Out-Null
+            # The receipt already proved this batch. A best-effort probe cleanup
+            # cannot reclassify it as failed or trigger a resend.
+            try{Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('stop','$token')"|Out-Null}
+            catch{Write-Warning ('本批訊息已確認送達，但圖片輔助程序清理失敗：'+$_.Exception.Message)}
         }
     }finally{
         if($context -and $started -and -not $finished){
@@ -1316,7 +1439,13 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
                 $stopped=Stop-E3CdpDelivery $context $token
                 Save-E3CdpState $path @{id=$token;target=$targetChatName;stage='cleanup';previous=$stopped;outcome='uncertain';network=(Get-E3NetworkSummary);utc=[DateTime]::UtcNow.ToString('o')}
                 if($stopped.stage -ne 'finished'){Write-Host '⚠️ 本次傳送尚未確認停止；後續新工作會核對瀏覽器即時狀態，避免同時操作。' -ForegroundColor Yellow}
-            } catch {Write-Host "⚠️ CDP 清理未完成：$($_.Exception.Message)；請先核對 Teams，不要直接重跑" -ForegroundColor Yellow}
+            } catch {
+                $cleanupReason=$_.Exception.Message
+                # The original checkpoint stays intact when the broken socket
+                # also prevents cancellation. Preserve the failure beside it.
+                try{Save-E3CdpState ($path+'.interrupted.json') @{version='interrupted1';id=$token;outcome='uncertain';error=$cleanupReason;lastCommand=$script:E3CdpLastCommand;network=(Get-E3NetworkSummary);utc=[DateTime]::UtcNow.ToString('o')}}catch{}
+                Write-Host "⚠️ CDP 清理未完成：$cleanupReason；請先核對 Teams，不要直接重跑" -ForegroundColor Yellow
+            }
         }
         if($token){try{Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('stop','$token')"|Out-Null}catch{}}
         Disable-E3CdpBackgroundFocus
@@ -1578,7 +1707,7 @@ function sameBinding(actual, expected) {
       const nodes = [...doc.querySelectorAll(selector)];
       return [name, {count: nodes.length, attributeNames: [...new Set(nodes.flatMap((node) => node.getAttributeNames()))].sort()}];
     }));
-    report.versions = {adapter: '1.0.36'};
+    report.versions = {adapter: '1.0.37'};
     report.accountVerification = accountEvidence(doc);
     const safeTid = (node) => {
       const value = node?.getAttribute('data-tid') || '';
@@ -1702,14 +1831,35 @@ function sameBinding(actual, expected) {
     return report;
   }
  
-  function readRows(root) {
+  function readRows(root, delivery = false) {
     const messages = [];
     const ids = new Set();
+    const opaqueIds = [];
+    const history = {rows:0, readable:0, opaque:0, reasons:{}};
+    const reject = (code, error) => {
+      history.reasons[code] = (history.reasons[code] || 0) + 1;
+      return {...fail(error), history};
+    };
+    const opaque = (id, code, error) => {
+      if (!delivery) return reject(code, error);
+      opaqueIds.push(id); history.opaque++;
+      history.reasons[code] = (history.reasons[code] || 0) + 1;
+      return null;
+    };
     for (const row of root.querySelectorAll(rowSelector)) {
       if (row.parentElement?.closest(rowSelector)) continue;
+      history.rows++;
       const id = row.getAttribute('data-message-id') || row.getAttribute('data-mid') || row.id;
+      // Even non-message cards must have an unambiguous ID. Keep every old ID in
+      // the delivery exclusion set; never silently turn unreadable history into new output.
+      if (!id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id)) return reject('invalid_id', 'message id 缺少或格式無效；已暫停擷取');
+      if (ids.has(id)) return reject('duplicate_id', '訊息識別重複；已暫停擷取');
+      ids.add(id);
       const bodies = [...row.querySelectorAll(bodySelector)].filter((node) => !node.parentElement?.closest(bodySelector));
-      if (bodies.length !== 1) return fail('訊息正文容器缺少或無法唯一辨識；已暫停擷取');
+      if (bodies.length !== 1) {
+        const failure = opaque(id, 'body_not_unique', '訊息正文容器缺少或無法唯一辨識；已暫停擷取');
+        if (failure) return failure; else continue;
+      }
       const body = bodies[0];
       const text = imageBodyText(body) ?? deliveryText(body.innerText || body.textContent);
       let times = [...row.querySelectorAll('time[datetime]')];
@@ -1719,16 +1869,23 @@ function sameBinding(actual, expected) {
         const siblings = item && [...item.querySelectorAll(rowSelector)].filter((node) => !node.parentElement?.closest(rowSelector));
         if (siblings?.length === 1 && siblings[0] === row) times = [...item.querySelectorAll('time[datetime]')];
       }
-      if (times.length > 1) return fail('timestamp 無法唯一對應訊息；已暫停擷取');
+      if (times.length > 1) {
+        const failure = opaque(id, 'time_not_unique', 'timestamp 無法唯一對應訊息；已暫停擷取');
+        if (failure) return failure; else continue;
+      }
       const stamp = times[0]?.getAttribute('datetime') || row.getAttribute('data-timestamp');
       const epoch = stamp && /^(?:\d{10}|\d{13})$/.test(stamp);
       const fullTime = stamp && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(stamp);
-      if (!epoch && !fullTime) return fail('timestamp 缺少完整時間與時區；已暫停擷取');
+      if (!epoch && !fullTime) {
+        const failure = opaque(id, 'time_incomplete', 'timestamp 缺少完整時間與時區；已暫停擷取');
+        if (failure) return failure; else continue;
+      }
       const numeric = epoch ? Number(stamp) * (stamp.length === 10 ? 1000 : 1) : stamp;
       const timestamp = numeric ? new Date(numeric) : null;
-      if (!id || !timestamp || Number.isNaN(timestamp.getTime())) return fail('message id / timestamp 缺少或無法解析；已暫停擷取');
-      if (ids.has(id)) return fail('訊息識別重複；已暫停擷取');
-      ids.add(id);
+      if (!timestamp || Number.isNaN(timestamp.getTime())) {
+        const failure = opaque(id, 'time_invalid', 'timestamp 無法解析；已暫停擷取');
+        if (failure) return failure; else continue;
+      }
       const photos = [...body.querySelectorAll('img')].filter(image => !image.closest('[data-emoji], [data-tid*="emoji"], [class*="emoji"], [class*="emoticon"]'));
       const images = photos.map((image,index) => {
         const sources = [...new Set([image.currentSrc, image.getAttribute('src'), image.getAttribute('data-src'), image.getAttribute('data-original')].filter(Boolean)
@@ -1746,16 +1903,30 @@ function sameBinding(actual, expected) {
       }
       messages.push({id, text: inputText, time: timestamp.toISOString(), ...(iconProof(body) ? {icon: 'codex'} : {}),
         ...(imageProofFor(body,{format:'output-image-v1'}) ? {outputImage:true} : {}), ...(images.length ? {images} : {})});
+      history.readable++;
     }
-    return {ok: true, messages};
+    return {ok: true, messages, ids:[...ids], opaqueIds, history};
   }
- 
-  function snapshot(doc, href, expected) {
+
+  function snapshot(doc, href, expected, delivery = false) {
     const context = inspect(doc, href, expected);
     if (!context.ok) return context;
     if (expected && !sameBinding(context.binding, expected)) return fail('目前分頁已切換帳號或聊天');
-    const rows = readRows(context.root);
-    return rows.ok ? {ok: true, binding: context.binding, messages: rows.messages} : rows;
+    const rows = readRows(context.root, delivery);
+    return rows.ok ? {...rows, binding: context.binding} : rows;
+  }
+ 
+  function deliverySnapshot(doc, href, binding, boundary = null) {
+    const current = snapshot(doc, href, binding, true);
+    if (!current.ok) return current;
+    const blocked = error => ({...current, ok:false, error});
+    if (normalize(current.binding.label) !== normalize(binding.label)) return blocked('目前收件對話名稱已改變');
+    // A timestamp anchor is still required. Cards alone are not evidence of a
+    // readable conversation. Later unknown IDs can never be ignored as old cards.
+    if (current.ids.length && !current.messages.length) return blocked('沒有可核對時間的聊天訊息；無法建立傳送基準');
+    if (boundary && current.opaqueIds.some(id => !boundary.ids.includes(id))) return blocked('出現無法解析的新訊息；無法排除重複傳送');
+    if (boundary && !hasContinuity(boundary.ids, current.messages)) return blocked('聊天紀錄與傳送基準不連續；請等待頁面穩定');
+    return current;
   }
  
   function hasContinuity(prior, messages) {
@@ -1865,10 +2036,11 @@ function sameBinding(actual, expected) {
       if (list.isConnected && sameBinding(inspect(doc, href(), expected).binding, expected)) list.scrollTop = savedTop + Math.max(0, list.scrollHeight - savedHeight);
     }
   }
- 
-  async function reconcile(doc, href, binding, item, wait) {
+
+ async function reconcile(doc, href, binding, item, wait) {
     if (imageFormat(item)) await verifyIcons(doc.querySelector(paneSelector) || doc, wait);
-    const current = snapshot(doc, href, binding);
+    if (cleanFormat(item) && !['sending', 'uncertain'].includes(item.state)) return null;
+    const current = cleanFormat(item) ? deliverySnapshot(doc, href, binding, item.boundary) : snapshot(doc, href, binding);
     if (!current.ok) return null;
     if (cleanFormat(item)) {
       if (!['sending', 'uncertain'].includes(item.state)) return null;
@@ -2086,9 +2258,29 @@ let failedPastes = new WeakMap();
     let delivery = item;
     let boundary;
     if (clean) {
-      const before = snapshot(doc, href(), binding);
-      if (!before.ok) return result('not_sent', '無法讀取原自聊訊息；回覆保留待送');
-      boundary = {ids: before.messages.map((message) => message.id), time: before.messages.length
+      phase('history_read');
+      const deadline = Date.now() + 2500;
+      let before, attempts = 0, prior = null, stable = false, readError = '';
+      do {
+        attempts++;
+        before = deliverySnapshot(doc, href(), binding);
+        if (draftEdited || !composer.isConnected || blockedDraft()) {
+          before = {...before, ok:false, error:'讀取聊天紀錄時輸入區或草稿已變動'}; break;
+        }
+        if (before.ok) {
+          const key = JSON.stringify([before.ids, before.opaqueIds, before.messages.map(m => [m.id,m.time,m.text])]);
+          if (key === prior) { stable = true; break; }
+          prior = key;
+        } else { prior = null; readError = before.error; }
+        if (Date.now() >= deadline || attempts >= 26) break;
+        await wait(100);
+      } while (true);
+      const check = {version:'history1',stage:'before_paste',historyReadable:!!before?.ok,stable,attempts,
+        ...(before?.history || {}),readError:stable ? '' : (before?.error || '聊天紀錄持續變動，尚未穩定'),
+        recoveredReadError:stable ? readError : ''};
+      options.historyDiagnostic?.(check);
+      if (!stable) return {...result('not_sent', '無法建立聊天紀錄基準：' + check.readError + '；本次未貼圖、未送出'),failedChecks:['historyBaseline']};
+      boundary = {ids: before.ids, time: before.messages.length
         ? before.messages.reduce((latest, message) => Date.parse(message.time) > Date.parse(latest) ? message.time : latest, before.messages[0].time) : null};
       if (!validDeliveryBoundary(boundary)) return result('not_sent', '目前訊息範圍超出送達核對限制；回覆保留待送');
       delivery = {...item, boundary, state: 'sending'};
@@ -2290,7 +2482,7 @@ let failedPastes = new WeakMap();
           if (!current.ok || !sameBinding(current.binding, binding) || normalize(current.binding?.label) !== normalize(binding.label)) {
             beforeClick = fail('目前帳號或收件對話已改變'); break;
           }
-          beforeClick = snapshot(doc, href(), binding);
+          beforeClick = deliverySnapshot(doc, href(), binding, boundary);
           if (beforeClick.ok) break;
           readError = beforeClick.error || '無法讀取聊天紀錄';
           if (draftEdited || !composer.isConnected || Date.now() >= deadline || attempts >= 26) break;
@@ -2302,8 +2494,8 @@ let failedPastes = new WeakMap();
         // Equal/newer timestamps remain ambiguous and must block a possible duplicate.
         const historical = matching.filter(message => boundary.time && Date.parse(message.time) < Date.parse(boundary.time));
         const conflicts = matching.length - historical.length;
-        const check = {version:'preflight1',historyReadable:!!beforeClick.ok,attempts,
-          readError:beforeClick.ok ? '' : (beforeClick.error || readError),
+        const check = {version:'history1',historyReadable:!!beforeClick.ok,attempts,history:beforeClick.history || null,
+           readError:beforeClick.ok ? '' : (beforeClick.error || readError),
           recoveredReadError:beforeClick.ok ? readError : '',
           olderMatchingRows:historical.length,conflictingRows:conflicts};
         options.preSendDiagnostic?.(check);
@@ -2354,7 +2546,7 @@ let failedPastes = new WeakMap();
       && context.root.querySelectorAll(composerSelector).length === 1
       && isClipboardEditor(context.root.querySelector(composerSelector));
   }
-  globalThis.BridgeAdapter = {version: '1.0.36', inspect, diagnostics, snapshot, sameBinding, hasContinuity, atLatest, followLatest, mergeMessages, eligibleMessages, catchUp, deliver, resetDeliveryRetries, normalize, refreshIdentity, identityState, accountEvidence, imageFrameEligible};
+  globalThis.BridgeAdapter = {version: '1.0.37', inspect, diagnostics, snapshot, sameBinding, hasContinuity, atLatest, followLatest, mergeMessages, eligibleMessages, catchUp, deliver, resetDeliveryRetries, normalize, refreshIdentity, identityState, accountEvidence, imageFrameEligible};
 })();
  
 '@
@@ -2723,7 +2915,7 @@ async function verifySingle(image,wait,expected) {
   function status() {
     if (!session) return {stage:'idle'};
     return {stage:session.stage,id:session.id,expiresAt:session.expires,cancelled:session.cancelled,clicked:!!session.clicked, checkpoint:session.checkpoint, result:session.result,
-      visibility:document.visibilityState,focus:document.hasFocus(),imageCount:session.imageCount,editor:session.editor||null,preSend:session.preSend||null,
+      visibility:document.visibilityState,focus:document.hasFocus(),imageCount:session.imageCount,editor:session.editor||null,preSend:session.preSend||null,history:session.history||null,
       imageObservations:session.imageCount?BridgeOutgoingImages.diagnostics():[],modelReady:session.modelReady,receipt:globalThis.E3Receipt?.diagnostics()};
   }
   function start(item, binding, base64) {
@@ -2756,6 +2948,7 @@ async function verifySingle(image,wait,expected) {
           phase:stage=>{session.stage=stage;if(stage==='send_clicked'){session.clicked=true;globalThis.E3Receipt?.clicked();}},
           imageReady:async()=>{check(); return {ok:true,ready:session.modelReady};},
           editorDiagnostic:evidence=>{session.editor=evidence;},
+          historyDiagnostic:evidence=>{session.history=evidence;},
           preSendDiagnostic:evidence=>{session.preSend=evidence;},
           beforeSend:async()=>{await permit('before_click');globalThis.E3Receipt?.arm(item,binding);return true;}});
         if(session.clicked&&['sent','uncertain'].includes(outcome.outcome)&&globalThis.E3Receipt){
@@ -2781,7 +2974,7 @@ async function verifySingle(image,wait,expected) {
     if(session&&session.stage!=='finished'&&(session.cancelled||Date.now()>session.expires))cancel(session.id);
     return status();
   }
-  globalThis.E3Cdp = {version:'2026-11-10-receiptbreak1',supportsImageOnly:true,beginBinding,endBinding,bind,start,tick,status,reset,cancel,recover};
+  globalThis.E3Cdp = {version:'2026-11-12-history1',supportsImageOnly:true,beginBinding,endBinding,bind,start,tick,status,reset,cancel,recover};
 })();
  
 '@

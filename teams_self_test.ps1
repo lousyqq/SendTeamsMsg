@@ -448,7 +448,7 @@ function Open-E3ExistingSelfTestCdp {
         $frame=(Invoke-E3Cdp 'Page.getFrameTree').frameTree.frame.id
         $context=[int](Invoke-E3Cdp 'Page.createIsolatedWorld' @{frameId=$frame;worldName='E3ProductionCdp'}).executionContextId
         $runtime=Invoke-E3Js '({exists:!!globalThis.E3Cdp,version:globalThis.E3Cdp?.version})' $context
-        if($runtime.exists -and $runtime.version -notin @('2026-11-05-headless1','2026-11-06-optionaltext1','2026-11-06-receipt2','2026-11-09-preflight1','2026-11-10-preparation1','2026-11-10-captionspace1','2026-11-11-receipttext1','2026-11-10-receiptbreak1')){throw '原 Teams 分頁控制程式版本不符，請先核對訊息與草稿；本次停止。'}
+        if($runtime.exists -and $runtime.version -notin @('2026-11-05-headless1','2026-11-06-optionaltext1','2026-11-06-receipt2','2026-11-09-preflight1','2026-11-10-preparation1','2026-11-10-captionspace1','2026-11-11-receipttext1','2026-11-10-receiptbreak1','2026-11-12-history1')){throw '原 Teams 分頁控制程式版本不符，請先核對訊息與草稿；本次停止。'}
         if(-not $runtime.exists){foreach($file in @('vendor\adapter.js','vendor\outbound-images.js','receipt.js','runtime.js')){Invoke-E3Js (Get-E3CdpRuntimeSource $file) $context|Out-Null}}
         Stop-E3PriorPreparation $context
         $result=Get-E3SelfBinding $context

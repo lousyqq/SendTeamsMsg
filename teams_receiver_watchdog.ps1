@@ -44,8 +44,13 @@ function Get-E3NextScheduleRunUtc([object[]]$Tasks=$null,[scriptblock]$InfoOf=$n
 
 function Test-E3SenderLoginDue($state,[DateTimeOffset]$now,$nextRun) {
     $last=if($state){ConvertTo-E3WatchdogTime $state.lastCheckUtc}else{$null}
+    # Do not start a check right before a schedule: both need the CDP lock and the
+    # schedule may wait only 180 s for it. The next watchdog run checks instead.
+    if($nextRun){$soon=($nextRun-$now).TotalMinutes;if($soon -ge 0 -and $soon -lt 5){return $false}}
     if(-not $last){return $true}
     $age=$now-$last
+    # One failed check is confirmed by the next watchdog run before anyone is alerted.
+    if($state.ok -eq $false -and $state.alerted -ne $true -and $age.TotalMinutes -ge 5){return $true}
     if($age.TotalHours -ge 6){return $true}
     # About an hour before each schedule (watchdog runs every 10 minutes), at most every 3 hours.
     if($nextRun){
@@ -88,7 +93,13 @@ function Invoke-E3SenderLoginCheck($cfg,[scriptblock]$Check=$null,[scriptblock]$
         $zone=[TimeZoneInfo]::FindSystemTimeZoneById('Taipei Standard Time')
         $nextText=if($upcoming){[TimeZoneInfo]::ConvertTimeFromUtc($upcoming.UtcDateTime,$zone).ToString('MM/dd HH:mm')}else{'無'}
         $logText=if($ok){'排程登入檢查：正常'}else{"排程登入檢查：異常`n"+($failed -join "`n")}
-        if(-not $ok -and -not $alerted){
+        # A single failure can be a slow page or a leftover browser (11/12 18:39 false alarm).
+        # Alert only when the previous check also failed; a real expiry fails both times.
+        $confirmed=[bool]($state -and $state.ok -eq $false)
+        if(-not $ok -and -not $alerted -and -not $confirmed){
+            $next.pending=$true
+            $logText+="`n第一次失敗，下次監看（約 10 分鐘後）再確認一次才通知"
+        }elseif(-not $ok -and -not $alerted){
             $text="✦ [日管監看]`n排程用的 Teams 登入需要處理，下次排程可能無法傳送。`n主機：$env:COMPUTERNAME`n原因：`n"+($failed -join "`n")+"`n下次排程（台灣時間）：$nextText`n請在主機的設定工具按「設定 CDP 收件對象」重新登入。恢復後會再通知一次。"
             try{$null=New-E3ReceiverOutboxMessage $text;$next.notify='queued'}catch{$next.notify='failed';$next.error=$_.Exception.Message}
             $next.alerted=$true;$next.sinceUtc=$now.ToString('O')
@@ -308,11 +319,77 @@ function Start-E3ReceiverAutoRestart($hb,[string]$action) {
 }
 
 function Write-E3WatchdogLog([string]$path,[string]$text) {
+    # <name>_last.txt always holds the newest result. watchdog_history.log in the day's folder keeps
+    # one line per change, so the repeated "正常" every 10 minutes does not fill it and the times
+    # of each problem, restart and notice stay readable afterwards (30 days, cleaned by the receiver).
     try{
-        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null
+        $folder=[IO.Path]::GetDirectoryName($path)
+        [IO.Directory]::CreateDirectory($folder)|Out-Null
+        $previous=$null
+        try{
+            if([IO.File]::Exists($path)){
+                $old=[IO.File]::ReadAllText($path,[Text.Encoding]::UTF8);$cut=$old.IndexOf("`r`n")
+                if($cut -ge 0){$previous=$old.Substring($cut+2)}
+            }
+        }catch{$previous=$null}
         [IO.File]::WriteAllText($path,([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss')+"`r`n"+$text),[Text.UTF8Encoding]::new($false))
+        if($previous -cne $text){
+            $day=Join-Path $folder ([DateTime]::Now.ToString('yyyy-MM-dd'))
+            [IO.Directory]::CreateDirectory($day)|Out-Null
+            $line=[DateTime]::Now.ToString('HH:mm:ss')+"`t"+[IO.Path]::GetFileNameWithoutExtension($path)+"`t"+(($text -replace '\s*[\r\n]+\s*',' / ').Trim())+"`r`n"
+            [IO.File]::AppendAllText((Join-Path $day 'watchdog_history.log'),$line,[Text.UTF8Encoding]::new($false))
+        }
     }catch{}
     Write-Host $text
+}
+
+# ---- 指令失敗說明的代發 ----
+# The receiver explains a failed command with a plain-text notice from its own Teams login. When
+# that send fails too (its Teams page or login is the problem), the notice is passed on once
+# through the scheduled sender's login to the default chat: the two logins back each other up.
+function Invoke-E3FailedNoticeRelay($cfg,[scriptblock]$Send=$null,[DateTimeOffset]$Now=[DateTimeOffset]::UtcNow) {
+    $paths=Get-E3ReceiverWatchdogPaths
+    if(-not [IO.Directory]::Exists($paths.outbox)){return 0}
+    $files=@(Get-ChildItem -LiteralPath $paths.outbox -Filter '*.failed' -File -ErrorAction SilentlyContinue|Where-Object{($Now.UtcDateTime-$_.LastWriteTimeUtc).TotalHours -le 6}|Sort-Object Name)
+    if(-not $files.Count){return 0}
+    $relayLog=Join-Path $paths.root 'notice_relay_last.txt'
+    $target=([string]$cfg.teams.target_chat_name).Trim()
+    $code=0;$done=0;$deadline=$null
+    try{
+        foreach($file in $files){
+            if($done -ge 3){break}   # bounded: the watchdog task has ten minutes for everything
+            $item=$null;try{$item=Read-E3WorkJson $file.FullName}catch{}
+            $text=[string]$item.text
+            # Only explanations about a command. Other notices keep their once-only rule.
+            if(-not $item -or [string]$item.kind -ne 'command_failure' -or $text -notmatch '^✦'){continue}
+            $created=ConvertTo-E3WatchdogTime $item.createdUtc
+            if(-not $created -or ($Now-$created).TotalHours -gt 6){continue}
+            if($cfg.teams.prefer_window -ne 'cdp' -or -not $target -or $target -match '請將.*連結|貼在這裡|^預設Teams群組$'){
+                Write-E3WatchdogLog $relayLog '有指令失敗說明未送出，但需要「CDP」傳送模式與預設 Teams 對話才能代發；本次未代發。'
+                return 0
+            }
+            $base=Join-Path $paths.outbox ([IO.Path]::GetFileNameWithoutExtension($file.Name))
+            # Claim by rename before sending: an attempt whose outcome is unknown is never repeated.
+            try{[IO.File]::Move($file.FullName,$base+'.relaying')}catch{continue}
+            $done++
+            if($text.Length -gt 1800){$text=$text.Substring(0,1800)+'…'}
+            $message=$text+"`n（接收端自己送不出這則說明，改由排程用的 Teams 登入轉達一次；原對話："+[string]$item.route+'）'
+            try{
+                if($Send){& $Send $target $message}
+                else{
+                    if(-not $deadline){$deadline=Start-E3RunDeadline (Join-Path $paths.root 'notice_relay.deadline.json') -Seconds 300}
+                    Send-GroupToTeams -targetChatName $target -imageFiles @() -messageText $message -teamsCfg $cfg.teams -isDryRun $false|Out-Null
+                }
+                try{[IO.File]::Move($base+'.relaying',$base+'.relayed')}catch{}
+                Write-E3WatchdogLog $relayLog ("已用排程的 Teams 登入代發指令失敗說明到「$target」：`n"+$text)
+            }catch{
+                $code=1
+                try{[IO.File]::Move($base+'.relaying',$base+'.relayfailed')}catch{}
+                Write-E3WatchdogLog $relayLog ("指令失敗說明代發失敗（不重送）："+$_.Exception.Message+"`n"+$text)
+            }
+        }
+    }finally{if($deadline){$deadline.Dispose()}}
+    return $code
 }
 
 function Invoke-E3ReceiverWatchdog($cfg,[int]$ConfirmSeconds=60) {

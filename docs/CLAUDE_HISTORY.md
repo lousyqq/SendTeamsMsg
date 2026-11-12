@@ -1213,3 +1213,313 @@ USER_MANUAL.html 的 8-1 已改為現版必備檔案與保留資料清單，修�
  
 12. **專用 Edge 縮放（2026-11-04）**：先前記住的網站縮放與非 100% 預設縮放會在本次 CDP 渲染中自動補償，不再要求 Ctrl+0 或修改 `Preferences`，不清除登入資料。擷取面板開啟後請勿再按 Ctrl＋滾輪／加減號；偵測比例變動時會阻擋，請取消並重新抓圖。更改網站縮放或從舊版本更新後，建議重新抓圖、確認擷取範圍與警戒線；若舊的可視尺寸在新環境無法精確還原，仍停止該頁並提示重新抓圖。`tools\test_remembered_zoom.ps1` 使用隔離 Edge profile 的原生 80%／100%／125% 縮放，驗證設定 50%／67%／80%／100%／125%／200% 的實際擷取按鈕、圖片比例、雙軸捲動及排程裁切逐像素一致，也涵蓋未含 `capture_view` 的完整文件擷取尺寸與比例；另以模擬 DPR 變動檢查面板／引擎阻擋與取消。以 loopback 網站額外驗證完整 `Capture-PagesNative` 80% 抓圖、關閉瀏覽器後排程重播的裁切像素一致。公司 Zabbix 實機仍待確認。
 
+---
+
+# CLAUDE.md 清理前完整內容（2026-11-12 封存）
+
+> 2026-11-12 依使用者要求清理根目錄 CLAUDE.md：移除事件經過、改版前後比較、日期註記、測試項數與已過時的待辦，只保留目前的架構、規則與限制。以下為清理前的完整原文，供追查當時的原因與驗證範圍；不會在每次對話自動載入。
+
+## E3 監控自動截圖、警戒線判定與 Teams 通報（開發者文件）
+
+本檔記錄**目前**的架構、設定格式與必須遵守的規則。最後整理：2026-11-12。
+
+---
+
+### 1. 必守規則
+
+#### 1.1 文件同步
+- 任何修改都要在同一次變更中更新兩份文件：**`USER_MANUAL.html`**（給使用者：操作步驟、按鈕名稱、畫面文字、批次檔、注意事項、FAQ，並更新開頭「最後更新」日期）與 **本檔**（給開發者：架構、設定格式、原理、限制）。完成後回報兩份各改了哪些段落。
+- 改了 `calibrator.html` 的按鈕／欄位／文字：更新手冊對應步驟，並執行 `tools\make_screenshots.ps1` 重拍截圖。**手冊截圖一律以專案目前的 `config.json` 與 `sample_images\`（使用者在公司主機實際擷取的圖片）為準**，不另造示範設定；手冊文字中的範例名稱（頁面、排程 id／名稱、`@日管` 指令）也對應目前設定。工具只讀 config：網站帳號與密碼（全域與每頁 `auth`）都改成遮罩、移除空白收件項目後交給頁面；不啟動正式設定服務、不載入 `e3_monitor_native.ps1`。以獨立暫存 profile 啟動 headless Edge（`--remote-debugging-port=0` 隨機除錯埠，不需關閉正式設定工具），用 CDP `Fetch` 攔截頁面所有請求並由記憶體回應（不會連到真正的 8765），只回應 GET，POST 等一律 403；頁面載入時以 `addScriptToEvaluateOnNewDocument` 在 `autoSaveEnabled` 變成 true 的當下關閉自動儲存／自動辨識並停用 `scheduleSampleSave`。數值門檻以 `numeric_monitor.ps1` 的 `Measure-E3NumericRule` 對 `<id>_full.png` 依 crop 裁切後試算，結果注入 `numericCache`；排程同步、CDP 綁定／檢查、手機遙控狀態為依目前設定產生的示範狀態（手冊圖說需註明）。頁面挑選依規則類型自動找（數值規則頁、像素規則頁、有裁切的頁），設定改變時圖說要重新核對。13 張截圖全部完成且與手冊 `data-shot` 完全一致後，才以暫存檔＋`File.Replace` 原子替換 `<!-- MANUAL_IMAGES_BEGIN -->`～`END` 區塊（base64）；暫存目錄 `%TEMP%\e3_manual_shots_<時間>` 保留原手冊與 PNG 供檢查。**不可手動編輯圖片資料、不要整檔輸出手冊**。新增／改名截圖時同步修改 `Shot` 清單與 `<img data-shot="...">`。
+- 手冊中的 Teams 畫面、確認視窗、log 是 HTML 示意（`.mock`／`.dialog`／`.log`），文字改變要同步。
+- 不為每次更新另建 README；操作說明集中在手冊與本檔。
+
+#### 1.2 檔案編碼與傳檔
+- 所有 `.ps1` 必須是 **UTF-8 with BOM**（PowerShell 5.1 無 BOM 會以 cp950 讀取，中文造成大量解析錯誤）。其他檔案 UTF-8 無 BOM 即可。
+- 任何檔案都**不可含 U+00A0（NBSP）**：瀏覽器 `JSON.parse` 不接受、CSS 選擇器／屬性名會失效、PowerShell 無 BOM 時無法解析。零寬字元在程式中一律寫成 regex 跳脫（`\u200B` 等），不放實際字元。
+- `.bat` 只能用 **ASCII + CRLF**；中文訊息寫在 PowerShell 腳本或手冊。
+- 在公司／測試機與開發機之間傳檔要用 **zip 或附件**，不可經 Teams／Outlook／網頁複製貼上（曾造成 NBSP 縮排、BOM 遺失、整行截斷）。2026-11-11 帶回的版本再次發生：`teams_receiver.ps1`、`teams_cdp\Delivery.ps1` 與兩個測試腳本遺失 BOM 且含 NBSP，`receiver-snapshot.js`、本檔、手冊與歷史檔含 NBSP，手冊第 8 章、附錄開頭、圖片區塊與前半段腳本被截斷；已修復。2026-11-12 帶回的 `teams_cdp\Delivery.ps1`、`teams_receiver.ps1` 又遺失 BOM 且行首縮排含 NBSP（無法解析），本檔也含 NBSP；未截斷，已改回空格並補 BOM。收到檔案後先掃描 NBSP／BOM 並以 PowerShell Parser 解析全部 `.ps1`。
+- 新增執行時必備的檔案：同步更新本檔第 3 節、手冊「8-1 程式檔與狀態資料」；若需由瀏覽器載入，加入 `-Calibrator` 的靜態檔白名單。
+
+#### 1.3 行為原則
+- **零外掛**：只用 Windows 內建 PowerShell 5.1、.NET Framework 4.x（System.Drawing、WinForms、ClientWebSocket、UIAutomation、`Add-Type` 編譯 user32／kernel32 呼叫）與系統 Edge 的 CDP。不需 Python、pip、WebDriver、Edge 擴充、改登錄檔。
+- **不自動重送**：任何傳送結果不明（uncertain）、逾時或中斷，都保留紀錄並停止，不補送、不把不明改成成功。新工作只送本次內容，不讀取或續送舊工作。
+- **失敗要說得出原因**（2026-11-12 使用者要求）：手機端看不到主機視窗與 log，回覆不可只寫「請查看本機紀錄」。失敗原因要寫進回覆或另一則**純文字說明**，並留在紀錄檔。說明是關於失敗的新訊息，不是重送：不含原回覆內容與圖片、每個指令最多一則、每個管道最多嘗試一次，文字必須依階段說清楚「可能已送出／確定沒送出」，不可把不明說成失敗或成功。指令本身仍不重做。
+- **不猜測**：對話、帳號、頁面、刻度、按鈕都要能唯一辨識；辨識不到或有歧義就停止並說明原因。
+- 測試一律用隔離資料（暫存 profile、loopback 網站、替身傳送邊界、隔離 mutex），**不對真實 Teams 發訊息、不註冊或刪除正式 Windows 任務、不改正式 config**，除非使用者明確要求。回報時清楚區分「本機驗證」與「待目標主機實測」。
+- `config.json` 含監控網站帳密明文，**不可 commit 到 git**（目前已在版本控制中，需處理）。
+
+---
+
+### 2. 專案目標
+企業內網中，每天定時以專用 Edge 開啟多個監控網頁（Zabbix 圖表、報表等），擷取指定區域，判定警戒線或左 Y 軸數值是否超標，將截圖與總結文字送到指定 Teams 對話。另提供手機在 Teams 輸入 `@日管 …` 遙控主機即時截圖回傳。
+
+---
+
+### 3. 檔案結構
+
+| 檔案 | 用途 |
+| --- | --- |
+| `open_calibrator.bat` | 設定工具入口：啟動 `e3_monitor_native.ps1 -Calibrator` 並開啟設定工具 |
+| `calibrator.html` | 設定工具網頁（頁面／警戒線／排程／預覽／測試） |
+| `work_control.js` | 設定頁的「工作忙碌時選擇」彈窗（繼續等待／強制停止前一工作／取消） |
+| `e3_monitor_native.ps1` | 主程式：擷取、判定、排程、Teams 發送、本機服務、各內部工作模式 |
+| `teams_delivery.ps1` | 共用分批規則、訊息組合、`Start-E3RunDeadline` 硬期限 |
+| `work_control.ps1` | 跨程序工作占用登記、等待選擇、可驗證的強制停止、QuickEdit 停用 |
+| `numeric_monitor.ps1` | 數值門檻：Windows OCR 讀左 Y 軸刻度、線性擬合、藍線峰值換算 |
+| `teams_self_test.ps1`／`teams_self_test.js` | 「傳給自己」測試（本人對話辨識、設定頁確認、CDP 導頁） |
+| `teams_cdp\Delivery.ps1` | CDP 傳送模組；Teams 網頁腳本以 here-string 內嵌於 `Get-E3CdpRuntimeSource` |
+| `setup_cdp.bat` | 設定 CDP 收件對象（`-CdpSetup`） |
+| `teams_receiver.ps1` | 手機 `@日管` 指令接收端（單一工作分頁輪流讀取、回覆、心跳、防睡眠、自動復原、程序內重新開始；`-Stop` 要求停止） |
+| `teams_receiver_commands.ps1` | 指令解析（問法辨識、名稱建議）、擷取／檢查工作分派與回覆組成 |
+| `teams_receiver_queries.ps1` | 唯讀查詢：排程結果（含主機 log 錯誤行）、主機狀況、網站連線測試 |
+| `teams_receiver_capture.ps1` | 擷取子工作（由主程式 `-ReceiverCaptureJob` 載入；`analyze` 時另做判定） |
+| `teams_receiver_watchdog.ps1` | 接收端監看與 Windows 任務註冊（由主程式 `-ReceiverWatchdog` 等載入） |
+| `teams_cdp\receiver-snapshot.js`、`teams_cdp\receiver-switch.js` | 接收端網頁腳本（執行時讀檔）：讀取最新指令；在同一分頁切換到綁定對話 |
+| `setup_teams_receiver.bat`／`start_teams_receiver.bat`／`stop_teams_receiver.bat`／`test_teams_receiver.bat` | 綁定接收對話／持續接收／要求停止／單次測試 |
+| `register_receiver_watchdog.bat` | 註冊「E3 日管接收監看」與「E3 日管接收端」兩個 Windows 任務 |
+| `config.json` | 設定（含帳密） |
+| `USER_MANUAL.html` | 使用手冊（截圖內嵌） |
+| `tools\` | 維護與隔離驗證：`check_files.ps1`（程式檔損壞檢查，見下）、`make_screenshots.ps1`（手冊截圖，見 1.1）、`test_cdp_image_preflight.ps1`（接收端圖片預檢）、`test_receiver_latest.ps1`（接收端最新訊息讀取）、`test_receiver_single_tab.ps1`（單一工作分頁、監看、通知佇列）、`test_receiver_failure_notice.ps1`（失敗原因、說明訊息、狀態回覆、監看歷史與代發）、`test_receiver_queries.ps1`（問法辨識、名稱建議、檢查回覆、排程結果、主機、連線、共用判定與擷取工作端到端） |
+
+`tools\check_files.ps1`（2026-11-12）：唯讀掃描專案內 `.ps1／.js／.json／.bat／.html／.md`（略過 `.` 開頭的資料夾、`logs`、`captures`、`edge_profile`、`sample_images`），回報必備檔缺少、`.ps1` 缺 BOM 或無法解析（以 UTF-8 內容交給 Parser，BOM 另外回報）、NBSP／零寬字元／非 UTF-8、`.bat` 非 ASCII 或 LF 換行、`.json` 無法解析、`.html` 結尾不是 `</html>`。程式類檔案（ps1／js／json／bat）的問題為 error（exit 1），html／md 的 NBSP 等為提醒。`-PassThru` 回傳物件（file／level／message）不輸出文字。**這個檔案刻意只用 ASCII**（中文訊息寫成 `\uXXXX` 經 `[regex]::Unescape`，旁邊有英文註解）：傳檔把所有 BOM 弄掉時，含中文的檢查工具自己也會壞。修改訊息時要把非 ASCII 字元轉成跳脫。必備檔清單 `$required` 要與本節同步。接收端 `-Listen` 啟動時（載入 `Delivery.ps1` 之前）若有這個檔就先執行，有 error 即列出檔名與原因、不啟動；持續模式另寫一筆 `fatal` 心跳（stopReason「程式檔損壞…」），監看會帶著原因通知且不重啟。`start_teams_receiver.bat` 在接收端以錯誤結束後也會執行一次，涵蓋 `teams_receiver.ps1` 自己壞掉、連檢查都跑不到的情況。此檔不存在時略過，不影響啟動。
+
+專案狀態：同機更新保留 `config.json`、`sample_images\`（每頁 `<id>_full.png`、`<id>.png`、`annotated_<id>.png`）與 `logs\`（收據、待核對、去重與工作紀錄，不可當成一般 log 全刪）。設定與校正圖片可備份／帶往新機，但需重新抓圖驗證；不在 config 的頁面圖於服務啟動時刪除，sample_images 不可放其他圖片。`edge_profile\` 是監控網站登入，同機通常保留；可刪後重建但必須重新登入，不直接跨機搬加密登入。`captures\` 是排程截圖，日期資料夾保留 7 天；一般主程式 log 保留 30 天，不代表所有 logs 子目錄採同一清理規則。
+
+本機狀態（不在專案內）：`%LOCALAPPDATA%\E3TeamsCdpSendTest`（排程／測試的 CDP 登入 profile、`bindings.json`、`session.json`）、`%LOCALAPPDATA%\E3TeamsCommandReceiver`（接收端的 Teams 登入與綁定）。更新程式可保留，不需清除；若使用者決定重設，先停止相關工作與專用 Edge，之後分別重新登入／綁定。新機需重新設定，不能直接搬登入資料就假設可用。
+
+`logs` 結構：`logs\<日期>\receipts\`（CDP 收據）、`logs\<日期>\startup_*.json`（啟動失敗診斷）、`logs\teams_cdp\blocked|review`（待核對／封存紀錄）、`logs\self_tests\<id>\`、`logs\work_control\`、`logs\teams_detect\`、`logs\schedule_results\<排程id>.json`（每個排程最近一輪的傳送結果，只保留最新一份，供監看判斷是否送達）、`logs\teams_receiver\`（接收端，見第 11 節）：`heartbeat.json`、`status.json`、`commands\<key>.json`（指令紀錄，含結果與失敗原因）、`outbox\`（待送通知）、`*_last.txt`（監看各項檢查的最新結果）、`<日期>\receiver_console_<時分秒>_<pid>.log`（接收視窗內容的副本）、`<日期>\receiver_events.log`（接收端逐筆事件，含時間）、`<日期>\watchdog_history.log`（監看結果有變化時一行）、`<日期>\receipts\`、`captures\<日期>\`。
+
+---
+
+### 4. 主程式參數（`e3_monitor_native.ps1`）
+- 一般：`-ConfigPath`（預設同資料夾 config.json）、`-Schedule <id>`（只跑該排程；不帶則全部啟用頁面）、`-ListSchedules`、`-RegisterSchedules`、`-TestSample`（用 sample_images 不開網頁）、`-NoSend`、`-DryRun`。
+- 設定工具：`-Calibrator [-Port 8765] [-NoBrowser]`、`-LoginMode`（開專用 Edge 手動登入監控網站）、`-PreviewCapture -PageId -Url -OutFile [-PreviewZoom 50..200] [-PreviewWaitSeconds 1..60] [-InteractiveCapture]`。
+- Teams：`-DetectTeams [-DetectJobId]`、`-CdpSetup`。
+- 內部工作（由服務或接收端啟動）：`-SelfTestJob`、`-SelfScheduleJob`、`-ReceiverCaptureJob <資料夾>`。
+- 接收端監看：`-ReceiverWatchdog`、`-RegisterReceiverWatchdog`、`-UnregisterReceiverWatchdog`。`-ReceiverWatchdog` 依序執行四項，各自 try/catch、互不中斷：①排程傳送結果（只讀檔案與任務狀態）②接收端心跳與自動重啟③指令失敗說明代發④排程登入預警。只讀的放最前面：後面的步驟會開 Edge／傳訊息並各有硬期限（逾時直接結束程序），而 Windows 任務上限 10 分鐘。
+- config.json 格式錯誤時：`-Calibrator` 仍啟動（網頁顯示錯誤），其他模式 exit 1。
+
+---
+
+### 5. 設定格式（config.json）
+
+```json
+{
+  "auth": { "enabled": false, "username": "", "password": "" },
+  "page_categories": [{ "id": "category_xxx", "name": "日管Index" }],
+  "pages": [{
+    "id": "page1", "name": "P14_D7", "enabled": true, "category_id": "category_xxx",
+    "url": "http://.../screens.php?...", "wait_seconds": 5, "browser_zoom": 100,
+    "auth": { "enabled": true, "username": "", "password": "" },
+    "zabbix_time": { "enabled": true, "range": "7d" },
+    "capture_view": { "width": 0, "height": 0, "x": 0, "y": 0, "zoom": 100, "layout": "native100-v1" },
+    "crop_region": { "x": 0, "y": 0, "w": 0, "h": 0 },
+    "description": "",
+    "rules": [{
+      "name": "", "enabled": true, "alert_message": "",
+      "measure_mode": "pixel", "roi": { "x": 0, "y": 0, "w": 0, "h": 0 }, "threshold_y": 0,
+      "color_mode": "auto", "target_color": "#0000ff", "color_tolerance": 60, "min_pixels": 2,
+      "axis_roi": { "x": 0, "y": 0, "w": 0, "h": 0 }, "value_threshold": 30
+    }]
+  }],
+  "schedules": [{
+    "id": "morning", "enabled": true, "name": "MSD日管Index", "time": "08:00", "days": [],
+    "repeat": { "enabled": false, "every": 30, "unit": "minutes", "end_time": "18:00" },
+    "pages": ["page1"], "target_chat_names": ["自己"], "title": "", "alert_only": false,
+    "messages": { "default_message": "", "normal_summary": "", "abnormal_header": "" }
+  }],
+  "teams": {
+    "target_chat_name": "自己", "prefer_window": "cdp", "cdp_headless": true, "receiver_headless": false, "auto_press_enter": true,
+    "default_message": "", "normal_summary": "", "abnormal_header": "", "attach_annotated_image_on_alert": false
+  }
+}
+```
+
+- **頁面**：`mode` 由設定工具依是否有啟用規則自動寫入（threshold_check／capture_only）。`browser_zoom` 50～200 整數。`zabbix_time.range` 為 `7d`／`3d`／`keep`（只切 NOW）；缺少整個物件＝NOW→7d，`enabled:false` 不操作時間列；只對 `screens.php`／`charts.php` 生效。`capture_view` 由互動抓圖產生，`layout` 必須為 `native100-v1`，舊範圍會停止該頁並要求重新抓圖。`crop_region` 是來源 PNG 的整數像素。`description` 用於 `@日管` 收到通知的頁面簡介。
+- **帳密**：`pages[].auth` 明確覆寫，停用或 null 不回退；只有缺少 `auth` 的舊頁面使用全域 `auth`。佔位值 `YOUR_USERNAME` 視為未設定。
+- **規則**：`measure_mode` 省略或 `pixel` 為警戒線像素判定；`numeric` 使用 `roi`（監測區）、`axis_roi`（左軸刻度區）、`value_threshold` 與藍線 `target_color`。所有座標相對裁切後的 PNG。
+- **分類**：`page_categories` 只影響設定工具的顯示與搜尋；未知或缺少 `category_id` 顯示「未分類」。
+- **排程**：`id` 為英數字／`_`／`-`；`name` 即 Windows 任務名稱（需唯一、≤200 字、不含 Windows 任務保留字元；空白時用 id）。`days` 空陣列＝每天，否則 `MON`～`SUN`（以開始日計算）。`pages` 依清單順序擷取並送出。`target_chat_names` 非空時覆寫頁面／全域對象，依序逐一發送；缺少此欄才讀舊的 `target_chat_name`。收件優先序：排程 > 頁面 `target_chat_name`（舊設定相容）> `teams.target_chat_name`。`messages` 各排程獨立；舊排程缺少時由 `teams` 複製一次，刻意留空不回退。`schedules: []` 表示沒有排程；完全缺少 `schedules` 的舊 config 視為一個 `daily` 全頁面排程。
+- **自動 Enter**：`teams.auto_press_enter=false` 在視窗模式只貼上不送出；CDP 無法留下草稿給人送，`Send-GroupToTeamsCdp` 在非 DryRun 時直接丟出「未送出」例外（排程記為傳送失敗 exit 1、監看通知記為 failed），不再靜默 return。傳給自己的兩個測試固定以 true 執行。設定頁 `autoPressEnterHint` 依模式顯示提醒（CDP 且未勾選時為紅字）。
+- **Teams**：`target_chat_name` 為聊天清單顯示名稱或 `自己`／`self`；含 `48:notes` 的舊版 Teams 連結視為「自己」，其他連結與 Email 會被拒絕。設定工具載入時（經本機服務）以 `normalizeLegacySelfTargets` 把 teams／頁面／排程（含 `target_chat_names`，轉換後去重並移除空白項目）中的舊連結改存成 `自己`，畫面一律用 `targetDisplayName` 顯示，不顯示原始網址（內含組織帳號識別）。`prefer_window` 為空（自動：pwa→desktop→edge-tab）／`pwa`／`edge-tab`／`desktop`／`cdp`。`cdp_headless` 缺省視為 true。訊息組合：排程 `title` → `default_message` → `normal_summary` 或 `abnormal_header` → 超標／失敗明細；全部選填，空白項不輸出，不補預設文字。 `receiver_headless`（缺省 false）只決定手機接收端的專用 Edge 是否有視窗，接收端啟動時讀取一次；與 `cdp_headless`（排程傳送）互不影響。
+
+---
+
+### 6. 擷取與判定
+
+**共用判定 `Invoke-E3PageAnalysis $page $imgPath [$label]`**（2026-11-12 由主流程抽出，排程與 `@日管 檢查` 共用）：驗證 PNG（大小、格式、邊長／畫素），沒有啟用規則或 `capture_only` 回 `captureOnly`；否則依 6.2／6.3 逐條判定、寫 `annotated_<檔名>`，回傳 `alerts`／`failures`（排程訊息原文不變）、`hasAlert`、`annotated` 與結構化 `rules`（name、mode、status＝normal／exceeded／unknown、數值規則的 maximum／below／threshold／detail／reason、像素規則的 hits）。圖片無效時丟例外，由呼叫端回報。函式定義在 `Test-CurvePixel` 之後、各模式分派之前，`-ReceiverCaptureJob` 也能使用。抽出時以舊版與新版主程式對兩個排程跑 `-TestSample -NoSend`，判定輸出與標示圖雜湊相同。
+
+#### 6.1 擷取（`Capture-PagesNative`）
+- 專用 profile `edge_profile\`，啟動參數含 `--remote-debugging-port`、`--disable-features=Translate,msEdgeTranslate`、`--hide-crash-restore-bubble`、`--force-device-scale-factor=1`、背景節流停用。截圖結束先 `Browser.close` 正常關閉，逾時才強制結束同 profile 程序；不影響日常 Edge。
+- 啟動前 `Reset-CaptureProfileZoom`：只清空專用 profile Preferences 內的縮放 map（原子取代、其餘位元組保留），避免 Edge 記住的縮放改變表格排版。
+- **登入三層**：持久 profile／Windows 整合驗證 → 偵測密碼框（`PASSWORD`）填帳密送出，或只有文字完全等於 Login／Log in／Sign in／登入 的按鈕（`LOGIN_BUTTON`）時點擊後等密碼框 → 送出後重開原網址，仍是登入頁即**此頁失敗**。未設定帳密且有密碼框也失敗。SSO／MFA 需用 🔐 手動登入。
+- **頁面載入檢查**：`Page.navigate` 的 errorText、`chrome-error://`／`edge-error://`、非 http(s)、HTTP 4xx/5xx 皆此頁失敗。CDP 指令預設 60 秒逾時；連線中斷時開新分頁重連後繼續下一頁。
+- **Zabbix 時間**：`screens.php`／`charts.php` 以 DOM 點擊時間列右箭頭至 NOW，再點上方 Zoom（7d=604800／3d=259200）；核對 timeline、`(now)` 標籤、圖片 URL period／isNow 與載入穩定後才截圖；最多 180 秒／120 次點擊，無法確認即此頁失敗，不回退舊區間。
+- **可視範圍重播**：互動抓圖時最大化視窗、讀實際 CSS 可視尺寸並保存 `capture_view`；排程以 `dontSetVisibleSize=true` 套用相同 CSS 尺寸與 `scale=factor/nativeZoom` 補償原生縮放，還原捲動並嚴格核對（最多微調三次），不符即此頁失敗。截圖前 `Clear-CaptureHover`（有視窗時移開實體滑鼠＋CDP mouseMoved 移出，等 1 秒）。截 `fromSurface=true` 可視內容，先存 `_full.png` 再用 `crop_region` 裁切。互動抓圖期間偵測到使用者改縮放會阻擋。
+- **桌面不可用**（鎖定、RDP 斷線）或全域 CDP 且 `cdp_headless` 不為 false 時，正式排程與「執行排程傳給自己」以 headless 擷取，不移動實體滑鼠；手動抓圖一律有視窗。
+- 每頁獨立 try/catch，失敗原因記入 `Failures`，其他頁照常；失敗頁不附圖並在訊息列出原因，exit 1。
+
+#### 6.2 警戒線（像素）
+- 每條規則 `roi` + 水平線 `threshold_y`；`roi.y ≤ y ≤ threshold_y` 範圍內曲線像素數 ≥ `min_pixels` 即超標。`color_mode=auto` 排除灰白背景與 Zabbix 粉紅日期虛線；`custom` 以 RGB 距離 ≤ `color_tolerance` 比對 `target_color`。
+- 規則框或線超出圖片／尺寸無效：列為監控失敗並保留截圖，不視為正常。超標訊息空白時補頁名／規則名。
+
+#### 6.3 數值門檻（`numeric_monitor.ps1`）
+- 依 `AvailableRecognizerLanguages` 選擇已安裝的 Windows OCR（優先英文，其次中文），不自動安裝。刻度區依序以 4／6／5／3／8 倍二值化、再以同樣倍率灰階辨識（`Get-E3VerifiedAxisFit`），一取得兩次一致的線性比例就停止；O/o→0、I/l/i→1。至少兩次辨識得到一致的線性比例才採用。
+- **OCR 容錯（2026-11-12）**：自建的刻度表由水平墨跡列排成，Windows OCR 對它回報的 ±1～3° `TextAngle` 是雜訊（實測讀對全部數字時也回報 -2.2°），不再因角度丟棄整次結果，只寫 Verbose。某一列沒有被前後綴完整包住時只略過該列（`Read-E3OcrContext` 回 null），不讓同一次的其他列一起作廢。刻度列位置由 `Get-E3AxisBands`（純幾何、不 OCR）取得。以實際 Zabbix 字形拼成的 0～4／6／7／9／14／18／35 刻度與兩張實際樣本驗證；舊版在 0～6 重現「刻度文字辨識不完整」。
+- 先嚴格擬合；失敗時 `-AllowInteriorOutliers` 以可讀的上下界建立比例，需 ≥6 個可讀刻度且 75% 位置誤差 ≤1.5 px，排除的讀值記在 `ignored_ticks`。不補造上下界、不沿用上次刻度。
+- **框內沒有藍線**：只有在可證明時才判為正常：刻度已確認、框上緣不低於左軸最上方刻度列（`Get-E3AxisBands` 第一列 +1.5 px，Zabbix 曲線不會高於此處）、框下緣換算值不高於門檻、且整張圖仍找得到指定藍色（圖例或曲線，避免取錯色被當成正常）。此時 `status=normal`、`maximum=$null`、`below`＝框下緣數值、`peak_x/peak_y=$null`（標註圖不畫峰值圓圈），detail「框內沒有藍色曲線（貼近底部），最高值低於約 N」。任一條件不符仍 unknown 並說明要怎麼調整框或取色。
+- 取 ROI 內指定藍色連通區最高點換算數值，嚴格大於門檻才超標。峰頂被框裁切、超出刻度範圍、辨識矛盾、落在誤差範圍內皆 `unknown`（列入失敗並提醒，含 alert_only）。綠線、右軸、框外曲線不納入。支援負數、小數、千分位、K/M/G/T、百分比；不支援對數軸。
+- 設定頁 `/api/numeric-preview` 只試算不寫設定；正式排程每張圖重新 OCR，不讀預覽快取。
+
+---
+
+### 7. 排程
+- `-RegisterSchedules`（設定頁自動同步／🔄 重新套用）以目前使用者 Interactive／Limited 註冊根目錄任務，名稱＝排程名稱；`WakeToRun`、`StartWhenAvailable`、電池可執行、上限 2 小時、`IgnoreNew`；PowerShell 以 `-WindowStyle Hidden` 執行。
+- 任務所有權由**單一 action 的 PowerShell、完整 script 與 config 路徑、`-Schedule <id>`** 判定（`Get-E3OwnedTaskId`），不看名稱前綴；解析其他應用的異常路徑時視為非本專案。改名先停用舊任務、註冊新名、成功後移除舊任務；註冊失敗恢復原狀；舊任務執行中拒絕改名。
+- `repeat`：觸發器加 Repetition（間隔、時段長度減 1 秒、`StopAtDurationEnd=false`）。結束時刻不再啟動；結束早於開始代表跨日。主流程取得執行權後以 `Test-E3RepeatWindow` 再檢查時段，過時補跑或已停用就略過。
+- 設定頁以 `/api/schedule-status` 回讀實際觸發器（時間、星期、重複、啟用、喚醒／補跑）比對 `scheduleSignature`，只有核對通過才顯示已同步；開啟設定頁不自動註冊。
+- 執行時：以 `Enter-E3WorkLock` 取得 `Local\E3MonitorNativeRun`（capture 資源）排他，忙碌時最多等 180 秒並可在設定頁選擇（見第 10 節），逾時本輪不執行；執行期間 `SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED)`；每個 worker 有 `Start-E3RunDeadline` 10 分鐘硬期限（.NET Timer，逾時 exit 124、寫 `.deadline.json`，不執行 finally、不重送）。
+- 每輪正式排程寫 `logs\schedule_results\<id>.json`；沒送達時由監看任務經接收端通知（第 11 節「排程傳送結果通知」）。
+- `alert_only=true` 且整個排程無超標也無失敗時不發送（截圖保留）；任一頁異常則依原收件分組發送全部可用截圖。不記錄前次告警、不發恢復通知。
+- 非 CDP 模式在桌面鎖定時等待解鎖最多 30 秒（同一次執行共用截止時間），逾時失敗、截圖保留。
+
+---
+
+### 8. Teams 傳送
+
+#### 8.1 共用規則（`teams_delivery.ps1`）
+- 每批最多 4 張圖、原始 PNG 合計 ≤25 MiB；單張 ≤10 MiB、邊長 ≤4096、≤1600 萬畫素。多批時文字加批次序號；全空文字可只傳圖片；無圖無文字拒絕。
+- 主流程逐收件對象 try/catch：一個對話失敗只記錄並繼續下一個，exit 1。發送對象仍是佔位文字時略過並 exit 1。
+
+#### 8.2 視窗模式（PWA／Edge 分頁／桌面版，UI Automation）
+- 找已開啟、已登入的 Teams；在聊天清單以名稱點選，視窗標題的對話名稱必須**完全相同**（容許聊天類型前的 `(數字)` 未讀數；自己＝名稱以 `(您)`／`(You)` 結尾）。
+- 開始前輸入框有草稿就停止；`Clear-E3TeamsUiDraft` 只在核對對話／焦點後 Ctrl+A、Backspace（最多三次／15 秒）。剪貼簿逐張貼圖、確認出現後貼文字，每次貼上與 Enter 前再核對前景與標題，被切走即停止。需解鎖桌面，佔用剪貼簿與前景。
+
+#### 8.3 CDP 模式（`teams_cdp\Delivery.ps1`）
+- **最初空白分頁也受保護**：`Start-E3TestBrowser` 的初始 CDP 連接使用 `Connect-E3CdpPageContext -InitialBlank`，只接受新程序原本的 `about:blank` 分頁；與稍後 Teams 初始化共用相同識別核對、20 秒指令上限、60 秒階段期限及最多兩次恢復。端點就緒等待與分頁初始化各有自己的期限，並非整段啟動合計 60 秒。已導航離開空白頁不會被當成可繼續的啟動，仍停止，不自動重新導航。
+- **送出前分頁連線（connect1）**：`Connect-E3CdpPageContext` 將本機端點識別、連接、Page.enable／active、焦點模擬、frame／isolated world 建立及唯讀 runtime 探測放在受限恢復範圍；單次 CDP 上限 20 秒、共用總期限 60 秒，暫時 HTTP／CDP 逾時或 context 失效最多重連兩次，每次核對同一 browser ID、target ID、Teams URL 與本機 WebSocket 路徑。原瀏覽器／分頁消失、登入頁、識別不符及非暫時錯誤立即停止。傳送觀察器存在時禁止初始化恢復；注入 runtime、停止舊工作、帳號選單核對、貼上及送出均不在重試範圍。`logs\<日期>\connect_<id>.json` 保存嘗試階段、耗時與 lastCommand，不記錄 HTTP 正文。`tools\test_cdp_connection.ps1` 以隔離 about:blank Edge、替身 Teams URL／帳號邊界與注入故障驗證恢復與保護條件。
+- **傳送完成與中斷紀錄**：本批已取得相符伺服器及穩定畫面證據後，圖片 probe 的 stop 失敗只警告，不將成功重分類為失敗；仍需後續批次各自成功。若傳送連線中斷，連取消都失敗，保留原收據 checkpoint 並另寫 `<收據>.interrupted.json`（uncertain、lastCommand、network）；不重連、不重送。`tools\test_cdp_delivery_failures.ps1` 使用隔離 mutex 及替身傳送／收據驗證成功清理失敗、uncertain 與取消失敗；不代表真實 Teams 收件驗收。
+- **Edge 啟動診斷（edge-startup1）**：新程序的 `Wait-E3DevToolsEndpoint` 使用總等待 60 秒、單次本機 HTTP 5 秒，標頭與內容共用單次期限且受剩餘總時間限制；就緒立即繼續。接收端重連現有程序仍保留 3 秒檢查，一般 `Get-E3LocalJson` 的 1.5 秒未改。`logs\<日期>\startup_edge_<id>.json` 記錄成功／失敗階段、各階段耗時、端點嘗試次數與錯誤階段／類型、清理前程序是否已退出及退出碼；不記錄 HTTP 內容或瀏覽器 URL，原始 Edge 輸出仍須明確開啟。失敗訊息附診斷路徑，診斷寫入失敗不使成功啟動變失敗。保留原本清理行為，不新增自動重啟／重送。`tools\test_cdp_startup.ps1` 使用本機 TCP 替身及隔離 headless Edge 驗證慢回應、總期限、端點識別、程序退出與診斷。依本次使用者指示，開發期間暫緩同步使用者手冊。
+- **圖片組件**：`Send-GroupToTeamsCdp` 有圖片時，在 PNG 驗證前以 `Add-Type -AssemblyName System.Drawing -ErrorAction Stop` 載入內建組件。接收端為獨立 PowerShell 程序，不能依賴主程式或截圖子程序預先載入 `Drawing.Bitmap`。純文字不載入此組件；圖片驗證失敗仍在貼上／傳送之前停止。
+- **綁定**：`-CdpSetup`／設定頁「設定 CDP 收件對象」開專用 Edge（`E3TeamsCdpSendTest\profile`）。`Select-E3BindingRoutes` 列出 config 中所有收件名稱與「已綁定／尚未綁定」，可輸入多個編號（逗號分隔，依輸入順序）或 `A`（依序設定全部尚未綁定者）；同一次設定逐一處理：無視窗模式在同一分頁切換對話，分頁模式每個對象開新分頁（`Open-E3BindingTab`）。每個對象選好對話後由 `Get-E3SelfBinding` 嚴格讀出 accountId／chatId／label（讀不到可重試）、輸入 BIND 並確認輸入框空白才寫 `bindings.json`；輸入 S 或非 BIND 即略過該對象且原綁定不變。全部略過時回報未儲存。無視窗模式最後關閉設定 Edge，以 `Test-E3CdpRoutesReady` 用一個背景 Edge 依序驗證本次儲存的對象。每個收件名稱各自綁定；「自己」只能綁本人對話。`Resolve-E3CdpTarget` 先找完全相同的 route；找不到且名稱是「自己」的任一寫法（自己／self／48:notes 連結）時，才接受唯一一個 route 也是「自己」寫法且 `binding.isSelf=true` 的綁定，讓舊連結名稱的綁定在 config 改存成「自己」後仍可用。profile 被占用時詢問是否關閉重開（輸入 Y）。
+- **無視窗（`cdp_headless` 預設 true）**：每次傳送以 headless 啟動專用 Edge，先清理同 profile 遺留的 headless 程序，以 chatId 深層連結（失敗時以完整名稱唯一選取）開啟對話，核對帳號／chatId／label 後傳送，結束正常關閉。
+- **保留視窗（`cdp_headless=false`）**：使用綁定時的專用 Edge 分頁（`session.json` 的 browserUrl + `targetId`），Edge 或分頁關閉後需重新綁定（接收端例外，見第 11 節）。
+- **傳送流程**：共用 mutex `Local\E3TeamsCdpShared`（`Enter-E3WorkLock`，忙碌最多等 180 秒）；取得後重讀綁定；停止上一個 runtime、清除舊文字／圖片／附件草稿（`Clear-E3HeadlessDraftForNewDelivery`）；本次入口只處理新內容，不讀取、續送或自動封存舊工作紀錄。每批新工作 ID；貼圖後核對每張圖的 hash／畫素、CKEditor model ready、文字（忽略整段結尾的空白）、帳號與對話；送出前重讀聊天紀錄（`preSend`）；按一次送出。
+- **成功判定**：DOM 出現相符的新訊息列（文字、時間、圖片數與比例、非等待／失敗狀態）**且**觀察到相符的伺服器回應（Teams messaging 端點的 POST 200/201，ID 對應；含 Dedicated Worker 的網路請求），穩定 1.5 秒以上（最多 12 秒）。否則 `uncertain`，保留 `logs\teams_cdp\blocked`，不自動重送。emoji 圖片正文只讀明確標記的 Unicode alt。
+- **伺服器確認後的最終核對（2026-11-12）**：`Get-E3ServerReceipt` 成功時另回傳該 POST 的 `clientId`。最終核對接受的訊息 ID 為 runtime 結果 ID、相符請求的 serverId 或 clientId（同一個 POST 證明是同一則訊息；Teams 可能先以 client ID 顯示再換成 server ID）；其他 ID 仍為 terminal → uncertain。ID 改變時穩定計時重新開始。`finalReceiptHistory` 每筆加 `idRelation`（same／server_id／client_id／other／none），原因或關係改變時記錄。基本等待 12 秒；只要出現 `image_count_or_loading_mismatch`／`image_shape_mismatch`，等待延長到伺服器確認後 45 秒（仍受每批 135 秒期限限制），只讀取、不重貼不重送。背景：公司主機 11/12 10:00 收據為 confirmed_new_row 卻 uncertain（符合 ID 改變），18:00 為 image_shape_mismatch；兩份收據尚未帶回核對，屬推論。runtime／receipt.js 未改，版本不變。
+- **本機 /json 讀取（2026-11-12）**：`Get-E3LocalJson`（`Get-E3CdpSession`、接收端分頁清單、檢查用 `Open-E3HeadlessChat`）由 1.5 秒改為 5 秒，逾時／連線失敗等暫時錯誤重讀一次（間隔 500 ms），只接受 127.0.0.1／localhost。原因：公司主機 Edge 本機 HTTP 曾超過 1.5 秒（14:00 GetResponse 逾時），而接收端回覆與登入檢查仍用舊上限、且只試一次。Edge 已結束時約 7 秒後才報錯（原約 2 秒）。
+- **登入檢查清除殘留 Edge（2026-11-12）**：`Test-E3CdpRoutesReady` 無視窗模式開背景 Edge 前先 `Reset-E3HeadlessBrowserForNewDelivery`（呼叫端已持有 `E3TeamsCdpShared`；只結束同 profile 的 headless 程序，有視窗設定 Edge 仍拒絕）。原本只有正式傳送會清，排程被 10 分鐘期限結束或 Edge 未及時退出時，檢查會因「登入資料正被使用」誤報登入異常。
+- **帳號頭像等待（2026-11-12）**：`Get-E3SelfBinding` 對 `E3Cdp.beginBinding()` 的 `ACCOUNT_PROFILE_AMBIGUOUS` 每 250 ms 重讀，最多 10 秒（只讀取頭像數量，數量不是 1 時不點擊）；之後讀帳號的 10 秒另計（`$bindStarted`）。仍失敗時錯誤附上頭像數量。原本第一次讀不到頭像就失敗，造成 11/12 18:39 排程登入預警誤報。其他錯誤立即回傳不變。
+- **收據**：`logs\<日期>\receipts\<工作ID>.json`，含 editor／preSend／textComparisons（無正文）／network 摘要（無 URL、header、正文）。
+- **Runtime 版本**：目前 `2026-11-12-history1`（adapter 1.0.37）；`Connect-E3CdpTarget` 與 `teams_self_test.ps1` 的白名單必須同步（兩處皆已含 history1，清單相同）。相容的 receipttext1／receiptbreak1 分頁在 idle／finished 時可原地一起升級 adapter、receipt 與 runtime；不替換進行中的傳送。更舊版本需使用者核對後重新整理分頁。更動內嵌 runtime 時要更新版本字串與兩處白名單。
+- **傳送前聊天基準（history1）**：手機截圖回覆與排程共用 `deliverySnapshot`。貼上前最多 2.5 秒重讀，需連續兩次 ID、可讀正文／時間與不可解析列集合一致；只有讀取，不重貼、不重送。已穩定存在、ID 唯一但缺正文／完整時間的列保留於 `boundary.ids` 排除集合，不當作新回覆，也不猜測時間。非空紀錄至少有一筆可讀時間錨點；缺少／無效／重複 ID、全不可讀、草稿變動仍停止。貼圖後與核對回覆時若出現不在基準中的不可解析 ID 或失去歷史連續性，仍停止／保持不明；原本的同文衝突、綁定、圖片與伺服器收據檢查保留。一般 `snapshot` 預設仍嚴格，接收端讀取規則未變。收據新增 `history`（讀取次數、穩定性、rows/readable/opaque、固定原因代碼、失敗／恢復原因；不記錄正文），`preSend.history` 記錄送出前讀取摘要。新錯誤「無法建立聊天紀錄基準」會保留具體原因，取代失去底層原因的「無法讀取原自聊訊息」。
+- **聊天基準回歸**：`tools\test_cdp_history.ps1` 與 `tools\fixtures\cdp_history.js` 用暫存 headless Edge／本機檔案、真實 adapter／PNG 準備與像素驗證／runtime／receipt，加上替身 Teams DOM、編輯器及 model readiness，驗證特殊舊訊息下的一次圖片回覆、舊 ID 排除、短暫讀取恢復、缺失／重複 ID、新同文／不可解析列、對話與草稿變動、歷史連續性、idle 升級與活動工作阻擋。可傳 `-AdapterFile <舊版 Delivery.ps1> -ExpectLegacyFailure` 重現舊錯誤。只證明本機模擬；實際租戶、原主機無視窗與收件結果仍需實測。
+- 同名 isolated world（`E3ProductionCdp`）會重用同一個執行環境，runtime 只注入一次。
+- 「檢查 CDP 連線」（`Test-E3CdpConnection`）取得 `E3TeamsCdpShared` 時最多等 15 秒：接收端每讀一個對話就持有並釋放這把鎖，只試一次會隨機誤判忙碌（排程登入預警也因此常被略過）。真正的傳送／設定持有超過 15 秒時仍回「CDP 正在傳送或設定中」（監看依這段文字判斷略過，不可改字）。
+- 「檢查 CDP 連線」（`/api/teams-detect` 背景工作＋`/api/teams-detect-status`）只讀：核對綁定、登入、帳號與對話（ConfigurationOnly），不清草稿、不解除 blocked、不發訊息。無視窗模式由 `Test-E3CdpRoutesReady` 只啟動一個背景 Edge（`Open-E3HeadlessBrowser`），每個對象在同一分頁重新套用頁面模擬與 bootstrap（屬於 CDP 連線階段，換連線要重設）後以深層連結開啟並嚴格核對（`Open-E3HeadlessChat`）；某對象在開啟或核對時失敗就關閉該 Edge，下一個對象重開，避免分頁狀態不明。排程登入預警也用這個檢查。**正式傳送仍是每個收件對象各自啟動／關閉背景 Edge（`Open-E3HeadlessTarget`）**，以維持現有的草稿清除、收據與防重送流程；尚未改為共用。
+
+#### 8.4 傳給自己（測試）
+- 「將目前預覽傳給自己」：前端 PNG＋文字快照 → `/api/test-self` → `-SelfTestJob`。「執行排程傳給自己」：`/api/test-self-schedule` → `-SelfScheduleJob`，以點擊當下的 config 快照完整跑一次正式流程（登入、擷取、判定），只送本人，忽略 alert_only 與 auto_press_enter=false。兩者都不改正式設定與收件人。
+- 一律先辨識本人對話（CDP：綁定的 isSelf 分頁或 headless 嚴格驗證；UIA：本人標記、唯一選取列、標頭等原生 UIA 證據），在設定頁中央 dialog 顯示實際對話供確認（token、5 分鐘逾時、決定不可覆寫），確認後再重驗身分與空白輸入框才送。
+- 工作狀態 `/api/test-self-status`（服務重啟後讀 `logs\self_tests\<id>\status.json`），`/api/test-self-active`／`/api/test-self-cancel` 只接受原工作 token。結果不明時保留鎖定與 ID，不重送。
+
+---
+
+### 9. 設定工具（`-Calibrator`，`calibrator.html`）
+- 本機服務 `http://127.0.0.1:8765`（HttpListener 單執行緒，長工作一律背景程序）。不送 CORS；`OPTIONS` 與非本工具 Origin 一律 403。靜態白名單：`calibrator.html`、`work_control.js`、`USER_MANUAL.html`、`sample_images/*.png`；config 只能經 `/api/config`。回應帶 `Cache-Control: no-store`。單一請求例外回 500，服務繼續。
+- API：`config`、`save`、`save-sample`、`delete-sample`、`capture-url`／`capture-status`（互動抓圖，同時只一個）、`commit-capture`（`Save-CaptureBundle` 在執行 mutex 內整組寫 full／crop／config，失敗回復）、`numeric-preview`、`register-schedules`、`schedule-status`、`login-setup`、`cdp-setup`、`cdp-bindings`（唯讀摘要，不回帳號／chatId）、`teams-detect`／`teams-detect-status`、`test-teams`（預設 DryRun，`?send=1` 正式送出需確認）、`test-self*`、`work-waits`／`work-decision`、`receiver-status`（GET，唯讀：`Get-E3ReceiverOverview` 回傳心跳、健康判定、監看狀態與兩個接收端任務，不含帳號／chatId）、`receiver-register`（POST，設定頁 confirm 後呼叫 `Register-E3ReceiverWatchdog`）。服務啟動時若有 `teams_receiver_watchdog.ps1` 才載入，缺檔時這兩個 API 回 404，其他功能不受影響。
+- 存檔：`Save-ConfigBody` 驗證可解析、頁面 id 合法唯一、排程引用存在、時段與欄位型別，先寫暫存再 `File.Replace`；失敗回 400 且原檔不變。前端每秒比對自動儲存（只有從 `/api/config` 成功讀入後才啟用；格式錯誤時顯示錯誤並停用）。
+- 版面：左欄三分頁（頁面與監測／排程與發送／全域設定），多數區塊為 `<details>` 收合並記在 `localStorage e3PanelLayout.v1`；中間畫布（✂️ 擷取範圍、📏 監測項目、💧 取色、縮放、像素放大鏡）。用詞統一為「監測項目」（警戒線與數值門檻兩種判定方式），頁面卡片顯示「監測 N 項」。左欄（2026-11-12）：
+  - 頁面分頁在頁面清單下方有 `.page-section-switch`（「⚙️ 此頁設定」／「📏 監測項目 (N)」），`setPageSection('page'|'rules')` 設定 `.sidebar` 的 `data-page-section`，CSS 依 `data-pagesec` 一次只顯示 `此頁面設定` 或 `#rulesSection`；選擇記在 `localStorage e3_calibrator_page_section`（預設 page）。`addRule` 後、點右欄「目前頁面」的項目時切到 rules；按 ✂️ 擷取範圍時切到 page。沒有選取頁面（`no-page-selection`）或不在頁面分頁時不顯示切換鈕。
+  - 監測項目編輯：名稱欄在判定方式之前；長說明改成 `details.inline-help`（「ⓘ 怎麼操作」「ⓘ 兩個框要怎麼框」「ⓘ 排程時怎麼判定」），預設收合。項目卡片改用 DOM 文字（不再以 innerHTML 插入名稱），內容為判定方式＋門檻＋最近讀數（數值：「數值門檻 30・最近讀到最高約 8.05」或「最近最高低於約…」；像素：「警戒線（固定高度）・越線 N 點／沒有越線」），座標只在「進階」。
+  - 頁面清單一頁放得下（`PAGE_LIST_SIZE` 20）時隱藏「上一頁／下一頁」與計數列。
+  - 排程與發送分頁的順序改為：排程時段（預設展開）→ Teams 傳送設定 → 手機遙控。
+  - 此頁完成度 `#pageSetupSteps`（`pageSetupSteps(page)`／`renderPageSetup`，由 `renderTeamsPreview` 呼叫，網址輸入時也即時更新）：網址（http(s) 開頭，新增時的範例網址 `your-internal-system.corp` 不算）→ 抓圖（`capture_view.layout === 'native100-v1'`，目前頁面另需非提示圖的畫面）→ 擷取範圍（需已抓圖且 w、h > 0；新增時的預設整頁不算）→ 監測項目（選填，只顯示）→ 加入排程（至少一個啟用中的排程含此頁；只在停用排程中另有說明）。缺的標黃，「下一步」：網址＝聚焦網址欄、抓圖＝直接呼叫 `fetchLiveUrlScreenshot()`、擷取範圍＝切 ✂️、加入排程＝捲到勾選區。`firstMissingStep` 也用在頁面卡片（「⚠ 缺網址」「⚠ 未加入排程」，停用頁面不標）。只看設定與已載入的圖，非目前頁面不會讀取其圖片。
+  - 「此頁設定」下方 `#pageScheduleChecks`（`renderPageScheduleChecks`）：每個排程一個勾選框，勾選把頁面 id 加到該排程 `pages` 最後、取消則移除，接著 `renderAll()`；與排程卡片的頁面清單是同一份資料。排程簽章不含 pages，所以只會自動儲存、不重新註冊 Windows 任務。
+  - 「超標時的訊息」標籤改為說明是純文字、`@名字` 不會變成 Teams 標註（CDP 貼上的是純文字）。
+  - 新增頁面後表單要等 `ensurePageImage` 讀完圖才切換；設定服務是單執行緒，啟動時的數值自動試算會讓這一步延後數秒（既有行為）。
+  - `.inner-fold` 內直接放的勾選列、說明標籤與縮放輸入框補上與 `.field` 相同的字級與深色外觀（原本是瀏覽器預設的大字與白底）。
+  - 手冊截圖工具在各張圖呼叫 `setPageSection`（01／04／11 為 rules，02／03／08 為 page），09／10／13 先把對應區塊捲進畫面再截，否則下移後的區塊會被裁掉。左欄實測 13 項＋右欄回歸 13 項通過。
+右欄由上而下（2026-11-12）：
+  - `#currentPageJudgeBox`「🎯 目前頁面」（`renderCurrentPageJudge`，由 `renderTeamsPreview` 呼叫）：只看正在編輯的頁面，每個監測項目一行（`judgeRuleLine`：數值規則用 `numericDescription`、像素規則寫是否越線／點數、範圍無效、尚未抓圖、已停用），點一行會選取該項目並切到頁面分頁的 📏 模式；徽章為「正常／N 項超標／N 項無法判定／只截圖／已停用」。下方說明此頁屬於哪些排程：在預覽排程內就註明；不在時列出包含它的排程按鈕（點擊只改 `previewScheduleId`，不自動切換，避免改到「執行排程傳給自己」的對象）；沒有加入任何排程時提醒「排程執行時不會被截到」。這塊與下方「⚡ 排程判定結果」（原「警戒線判定」，所選排程的全部頁面）分開，避免把其他頁的結果看成這一頁。
+  - `.preview-controls`「👁 排程預覽與測試」：`previewScheduleSelect` 加上四個測試按鈕（`testPreviewBtn`、`sendToSelfBtn`、`runScheduleToSelfBtn`、`testSendNowBtn`）與 `selfHelpFold`、`selfTestRefreshBtn`、`selfTestStatus`。原本左欄排程分頁的「預覽與測試」區塊已移除，元素 id 不變，所以既有處理程式照舊。
+  - 頁首儲存狀態 `#autoSaveStatus` 改為 `<button>`：`setAutoSaveStatus` 在 error 且文字含「排程未同步／排程同步失敗」時加上 `actionable`、`data-action=sync` 與「（點此同步）」，點擊（需 `autoSaveEnabled`、未在儲存中）執行與「重新套用」相同的 `applySchedules()`；其他錯誤不可點。
+  - 版面以暫存副本（帳密遮罩、暫存服務、暫存 headless Edge）實測 13 項：用詞、四個按鈕位置、首頁與數值頁的目前頁面判定、不在預覽排程時的提示與一鍵切換、點項目選取、同步提示可點與其他錯誤不可點、無腳本錯誤；沒有實際點同步（會註冊 Windows 任務）。必須經本機服務開啟；`file://` 時嘗試轉址，否則顯示服務未啟動。
+- 排程選單只有右欄 `previewScheduleSelect` 一個（選項含張數），下方 `selfTestScheduleHint` 顯示目前選定排程與張數；四個測試按鈕都用 `previewScheduleId`，測試啟動中停用該選單與「目前頁面」的排程切換按鈕。手冊截圖 `12_self_test` 改截 `.preview-controls`。
+- 「排程時段」`schedulesFold` 預設展開（記憶鍵 `sidebar:schedulesFold:v2`，讓舊版記住收合的使用者也先看到展開），收合摘要列出前 3 個排程的時間與名稱。`#scheduleList` 與 `.schedule-page-list` 不設 max-height／內部捲軸，只由左側欄捲動（避免捲軸套捲軸切掉展開的排程設定）。
+- 排程卡片標題下兩行由 `renderScheduleRowStatus` 填入：設定摘要＋「下次」，以及 `rowLast`「上次 時間：結果」（class ok／warn／bad／running 上色，title 為完整原因）。資料來自 `/api/schedule-status` 每個任務的 `last`（`at`、`status`、`text`、`reason`）：`Get-E3ScheduleTaskStatus` 讀 `LastRunTime`／`LastTaskResult` 與 `logs\schedule_results\<id>.json`，交給 watchdog 檔的 `Get-E3ScheduleRunSummary`（與排程未送達通知同一套 `Get-E3ScheduleRunProblem` 判斷；watchdog 檔缺少時只有時間）。`refreshScheduleRunInfo` 在視窗取得焦點與每 60 秒（頁面可見、已從服務載入設定時）重讀，只更新卡片文字、不重建清單，避免打斷編輯；完整同步核對仍由 `refreshScheduleStatus` 負責。手冊截圖工具以示範狀態（已送出）回應 `last`。
+- 「手機遙控（@日管）」`receiverFold`（排程與發送分頁）：以 textContent 顯示 `/api/receiver-status` 的接收端狀態、已執行時間、最後回報、防睡眠、各接收對話（讀不到時顯示原因）、離線通知與開機啟動任務；摘要顯示狀態與離線通知是否設定。載入時、視窗取得焦點與每 30 秒（頁面可見時）更新；「註冊離線通知與開機自動啟動」按鈕先 confirm 再 POST `/api/receiver-register`。 卡片另顯示「視窗模式」（心跳的 `mode`；與設定不同時提示重新啟動接收端）與「自動重啟」（`autoRestart`：監看任務最近一次重啟時間），並有 `receiverHeadlessChk` 勾選框寫入 `teams.receiver_headless`（下次啟動接收端才生效）。
+- 每頁畫面來源：`sample_images\<id>_full.png`（依 crop 重裁）→ `sample_images\<id>.png` → 都沒有時顯示「這一頁還沒有畫面」提示圖（不評估警戒線）。直接開啟 HTML（file://）時沒有圖可讀，只顯示提示圖與「本機服務沒有啟動」橫幅。
+- 數值規則：設定與圖片載入後自動逐項呼叫 numeric-preview（串行），結果綁定規則與圖片簽章，過期結果不顯示。
+
+---
+
+### 10. 工作控制（`work_control.ps1`）
+- 資源 `cdp` 與 `capture` 的占用者寫在 `logs\work_control\<資源>.owner.json`（PID＋啟動時間＋入口腳本）。等待時寫 `waits\<id>.json`，設定頁彈窗讓使用者選擇；**沒有點選絕不自動強制停止**。
+- 強制停止只結束可驗證的專用工作程序（`e3_monitor_native.ps1`／`teams_receiver.ps1` 的 worker，排除 `-Calibrator`、`-Listen`），不停 Edge 或服務；接收端等 cooperative 工作改寫 cancel 檔讓其自行停止。決定需匹配 id／token／當下 owner，重複提交不重做。
+- `Disable-E3ConsoleQuickEdit` 只改目前主控台的輸入模式（清 0x0040、設 0x0080），保留 Ctrl+C；設定服務、CDP 設定與接收端共用。
+
+---
+
+### 11. 手機 `@日管` 遙控（接收端）
+- **停止與指令紀錄修正（stop-claim1）**：明確啟動只在取得接收端 mutex 後清除舊停止標記；自動重啟傳入 `PreserveStopRequest`，2／15 秒等待期間每最多 250 ms 檢查停止檔，下一次入口在載入對話或 Edge 前處理並寫入 intentional/stopped 心跳。既有截圖／傳送中的工作仍按原流程結束，不新增強制取消。`seen` 改在 `New-E3ReceiverClaim` 成功返回之後加入；建立紀錄前的儲存失敗可於恢復後重新選取，已存在的紀錄（含不完整檔案）仍禁止重送，不自動刪除。`tools\test_receiver_stop_claim.ps1` 使用隔離 mutex、暫存檔及替身讀取／傳送驗證這兩項；未更改監看健康判定、去重 key 或效能等待設定。依使用者指示，開發期間暫不更新使用者手冊。
+- **失敗原因與說明訊息（2026-11-12）**：
+  - 截圖回覆：`Invoke-E3ReceiverCapture` 只負責啟動與等待子程序，回覆由 `ConvertTo-E3ReceiverCaptureReply` 依子工作資料夾的 `result.json`（每頁 `error`、整體 `error`）、`deadline.json`、結束代碼與 `capture-error.log` 組成：沒截到的頁逐一寫「名稱：沒有截到。原因：…」，原因經 `Format-E3ReceiverReason`（去掉內部前綴、單行、限長）。等不到擷取執行權改寫成「排程或另一個擷取正在執行，等了 3 分鐘仍未輪到」。回傳 `problems` 供指令紀錄使用。
+  - 指令紀錄 `commands\<key>.json`（version 3，`Save-E3ReceiverClaimState`）：每個狀態都帶 `route`、`command`、`messageTime`。狀態：`claimed`→（截圖指令）`ack_sending`→`acknowledged`→`replied`（含 `images`、`problems`）；失敗為 `not_retried`（含 `phase`：received／acknowledgement／capture／result，與 `error`）；`ignored`（沒有可回覆內容）；`interrupted`（見下）。
+  - 失敗說明：主迴圈 catch 在指令已領取且未回覆時，寫入 `not_retried` 後以 `Add-E3ReceiverOutbox` 排入一則純文字說明（`New-E3ReceiverFailureText`：台灣時間＋指令、`Get-E3ReceiverPhaseText` 依階段說明可能已送出什麼、原因、不會自動重做），`route`＝原對話、`kind=command_failure`。`E3_RECEIVER_RELOAD` 也先記錄與排入再往外丟。說明由通知佇列在該對話恢復可讀後送出一次。
+  - 中斷：`Resolve-E3ReceiverInterruptedClaims` 在取得接收端 mutex 之後（此時沒有其他接收端）把 6 小時內仍停在 claimed／ack_sending／acknowledged 且有 `route` 的紀錄先改成 `interrupted` 再排入一則說明（視窗被關、程式結束、主機重開）。先改狀態再排入，所以同一筆只說一次；指令不重做。舊版紀錄沒有 `route`，略過。
+  - 離線期間的指令：第一次啟動時讀舊 `heartbeat.json` 的 `utc` 當作 `E3ReceiverOfflineFrom`（7 天內才採用）。每個對話第一次成功讀取時，`Get-E3ReceiverMissedCommands` 找出畫面上時間落在（上次心跳, 本次啟動]、且沒有指令紀錄的 `@日管` 訊息，排入一則「這段時間有 N 個指令沒有處理」到該對話（每個對話每個程序一次，`E3ReceiverMissedDone`）。只列出、不補做；只看得到畫面上仍載入的訊息。
+  - 代發：接收端自己送不出說明時檔案成為 `.failed`。監看任務的 `Invoke-E3FailedNoticeRelay` 只處理 6 小時內、`kind=command_failure` 的 `.failed`：先改名 `.relaying` 再用排程的 Teams 登入（`Send-GroupToTeams`）送到 `teams.target_chat_name`，文末註明原對話，結果 `.relayed`／`.relayfailed`，每輪最多 3 則、各只試一次；需要 `prefer_window=cdp`。其他種類的 `.failed` 維持不重送。紀錄在 `notice_relay_last.txt`。
+  - 新指令 `上一個指令`（同義：上個指令／上一次指令／最近指令／指令紀錄，或含「為什麼…失敗／沒回／沒反應」）：`Get-E3ReceiverHistoryReply` 列出**同一個對話**最近 5 筆指令與結果／原因，不顯示其他對話的指令。判斷在「截圖」之前，所以「為什麼截圖失敗」不會再截一次。
+  - 紀錄：`Start-E3ReceiverLog` 在 `-Listen` 入口以 `Start-Transcript` 把視窗內容寫到 `<日期>\receiver_console_*.log`，主迴圈每 3 秒的檢查順便換日（`Update-E3ReceiverLog`）；`Write-E3ReceiverEvent` 寫 `<日期>\receiver_events.log`（時間、種類、內容各一欄），`Save-E3ReceiverStatus` 每次都會寫，另有 start／end／fatal／restart／command／command_failed／notice_queued／notice_sent／notice_failed。兩者寫入失敗都不影響接收。`-LibraryOnly`（測試）不啟動 transcript。
+  - 監看任務的監看：接收端啟動 20 分鐘後每 10 分鐘 `Test-E3ReceiverWatchdogTask`：「E3 日管接收監看」已註冊且啟用，卻超過 30 分鐘沒執行（或註冊後從未執行）連續兩次，就排入一則通知到本人對話；任務恢復執行前不重複。未註冊或被停用視為使用者的選擇，只在狀態回覆中說明。
+  - 回歸測試 `tools\test_receiver_failure_notice.ps1`（55 項）：替身 Teams／擷取邊界＋暫存資料夾，含真正的主迴圈（會短暫取得真實的接收端單一實例鎖，主機上有接收端在跑時先停止）與「程式副本＋一個檔案去掉 BOM」的啟動檢查。皆為本機模擬。
+- **設定**：`setup_teams_receiver.bat`（`Set-E3CdpBinding -SelectInBrowser`）在 `E3TeamsCommandReceiver` 的有視窗 Edge 由使用者選對話後 BIND，可連續綁本人、其他個人與多個群組（最多 20 個，route／帳號＋chatId 不可重複；不支援團隊頻道）。接收只需要綁定中的 accountId／chatId／label，設定時開的分頁之後不需保留。接收端執行中（`Local\E3TeamsCommandReceiver` 存在）拒絕 setup，需先停止。
+- **啟動／停止**：`start_teams_receiver.bat`（`-Listen -Continuous`）；`test_teams_receiver.bat` 回覆一個指令或 10 分鐘後結束；`stop_teams_receiver.bat`（`-Stop`）寫 `logs\teams_receiver\stop.request`，主迴圈每 3 秒檢查後正常結束（啟動時會清掉殘留的要求）。`Local\E3TeamsCommandReceiver` 防重複啟動。Ctrl+C 與 stop 都在心跳記為 `intentional`，監看不會重啟；直接關閉黑色視窗無法留下紀錄，視為異常結束，會被監看重新啟動。
+- **指令**（2026-11-12 改為規則式問法辨識；主機在企業內網、不能用 AI 服務，所以不做自然語言 AI，聊天文字只用來挑選已設定的名稱與固定查詢，從不執行）：
+  - 前綴：文字以 `@日管` 開頭，後面接空白（半形、全形 U+3000、NBSP 都可），或直接接已知的指令字（`$starts`：狀態、截圖、檢查、主機、排程、連線、說明…），所以 `@日管狀態` 可用、`@日管理員…` 不算。`receiver-snapshot.js` 只把 `^@日管[ 　]*\S` 當候選，是否為指令由 `Resolve-E3ReceiverRequest` 決定；不是指令的候選仍會建立 claim，狀態為 `ignored`、不回覆。
+  - 辨識前先去掉前後的客氣話（請、幫我、麻煩、謝謝、嗎、標點…，存成 `$q`）。判斷順序：上一個指令 → 說明 → 打招呼（回「我在」＋執行時間＋用法）→ 狀態 → 清單 → 主機（有主機字、沒有截圖字也沒有頁面名稱時；「主機正常嗎」不會被當成檢查）→ 檢查（檢查、多少、數值、超標、門檻、最高、正常嗎…；「截圖並檢查」也是檢查）→ 截圖（截圖、抓圖、擷取、截一張、拍一張、給我看）→ 連線（連線、連得到、打不開、ping…）→ 排程（排程、有送、沒收到、發了、結果…）→ 只有名稱（視為截圖）→ 看不懂（回「這句我還看不懂」＋可能的名稱建議＋用法）。「為什麼截圖失敗／沒回」是上一個指令，「為什麼沒收到」是排程。
+  - 名稱：每次讀 config，完整名稱優先、英數邊界不模糊匹配（P14 不匹配 P14_D3）；清單（、，, 跟 及 和 與 以及）依輸入順序；`頁面 名稱`／`排程 名稱` 解決重名；名稱也可以寫在截圖字前面。每次最多 20 頁。找不到時 `Get-E3ReceiverSuggestions` 給最多 3 個建議（忽略大小寫與 `_ - 空白`、包含關係、字母順序顛倒、編輯距離 ≤ 長度/4），**只建議、不代選**，需要使用者再下一次指令；清單中某一項找不到時其他項照做並附建議。檢查／連線的文字中有像名稱的英數字（`Get-E3ReceiverLooseWords`）卻對不到任何名稱時，回覆建議而不是擴大成全部頁面。
+  - 截圖：同原本（排程名稱只取其 pages，不觸發 Windows 任務、不群發、不判定）。收到通知（`Get-E3ReceiverAcknowledgement`）列出頁面簡介；`Get-E3WorkOwner 'capture'` 有占用者時加一句「主機正在執行「…」，要等它結束才會開始（最多等 3 分鐘）」。結果附「擷取時間 MM/dd HH:mm，花了 N 秒」。
+  - 檢查（`analyze`）：走同一條擷取流程（收到通知、`E3MonitorNativeRun`、300 秒期限），`request.json` 帶 `analyze=true`，子工作在每頁擷取成功後呼叫 `Invoke-E3PageAnalysis`，`result.json` 每頁多 `analysis`（captureOnly、rules、annotated 檔名、error）。回覆（`ConvertTo-E3ReceiverCaptureReply`）第一行「檢查結果（時間，花了 N 秒）：🚨 n 項超標、⚠️ n 項無法判定、✅ n 項正常」，每頁一行頁名、每個監測項目一行白話結果（數值規則寫最高值與門檻、框內沒有曲線寫「低於約」；像素規則寫是否越線；無法判定寫原因），只截圖的頁註明，沒截到的頁寫原因；圖片優先附標示圖（≤10 MiB）。不填名稱時檢查所有啟用且有啟用規則的頁面。只回覆原對話、不發給排程收件人、不寫排程結果；無法判定與沒截到列入 `problems`（指令紀錄）。
+  - 查詢（`teams_receiver_queries.ps1`，在釋放 CDP 鎖後執行，查詢本身失敗時回覆「…查詢沒有完成。原因：…」）：
+    - 排程結果 `Get-E3ReceiverScheduleReport`：篩選＝排程名稱，否則時段字（早上 0–12、中午 11–14、下午 12–18、晚上 17–24，或「9點」「晚上7點半」取該小時），否則全部。每個排程一行（共用 `Get-E3ReceiverScheduleLines`，含與設定頁相同的判斷與原因），再附該排程最近 26 小時內最新一份主機 log（`logs\yyyy-MM-dd_HHmm_<id>.log`，共用讀取模式）中以 ❌／⚠️／🚨 開頭的行（去重，最多 6 行，每行 150 字）。不執行、不補跑。
+    - 主機 `Get-E3ReceiverHostReply`：開機時間與已開機時間、CPU 使用率、記憶體、每顆本機磁碟剩餘空間（標出程式所在磁碟；<10% 或 <5 GB 標「空間不足」）、接收對話中讀不到的（`$script:E3ReceiverLiveSources`）、`Get-E3ReceiverHealthLines`（排程登入、監看任務、待送通知），各部分讀不到時分別說明，最後一行整體結論（CPU ≥90%、記憶體 ≥90%、磁碟不足時列出）。資料來源 `Get-E3ReceiverHostFacts`（CIM），可替換以便測試。
+    - 連線 `Get-E3ReceiverConnectReply`／`Test-E3ReceiverSite`：每個不同網址一次 GET（8 秒、自動轉址、`UseDefaultCredentials=false`、不帶 cookie，只讀標頭）。2xx／3xx＝連得到，401／403＝連得到但要求登入，其他 HTTP 碼與 DNS／連不上／逾時／憑證／TLS 各有白話原因。不填名稱時測所有啟用頁面。只代表網站有回應，不登入、不截圖。
+- **防重複**：只處理接收端啟動之後、位於最新位置、兩次快照文字／ID／時間一致的訊息；以帳號＋chatId＋時間雜湊建立持久 claim（`logs\teams_receiver\commands\<key>.json`）後才處理；結果不明不重送。忽略「✦」開頭的回覆、含圖片、引用、傳送中、超過 400 字的訊息。
+- **單一工作分頁**（2026-11-11 起，取代「每個對話一個分頁、必須停在最新訊息」）：一個專用 Edge、一個分頁服務所有綁定對話，不需要任何對話保持開啟。`Initialize-E3ReceiverTab` 確保瀏覽器與工作分頁存在：沿用仍在執行且模式相符的專用 Edge（只採用該 profile 自己寫的 DevToolsActivePort 且監聽埠屬於該程序），模式不符先正常關閉再重開；舊版記錄在 bindings 的其他分頁會關閉。`Set-E3ReceiverBindingTab` 把所有接收綁定的 `targetId` 指向工作分頁，因為回覆沿用 `Send-GroupToTeamsCdp`，它經 bindings.json 找分頁；接收端呼叫時固定傳 `cdp_headless=$false`（＝使用現有分頁，不另開瀏覽器），**不可改成 true**，否則會把接收端自己的瀏覽器當成遺留程序清掉。`Open-E3ReceiverChat` 把分頁帶到某對話：頁面已準備好時先用 `teams_cdp\receiver-switch.js` 在 Teams 內切換（只點擊聊天清單中名稱唯一相符的項目，點一次後最多等 6 秒並以 chatId 核對；同名、不在清單、未切換都回 `reopen`），否則以 chatId 連結整頁開啟（同一連線先註冊 `image-frame-bootstrap`，`Wait-E3HeadlessChat` 75 秒，再由 `Connect-E3CdpTarget` 嚴格核對帳號／chatId／label）。主迴圈每圈由 `Get-E3ReceiverNextSource` 取「到期且最久未讀」的來源，`Invoke-E3ReceiverVisit` 讀兩次相隔 500 ms 的穩定快照後交給 `Select-E3ReceiverCommand`；單一來源每圈 1 秒、多來源每圈 300 ms。頁面載入超過 `E3ReceiverReloadMinutes`（30）會在下一次讀取時整頁重載。送出前（收到通知、結果、監看通知）一律 `Enter-E3ReceiverChat`：切回來源對話、`Connect-E3CdpTarget`、`Assert-E3ReceiverDestination`。**不檢查輸入框空白**：殘留草稿交給 `Send-GroupToTeamsCdp`（分頁模式 `Clear-E3HeadlessDraftForNewDelivery -Visible`，先核對分頁、帳號、對話並停止舊 runtime 工作）清除；若在這裡要求空白，一次中斷的貼上會讓之後每個指令都被領取後失敗，而讀取仍正常、心跳與監看都看不出來。
+- **有視窗／無視窗**（`teams.receiver_headless`，預設有視窗）：無視窗以 `--headless=new` 啟動，並用啟動參數 `--user-agent`（依 msedge.exe 主版本組出不含 Headless 的字串）與 `--window-size=1600,1000`，因為每次 CDP 重連都會失去連線層級的模擬設定（`Start-E3TestBrowser -ExtraArguments`）。有視窗時每 15 秒以 `Browser.getWindowForTarget` 檢查，視窗被最小化就還原（最小化會停止繪製，新訊息進不了頁面）；被其他視窗蓋住或鎖定螢幕不受影響。
+- **最新訊息讀取**（`teams_cdp\receiver-snapshot.js`，viewport 版本 `receiver-latest2`）：不使用發送端的 `followLatest`／`atLatest`／`snapshot`。先以 `BridgeAdapter.inspect` 核對綁定與 label，在對話根節點內找唯一可捲動的訊息清單（找不到或不唯一即回錯誤，不猜測）；可見的「回到最新訊息」按鈕最多每 2 秒點一次，點擊或捲動後本次回傳 `latest:false`，下一次讀取穩定在底部（誤差 ≤2 px，支援 column-reverse）才讀指令。不聚焦輸入框、不送鍵、不碰草稿與其他捲軸。**訊息列由本腳本自行解析且容錯**：無法解析的列（沒有唯一正文、沒有完整含時區的時間、ID 重複，例如卡片、通話紀錄、已刪除訊息）只計入 `skipped` 並略過，不讓整個對話讀取失敗；指令列仍嚴格要求唯一 ID、單一正文、完整時間、純文字（表情圖示除外）、無引用、非傳送中。`Read-E3ReceiverSettled` 在期限內（預設 8 秒）每 400 ms 重讀：「尚未到最新」只是等待，不是斷線。回歸測試 `tools\test_receiver_latest.ps1`（33 項，暫存 headless Edge＋替身 BridgeAdapter，不導覽 Teams、不送出）。
+- **處理**：截圖指令先送收到通知（頁面簡介，等傳送鎖最多 180 秒），釋放 CDP 鎖後由 `-ReceiverCaptureJob` 子程序以 headless 擷取（期限 300 秒，父程序最多等 330 秒；`E3MonitorNativeRun` 排他，排程執行中最多等 180 秒），結果回覆等傳送鎖最多 420 秒（2026-11-12，原 180 秒；排程傳送最壞約 5 分鐘），處理中心跳 `busyUntil` 為 1500 秒（原 1200，涵蓋 ack＋擷取＋420 秒等待＋傳送，避免監看把仍在回覆的接收端當成卡住而重啟），再重新核對原來源、帳號、對話與空白輸入框，以原 route 回傳圖片。回覆以「✦ [日管]」開頭、保留分行不插空行。 同一時間只處理一個指令；處理期間不讀取其他來源，完成後依序處理仍在對話中、時間在啟動之後且未領取的指令。
+- **圖片回傳回歸驗證**：`tools\test_cdp_image_preflight.ps1` 每個案例用全新 PowerShell 載入接收端 `-LibraryOnly`，以替身綁定及禁止連線的邊界執行真實 CDP 圖片預檢，涵蓋有／無視窗、純圖片、純文字、錯誤 PNG、損壞 PNG、超大尺寸及混合圖片。避免測試自己產生圖片時先載入組件而掩蓋接收端缺少載入的錯誤。這是本機驗證，不代表實際 Teams 已送達。
+- **狀態回覆**：主機名稱、連續執行時間、排程數，以及各排程 Windows 任務的上次結果與下次時間；未同步、停用、讀不到任務清單會明示。上次結果用與設定頁卡片相同的 `Get-E3ScheduleRunSummary`（接收端啟動時載入 `teams_receiver_watchdog.ps1`，缺檔時退回結束代碼文字），沒送達或部分失敗時附原因。之後由 `Get-E3ReceiverHealthLines` 加上：排程用的 Teams 登入（讀 `sender_login_state.json`：正常／等下一次確認／需要處理＋原因／尚未檢查；只在 CDP 模式）、離線監看任務（正常＋上次時間／未註冊／已停用／超過 30 分鐘沒執行／無法讀取）、待送通知數（有才顯示）、這個對話最近 24 小時沒有完成的指令數（有才顯示，並提示 `@日管 上一個指令`）。
+- **容錯與復原階梯**：任何來源讀取、截圖、傳送例外都不結束接收程序。`Set-E3ReceiverSourceFailure` 只影響該來源：退避 10→20→40→80→160→300 秒，下次改以連結重開（`reload`），其他來源照常輪讀；同一原因只印一次。登入類錯誤（`E3_RECEIVER_LOGIN`）讓全部來源暫停 60 秒（共用一份登入，不逐一試探）；瀏覽器或分頁準備失敗（`E3_RECEIVER_BROWSER`）清掉分頁狀態，20 秒後重建。有視窗模式看到 Microsoft 登入頁時 15 分鐘內不再導覽，留給使用者登入；無視窗模式照常重試。對話改名（label 不同）回 `E3_RECEIVER_SOURCE`，需重新綁定。bindings.json 被改寫（時間戳不同或找不到原綁定）丟 `E3_RECEIVER_RELOAD`。`Start-E3ReceiverSupervised`：持續模式遇到未預期例外不結束程序，15 秒後（RELOAD 為 2 秒）重新進入 `Invoke-E3ReceiverTest`，沿用第一次啟動的指令時間界線（`E3ReceiverCutoff`）；只有 `E3_RECEIVER_FATAL`（沒有綁定、重複綁定、重複啟動）會結束。復原永遠不重讀、重試或回覆先前的指令，claim 與 seen 仍有效；程序重新啟動後只處理啟動之後的新訊息，不回補離線期間的指令。回歸測試 `tools\test_receiver_single_tab.ps1`（87 項：切換腳本於真實頁面、輪讀與退避、綁定指向工作分頁、開啟對話各路徑、監看重啟判斷、以替身對話執行真正的主迴圈，以及殘留草稿不擋回覆、CDP 關閉自動 Enter 回報未送出、通知佇列在鎖忙碌時保留（隔離 mutex 名稱）、排程傳送結果判斷與只通知一次、排程卡片上次結果摘要）；皆為本機模擬，不代表真實 Teams 行為。
+- **防睡眠**：接收期間 `SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED)`，允許關螢幕與鎖定，不改電源計畫，結束時解除。
+- **心跳**：持續模式寫 `logs\teams_receiver\heartbeat.json`（version 2：state〔listening／processing／restarting／stopped〕、pid、processStart、startedUtc、utc、busyUntilUtc、sleepGuard、stopReason、mode〔window／headless〕、intentional、fatal、sources[route, active, lastOkUtc, error]），最多每 30 秒一次，連上、處理前（busyUntil +1200 秒）、回覆後與結束時強制寫入。
+- **監看**（`-ReceiverWatchdog`，Windows 任務「E3 日管接收監看」每 10 分鐘）：無心跳、stopped、程序不存在、心跳超過 10 分鐘（不在 busyUntil 內）、啟動滿 10 分鐘後任一來源超過 10 分鐘未成功讀取，皆異常；60 秒後再確認。只支援 CDP 模式，用排程的 Teams 登入傳純文字「✦ [日管監看]」到 `teams.target_chat_name`。`watchdog_state.json` 先記錄再傳送；同次離線只通知一次、失敗不重試；只有離線通知 sent 才發「已恢復」。不持有 `E3MonitorNativeRun`。`Write-E3WatchdogLog` 除了覆寫 `<名稱>_last.txt`（最新結果），內容與上一次不同時另在 `<日期>\watchdog_history.log` 加一行（時間、檢查名稱、內容），所以每 10 分鐘重複的「正常」不會灌滿歷史，異常、重啟、通知的時間都留得下來。 **自動重啟**：`Get-E3ReceiverHealth` 回傳 `kind`，`Get-E3ReceiverRestartPlan`（純判斷）只對程序已結束（dead）、非要求的停止（stopped）與卡住（stale，先結束經 PID＋啟動時間＋命令列核對的接收程序）重啟；`intentional`、`fatal`、從未啟動、程序仍在但讀不到 Teams（sources）、或存在 `stop.request` 都不重啟。15 分鐘內不重複、一小時最多 3 次（`watchdog_restart.json`，先記錄再動作）。`Start-E3ReceiverAutoRestart` 先確認 `Local\E3TeamsCommandReceiver` 不存在，優先以 Stop／Start「E3 日管接收端」任務重新啟動（結束後的視窗停在 pause 仍算執行中，IgnoreNew 會擋掉新啟動），任務不可用時直接執行 start_teams_receiver.bat。重啟當次不通知，下次檢查仍異常才通知，通知文字附上重啟結果。
+- **排程登入預警**（同一個監看任務，`Invoke-E3SenderLoginCheck`）：排程用的 Teams 登入過期時，無法用同一份登入通知自己，因此檢查結果交給接收端（另一份登入）發送。只在 `prefer_window=cdp` 時執行；`Test-E3SenderLoginDue` 決定時機：從未檢查、距上次 ≥6 小時、下一個本專案排程任務（`Get-E3NextScheduleRunUtc`，依 `Get-E3OwnedTaskId`）在 70 分鐘內且距上次 ≥3 小時、或上次異常且已過 30 分鐘。檢查用 `Test-E3CdpConnection -PassThru`（ConfigurationOnly：登入、帳號、對話，不傳訊息）；CDP 鎖忙碌時略過且不更新狀態。下一個排程在 5 分鐘內時不開始檢查（兩者都要 CDP 鎖，排程只等 180 秒）。**連續兩次失敗才通知**（2026-11-12）：第一次失敗只記 `ok=false`、`pending=true`，下一次監看（距上次 ≥5 分鐘）再檢查，仍失敗才通知；原因是 11/12 18:39 單次失敗誤報。真正過期最多晚約 10 分鐘通知。`logs\teams_receiver\sender_login_state.json` 記錄結果；確認異常時寫一則「✦ [日管監看] 排程用的 Teams 登入需要處理…」到 `logs\teams_receiver\outbox\`，異常期間不重複，恢復時再寫一則「已恢復」。`Local\E3SenderLoginCheck` 防重入，420 秒期限。
+- **排程傳送結果通知**（同一個監看任務，`Invoke-E3ScheduleResultCheck`）：主程式在正式排程（`-Schedule`，不含 `-SelfScheduleJob`／`-TestSample`／`-NoSend`／`-DryRun`）開始時寫 `logs\schedule_results\<id>.json`（state=running），等不到執行權改 `no_lock`，finally 寫 `finished`（exitCode、targets、delivered、sendFailures、error、skipped＝`outside_window`／`alert_only_normal`）。被 10 分鐘期限強制結束時 finally 不執行，留下的 running 即「中斷、結果不明」。監看依 `Get-E3OwnedTaskId` 列出本專案任務，讀 `LastRunTime`／`LastTaskResult`；執行中（267009）或從未執行（267011）不判斷。結果檔的 startedUtc 落在 LastRunTime −2～+15 分鐘才算同一輪，否則只依任務結果代碼（0 不通知）。`Get-E3ScheduleRunProblem`（純判斷）：running、no_lock、有 sendFailures、或 exitCode≠0 且沒有任何對象送達 → 通知；頁面擷取／判定失敗但訊息已送達不另通知（原因已在 Teams 訊息內），skipped 不通知。`logs\teams_receiver\schedule_result_state.json` 記錄每個排程已處理的 LastRunTime，**先記錄再排入**，同一輪只通知一次、不重送；首次檢查時超過 24 小時的舊結果只建立基準。多個排程合併成一則「✦ [日管監看]」經通知佇列由接收端發送（接收端未執行時最多保留 6 小時）；紀錄寫在 `schedule_result_last.txt`。限制：重複間隔小於 10 分鐘時兩次檢查之間只看得到最後一輪。測試用 `$script:E3WatchdogLogRoot` 指向暫存目錄，不碰正式 logs／outbox。
+- **通知佇列**（接收端 `Send-E3ReceiverOutbox`，每 5 秒）：只接受以「✦」開頭、≤2000 字、6 小時內的 `outbox\*.json`（否則改名 `.invalid`／`.expired`）；項目有 `route` 時（指令失敗／中斷／離線說明）只送到那個綁定對話：該對話已不在綁定中改名 `.invalid`，尚未連線就留在佇列且不擋住後面的通知；沒有 `route` 的送到已綁定的本人對話，沒有本人對話時用第一個來源，該來源未連線時保留等待（不改送其他群組）。先以 `WaitOne(0)` 取得 `E3TeamsCdpShared`（忙碌時保留 `.json`、本輪結束，5 秒後再試，不經設定頁忙碌彈窗），取得後才改名 `.sending` 並送，結果 `.sent`／`.failed`，每則最多嘗試一次，接收端不重送；不會因等鎖逾時而沒試就變成 `.failed`。只有 `kind=command_failure` 的 `.failed` 會由監看任務用排程登入代發一次（見上）。完成的檔案（含 `.relayed`／`.relayfailed`）30 天後由紀錄清理刪除。
+- **設定頁狀態**：排程與發送分頁的「手機遙控（@日管）」卡片顯示上述心跳、監看與任務狀態、排程登入檢查結果與待送通知數，並可直接註冊兩個任務（見第 9 節）。
+- **自動啟動**（Windows 任務「E3 日管接收端」）：登入 Windows 1 分鐘後執行 `start_teams_receiver.bat`，無執行時間上限、IgnoreNew。兩個任務由 `register_receiver_watchdog.bat` 一起註冊；action 不含 `-Schedule`，`-RegisterSchedules` 不會刪除它們。這是登入觸發；程序結束或卡住後的重啟由監看任務負責。注意 `Test-E3ReceiverTaskAction` 的 watchdog 分支只核對 `-ReceiverWatchdog`，未完整核對 Execute／腳本／config 路徑，不能保證同名的另一份安裝不被覆寫或移除。
+- **紀錄保留**：啟動時與每 24 小時清理：`captures\<日期>`（指令截圖）超過 7 天、`<日期>`（收據、診斷、視窗紀錄、事件紀錄、監看歷史）與 `commands\*.json` 超過 30 天；不碰 `teams_cdp`（blocked／review）、heartbeat、status、watchdog 檔。
+- 注意：`Get-ScheduledTask -TaskPath '\'` 在根資料夾沒有任務時會丟例外，查詢一律列出全部後篩選 TaskPath。
+
+---
+
+### 12. 已知限制與待實測
+- 網頁版面隨縮放／內容變化：改縮放、網址或版面後需重新抓圖並確認警戒線；不保存 iframe／表格內部捲軸、不重演點擊流程。圖片上限單邊 16384、總 6400 萬像素。
+- 自動登入只認固定按鈕文字與密碼框；SSO／MFA／特殊表單需手動登入。帳密以明文存在 config.json 與瀏覽器 localStorage。
+- Zabbix 時間調整只支援舊版 `timeControl`／`scrollbar_cntr` 介面與英文 `(now)` 標籤；新版、其他語系、iframe 需另外適配（無法確認即此頁失敗）。
+- 數值 OCR 需主機有可用的 Windows OCR 語言；不保證任意字型與影像品質；另一台主機的實際 OCR 結果需現場驗證。
+- 視窗模式（UIA）需解鎖的互動桌面，Teams 改版可能影響定位；名稱須與清單完全一致，清單最多往下捲 10 頁。
+- CDP：本機測試、伺服器回應與手機實收要分開。保留視窗模式曾有短時間 Win+L 實收確認；無視窗、多圖、隔夜與其他主機需各自實測，不能從短時間成功推論長期可靠。Teams 登入過期／MFA 需人工處理。
+- 系統睡眠期間沒有程式執行；喚醒受硬體、電源與公司政策限制。防睡眠請求無法阻止手動睡眠、闔蓋、登出或斷電。
+- 死碼盤點（2026-11-12）：以 PowerShell 語法樹建立呼叫圖（指令、字串中的函式名、`function:` 變數），306 個函式全部可從進入點到達；網頁與內嵌 JS 函式、本機服務 API、CSS class 也都有使用者。已移除：`sample_data.js`（1.47 MB，只供 file:// 離線示範，卻在每次開設定頁時載入）、主程式未使用的 `-CountdownSeconds`、`Format-E3ReceiverText -ImageReply`、`Capture-PagesNative` 未讀取的 `$proc`。刻意保留的舊相容程式（需確認公司主機狀態才能刪）：`Get-E3CdpRecordRoot` 的舊紀錄搬移（`%LOCALAPPDATA%\E3TeamsCdpSendTest\blocked|review` 存在時才執行）、`Connect-E3CdpTarget`／`teams_self_test.ps1` 白名單中的舊 runtime 版本、舊設定格式相容（缺 `schedules`／`messages`／`auth`、`48:notes` 連結、`capture_only`）。一般視窗傳送（UIA，約 460 行）目前設定未使用（`prefer_window=cdp`），但仍是設定頁可選的功能，不是死碼。
+- 問法辨識是固定規則，不是 AI：沒列到的說法會回「看不懂」與用法；新增說法要改 `Resolve-E3ReceiverRequest` 的字詞清單並補 `test_receiver_queries.ps1`。檢查與排程使用同一把擷取鎖，排程執行中最多等 3 分鐘。連線測試不帶 Windows 認證，使用整合驗證的網站會回 401（仍視為連得到）。Zabbix API、資料庫、檔案查詢尚未實作（等待使用者提供連線方式與實際問題）。
+- 接收端：主機重開後需登入 Windows 任務才會執行；深層連結在有視窗 Edge 對「自己」對話可能先到 launcher 頁（改以名稱選取），實際行為需 A 主機驗證；群組沒有發送者白名單，任何成員都能下指令；排程與接收端使用兩份不同的 Teams 登入。
+- 設定工具在視窗寬度約 900px 以下時三欄會擠壓、標題逐字換行（未做窄螢幕版面）。手冊另有窄螢幕版面；截圖展示桌面設定介面。
+- CDP 設定按鈕只在啟動請求期間停用；後端每次請求仍可開一個設定 PowerShell，mutex 只序列化工作，不去除重複請求。同名綁定覆寫原紀錄，但連按仍可能留下多個等待程序，尚未做設定流程單一實例防護。
+- 接收端的單一工作分頁、對話內切換、容錯讀取、無視窗啟動與監看重啟，目前只有本機模擬測試；真實 Teams 的行為（聊天清單項目的名稱比對、連結開啟後是否停在最新、多對話切換速度、長時間無視窗、鎖定螢幕時有視窗模式是否持續更新）需在公司主機實測。多對話時每個對話約 2～3 秒（估計），指令延遲隨對話數增加。輪讀會把這些對話標為已讀。防睡眠／自動復原不保證網路或 Teams 永久有效；能讀到頁面不等於 Teams 服務在線。登入過期、MFA、關機、睡眠、登出 Windows 無法自動處理。
+- Windows Server 可擷取與判定；UIA 操作 Teams 需有人登入且解鎖；CDP 在 Server 未驗證。
+- 失敗說明、中斷與離線通知、代發、接收端視窗紀錄與啟動檔案檢查（2026-11-12）只有本機模擬測試，需在公司主機實測：說明訊息實際送達、長時間 `Start-Transcript` 的檔案大小與換日、代發到預設對話的內容。接收端與排程兩份 Teams 登入同時失效、主機關機／睡眠／無人登入 Windows 時，仍然沒有任何通知管道。指令紀錄與事件紀錄含指令文字（原本就存在 `commands\`），保留 30 天。代發會把指令文字送到 `teams.target_chat_name`（與原對話可能不同）。

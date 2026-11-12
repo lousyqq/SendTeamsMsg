@@ -1,0 +1,46 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261112235143
+Username: SARIEL\yu-tinglin
+RunAs User: SARIEL\yu-tinglin
+Configuration Name: 
+Machine: SARIEL (Microsoft Windows NT 10.0.22631.0)
+Host Application: powershell -Command Set-ExecutionPolicy Bypass -Scope Process -Force
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+& c:\SendTeamsMsg\e3_monitor_native.ps1 -Schedule morning -TestSample -NoSend
+"ExitCode morning: $LASTEXITCODE"
+& c:\SendTeamsMsg\e3_monitor_native.ps1 -Schedule sched2 -TestSample -NoSend
+"ExitCode sched2: $LASTEXITCODE"
+Process ID: 39904
+PSVersion: 5.1.22621.4391
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.22621.4391
+BuildVersion: 10.0.22621.4391
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+⏱️ 本次擷取／傳送工作最多執行 10 分鐘；逾時會結束本工作並釋放排程鎖，不自動重送。
+📝 工作 [sched2] 已啟動，正在檢查舊截圖目錄…
+🔋 執行期間要求系統保持清醒（不解除鎖定，不變更電源計畫）
+============================================================
+🚀 啟動 E3 彈性化監控截圖 & 警戒線檢查 (Windows 零外掛原生版)
+📅 排程: [sched2] ExecutionTime_3D
+============================================================
+📌 本次要擷取的頁面數量: 2 頁
+🧪 [範例測試模式] 使用 sample_images 資料夾中的截圖進行驗證...
+  [page_cf3a7b1bbee646fd9bd6ef0560b9519e] 監控小圖 #1：normal 最高值約 8.05／門檻 30；刻度 0～20；誤差約 ±0.15
+PS>TerminatingError(): "OCR 讀到的刻度順序不一致（由上到下：35、30、25、20、5、10、5、0）"
+  [page_b0632b21121f4649944d25dca38b2c44] 監控小圖 #1：normal 最高值約 5.092／門檻 30；刻度 0～35；誤差約 ±0.263
+
+------------------------------------------------------------
+🎯 目標 Teams 群組/聊天室: 【Sariel Lin-林玉婷 (您)】 (共 2 張圖)
+[ExecutionTime 測試]
+測試是否可以抓到peak
+正常
+------------------------------------------------------------
+**********************
+Windows PowerShell transcript end
+End time: 20261112235147
+**********************
