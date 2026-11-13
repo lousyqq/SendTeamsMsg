@@ -510,6 +510,8 @@ if ($Calibrator) {
     $rootDir = $PSScriptRoot
     $configPath = $ConfigPath
     $captureJob = $null   # 背景抓圖 (/api/capture-url → /api/capture-status)
+    $cdpSetupProc = $null       # 「設定 CDP 收件對象」視窗（同時只開一個）
+    $receiverSetupProc = $null  # 「設定接收對話」視窗（setup_teams_receiver.bat，同時只開一個）
     # 手機遙控狀態卡片 (/api/receiver-status、/api/receiver-register)；檔案缺少時只停用這兩個 API
     $receiverToolsLoaded = $false
     if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'teams_receiver_watchdog.ps1')) {
@@ -543,6 +545,13 @@ if ($Calibrator) {
                 if ($pageId -isnot [string] -or -not $pageIds.Contains($pageId)) {
                     throw "排程 [$($sched.id)] 指定的頁面 '$pageId' 不存在，未儲存"
                 }
+            }
+        }
+        # 接收端頁面重新載入間隔：0（只在讀取失敗時）或 15～1440 分鐘的整數；缺少時接收端用 240。
+        if ($parsed.teams -and $parsed.teams.PSObject.Properties['receiver_reload_minutes']) {
+            $reload = $parsed.teams.receiver_reload_minutes
+            if (-not (($reload -is [int] -or $reload -is [long]) -and ($reload -eq 0 -or ($reload -ge 15 -and $reload -le 1440)))) {
+                throw '接收端頁面重新載入間隔必須是 0（只在讀取失敗時）或 15～1440 分鐘，未儲存'
             }
         }
         # 舊設定頁可能仍留在瀏覽器；儲存時移除已退役的發送設定與網址。
@@ -662,7 +671,13 @@ if ($Calibrator) {
         $res.OutputStream.Write($bytes, 0, $bytes.Length)
         $res.Close()
     }
- 
+    function Send-E3Json($res, $value) {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($value | ConvertTo-Json -Depth 6 -Compress))
+        $res.ContentType = 'application/json; charset=utf-8'; $res.Headers['Cache-Control'] = 'no-store'
+        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+        $res.Close()
+    }
+
  
     $listener = New-Object System.Net.HttpListener
     $listener.Prefixes.Add($url)
@@ -695,7 +710,7 @@ $selfTestJobs=Restore-E3SelfTestWorkers (Join-Path $PSScriptRoot 'logs\self_test
             $path = $req.Url.AbsolutePath
  
  
-            # 安全：只接受本工具自己的頁面 (http://127.0.0.1:8765) 發出的請求。
+            # 安全：只接受本工具自己的頁面 (http://127.0.0.1:<Port>，預設 8765) 發出的請求。
             # 不送 CORS 允許標頭，並拒絕帶有其他網站 Origin 的請求，避免任何網頁偷讀 config.json (含密碼)、
             # 改寫設定、觸發 Teams 發送或註冊排程。沒有 Origin 的請求 (本機 PowerShell 等) 照常允許。
             # 不讓瀏覽器快取：更新 calibrator.html / 手冊 / 截圖後，重新整理就是最新版
@@ -1146,12 +1161,50 @@ $selfTestJobs=Restore-E3SelfTestWorkers (Join-Path $PSScriptRoot 'logs\self_test
                 } catch { Send-JsonError $res 400 $_.Exception.Message }
                 continue
             }
+            # 設定頁的接收端操作：GET 回目前是否執行中／設定視窗是否開著；POST {action:start|stop|setup}
+            # 與 start／stop／setup_teams_receiver.bat 做同一件事。重新啟動由頁面先停止、等到結束再啟動。
+            if ($path -eq '/api/receiver-control') {
+                if (-not $receiverToolsLoaded) { Send-JsonError $res 404 '缺少 teams_receiver_watchdog.ps1，無法操作接收端'; continue }
+                $setupOpen = [bool]($receiverSetupProc -and -not $receiverSetupProc.HasExited)
+                if ($req.HttpMethod -eq 'GET') {
+                    try { Send-E3Json $res @{ ok = $true; running = (Test-E3ReceiverRunning); setupOpen = $setupOpen } }
+                    catch { Send-JsonError $res 500 ('無法確認接收端狀態：' + $_.Exception.Message) }
+                    continue
+                }
+                if ($req.HttpMethod -ne 'POST') { Send-JsonError $res 405 '只接受 GET 或 POST'; continue }
+                $reader = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8)
+                $action = ''; try { $action = [string](($reader.ReadToEnd() | ConvertFrom-Json).action) } catch {} finally { $reader.Close() }
+                if ($action -notin @('start','stop','setup')) { Send-JsonError $res 400 '不支援的操作'; continue }
+                try {
+                    $running = Test-E3ReceiverRunning
+                    # (if/elseif, not switch: "continue" inside a switch would not reach the request loop)
+                    if ($action -eq 'start') {
+                        if ($setupOpen) { throw '設定接收對話的視窗還開著；請在該視窗完成綁定並關閉後再啟動' }
+                        if ($running) { throw '接收端已在執行' }
+                        $message = Start-E3ReceiverProcess -WindowStyle Normal
+                    } elseif ($action -eq 'stop') {
+                        if (-not $running) { throw '接收端沒有在執行' }
+                        Request-E3ReceiverStop
+                        $message = '已要求接收端停止；正在處理的指令會先完成，接收視窗會在幾秒內結束，監看任務不會自動重新啟動它'
+                    } else {
+                        if ($setupOpen) { throw '設定接收對話的視窗已經開著；請切到該視窗操作' }
+                        if ($running) { throw '接收端正在執行，請先停止接收端再設定接收對話' }
+                        $receiverSetupProc = Start-Process -FilePath $env:ComSpec -ArgumentList ('/c "' + (Join-Path $PSScriptRoot 'setup_teams_receiver.bat') + '"') -WorkingDirectory $PSScriptRoot -WindowStyle Normal -PassThru
+                        $message = '已開啟設定接收對話的視窗：在專用 Edge 選好對話後回到該視窗輸入 BIND 確認；完成並關閉視窗後，按「啟動接收端」'
+                    }
+                    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 📱 接收端：$message" -ForegroundColor Cyan
+                    Send-E3Json $res @{ ok = $true; message = $message }
+                } catch { Send-JsonError $res 409 $_.Exception.Message }
+                continue
+            }
             if ($path -eq '/api/cdp-setup' -and $req.HttpMethod -eq 'POST') {
+                # 同時只開一個設定視窗；連按或重複送出時不再開新的
+                if ($cdpSetupProc -and -not $cdpSetupProc.HasExited) { Send-JsonError $res 409 '設定 CDP 收件對象的視窗已經開著；請切到該視窗完成或關閉後再試'; continue }
                 $reader = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8)
                 $body = $reader.ReadToEnd(); $reader.Close()
                 try { Save-ConfigBody $body } catch { Send-JsonError $res 400 $_.Exception.Message; continue }
                 # This is the user-requested interactive setup window, not an unattended sender.
-                Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ConfigPath `"$configPath`" -CdpSetup" -WindowStyle Normal
+                $cdpSetupProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ConfigPath `"$configPath`" -CdpSetup" -WindowStyle Normal -PassThru
                 $bytes = [Text.Encoding]::UTF8.GetBytes('{"ok":true}')
                 $res.ContentType = 'application/json; charset=utf-8'; $res.OutputStream.Write($bytes,0,$bytes.Length); $res.Close()
                 continue

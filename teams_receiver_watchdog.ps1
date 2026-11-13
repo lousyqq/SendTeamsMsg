@@ -9,7 +9,7 @@ function Get-E3ReceiverWatchdogPaths {
     $root=Join-Path $logs 'teams_receiver'
     return @{root=$root;scheduleResults=(Join-Path $logs 'schedule_results');heartbeat=(Join-Path $root 'heartbeat.json');state=(Join-Path $root 'watchdog_state.json');log=(Join-Path $root 'watchdog_last.txt');deadline=(Join-Path $root 'watchdog.deadline.json')
         senderState=(Join-Path $root 'sender_login_state.json');senderLog=(Join-Path $root 'sender_login_last.txt');senderDeadline=(Join-Path $root 'sender_login.deadline.json');outbox=(Join-Path $root 'outbox');restart=(Join-Path $root 'watchdog_restart.json')
-        scheduleState=(Join-Path $root 'schedule_result_state.json');scheduleLog=(Join-Path $root 'schedule_result_last.txt')}
+        scheduleState=(Join-Path $root 'schedule_result_state.json');privilege=(Join-Path $root 'watchdog_privilege.json');scheduleLog=(Join-Path $root 'schedule_result_last.txt')}
 }
 
 # ---- 排程用 Teams 登入預警 ----
@@ -265,6 +265,25 @@ function Get-E3ReceiverHealth($hb,[DateTimeOffset]$now,[int]$staleMinutes=10,[sc
     return @{ok=$true;reason='正常'}
 }
 
+# ---- 執行權限比對 ----
+# The watchdog ends a hung receiver before restarting it. Windows does not let a process without
+# administrator rights end one that has them, so a receiver started with more rights than the
+# watchdog task cannot be restarted automatically. Pure function (no I/O) for tests.
+function Get-E3PrivilegeComparison($receiverElevated,$watchdogRecord) {
+    $name={param($v) if($v -eq $true){'系統管理員權限'}elseif($v -eq $false){'一般權限'}else{'未知'}}
+    $watch=if($watchdogRecord){$watchdogRecord.elevated}else{$null}
+    $result=@{receiver=$receiverElevated;watchdog=$watch;mismatch=$false;text=''}
+    if($null -eq $receiverElevated){$result.text='接收端尚未回報權限（新版接收端啟動後會記錄）';return $result}
+    if($null -eq $watch){$result.text="接收端為$(& $name $receiverElevated)；監看任務尚未回報（下次執行後記錄）";return $result}
+    if($receiverElevated -eq $true -and $watch -ne $true){
+        $result.mismatch=$true
+        $result.text='⚠ 接收端是系統管理員權限、監看任務是一般權限：接收端卡住時監看任務無法結束它，自動重新啟動會失敗，需手動關閉接收視窗後再啟動'
+        return $result
+    }
+    if($receiverElevated -eq $watch){$result.text="一致（皆為$(& $name $watch)）";return $result}
+    $result.text='接收端一般權限、監看任務系統管理員權限：不影響自動重新啟動'
+    return $result
+}
 function Read-E3ReceiverHeartbeat([string]$path) {
     try{return @{hb=(Read-E3WorkJson $path);error=$null}}
     catch{return @{hb=$null;error=$_.Exception.Message}}
@@ -300,22 +319,47 @@ function Start-E3ReceiverAutoRestart($hb,[string]$action) {
         Stop-Process -Id ([int]$hb.pid) -Force -ErrorAction Stop
         Start-Sleep -Seconds 2
     }
+    return Start-E3ReceiverProcess -WindowStyle Minimized
+}
+function Test-E3ReceiverRunning {
+    # The receiver holds Local\E3TeamsCommandReceiver while it runs. A receiver started with
+    # administrator rights may deny access to its mutex; that still means it is running.
+    # Tests point $script:E3ReceiverMutexName at an isolated name.
+    $name=if($script:E3ReceiverMutexName){$script:E3ReceiverMutexName}else{'Local\E3TeamsCommandReceiver'}
     $existing=$null
-    if([Threading.Mutex]::TryOpenExisting('Local\E3TeamsCommandReceiver',[ref]$existing)){$existing.Dispose();throw '仍有接收端程序在執行，未重複啟動'}
-    Import-Module ScheduledTasks -ErrorAction Stop
-    $task=@(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -eq '\' -and $_.TaskName -eq $script:E3ReceiverAutostartTaskName})|Select-Object -First 1
+    try{if([Threading.Mutex]::TryOpenExisting($name,[ref]$existing)){$existing.Dispose();return $true};return $false}
+    catch [UnauthorizedAccessException]{return $true}
+}
+function Start-E3ReceiverProcess([ValidateSet('Normal','Minimized')][string]$WindowStyle='Normal') {
+    # Starts start_teams_receiver.bat, preferably through the registered "E3 日管接收端" task so the
+    # receiver runs with the task's normal rights (the same as the watchdog). Never starts a second one.
+    if(Test-E3ReceiverRunning){throw '仍有接收端程序在執行，未重複啟動'}
+    $task=$null
+    try{
+        # Import only when the command is not already there (a function-local import would also hide test stand-ins).
+        if(-not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)){Import-Module ScheduledTasks -ErrorAction Stop}
+        $task=@(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -eq '\' -and $_.TaskName -eq $script:E3ReceiverAutostartTaskName})|Select-Object -First 1
+    }catch{$task=$null}
     if($task -and (Test-E3ReceiverTaskAction $task 'autostart') -and [string]$task.State -ne 'Disabled'){
-        # A receiver that ended leaves its window waiting at "pause"; that still counts as a
-        # running task instance and would make Windows ignore the new start.
+        # A receiver that ended with an error leaves its window waiting at "pause"; that still counts
+        # as a running task instance and would make Windows ignore the new start.
         if([string]$task.State -eq 'Running'){
             Stop-ScheduledTask -TaskName $script:E3ReceiverAutostartTaskName -TaskPath '\' -ErrorAction Stop
             Start-Sleep -Seconds 2
         }
         Start-ScheduledTask -TaskName $script:E3ReceiverAutostartTaskName -TaskPath '\' -ErrorAction Stop
-        return '已透過 Windows 任務「'+$script:E3ReceiverAutostartTaskName+'」重新啟動接收端'
+        return '已透過 Windows 任務「'+$script:E3ReceiverAutostartTaskName+'」啟動接收端'
     }
-    Start-Process -FilePath $env:ComSpec -ArgumentList ('/c "'+(Join-Path $PSScriptRoot 'start_teams_receiver.bat')+'"') -WorkingDirectory $PSScriptRoot -WindowStyle Minimized
-    return '已重新執行 start_teams_receiver.bat'
+    Start-Process -FilePath $env:ComSpec -ArgumentList ('/c "'+(Join-Path $PSScriptRoot 'start_teams_receiver.bat')+'"') -WorkingDirectory $PSScriptRoot -WindowStyle $WindowStyle
+    $note=if(Test-E3ProcessElevated){'；本程式以系統管理員權限執行，接收端也會是系統管理員權限（建議先註冊開機自動啟動，改由任務以一般權限啟動）'}else{''}
+    return '已執行 start_teams_receiver.bat'+$note
+}
+function Request-E3ReceiverStop {
+    # Same as stop_teams_receiver.bat: the receiver ends by itself within a few seconds (a command in
+    # progress is finished first) and the watchdog will not restart it.
+    $paths=Get-E3ReceiverWatchdogPaths
+    [IO.Directory]::CreateDirectory($paths.root)|Out-Null
+    [IO.File]::WriteAllText((Join-Path $paths.root 'stop.request'),[DateTimeOffset]::UtcNow.ToString('O'),[Text.UTF8Encoding]::new($false))
 }
 
 function Write-E3WatchdogLog([string]$path,[string]$text) {
@@ -400,6 +444,8 @@ function Invoke-E3ReceiverWatchdog($cfg,[int]$ConfirmSeconds=60) {
         try{$owned=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$owned=$true}
         if(-not $owned){Write-Host '另一個監看檢查正在執行，本次略過。';return 0}
         $deadline=Start-E3RunDeadline $paths.deadline -Seconds 480
+        # Record this task's rights so the receiver status and settings page can compare them.
+        try{Write-E3WorkJson $paths.privilege @{elevated=(Test-E3ProcessElevated);utc=[DateTimeOffset]::UtcNow.ToString('O')}}catch{}
         $read=Read-E3ReceiverHeartbeat $paths.heartbeat
         $health=if($read.error){@{ok=$false;reason=('接收端心跳紀錄無法讀取：'+$read.error)}}else{Get-E3ReceiverHealth $read.hb ([DateTimeOffset]::UtcNow) $script:E3ReceiverWatchdogStaleMinutes}
         if(-not $health.ok -and $ConfirmSeconds -gt 0){
@@ -423,7 +469,11 @@ function Invoke-E3ReceiverWatchdog($cfg,[int]$ConfirmSeconds=60) {
                     $done=Start-E3ReceiverAutoRestart $read.hb $plan.action
                     Write-E3WatchdogLog $paths.log ("接收端異常：$($health.reason)`n$done；下次檢查仍異常才通知。")
                     return 0
-                }catch{$restartNote='自動重新啟動失敗：'+$_.Exception.Message}
+                }catch{
+                    $restartNote='自動重新啟動失敗：'+$_.Exception.Message
+                    $cmp=Get-E3PrivilegeComparison $read.hb.elevated @{elevated=(Test-E3ProcessElevated)}
+                    if($cmp.mismatch){$restartNote+='（接收端以系統管理員權限執行，監看任務權限較低，無法結束它；請手動關閉接收視窗後重新啟動）'}
+                }
             }else{$restartNote=[string]$plan.reason}
         }
         $state=$null
@@ -473,8 +523,18 @@ $script:E3ReceiverAutostartTaskName='E3 日管接收端'
 function Test-E3ReceiverTaskAction($task,[string]$kind) {
     $actions=@($task.Actions)
     if($actions.Count -ne 1){return $false}
-    if($kind -eq 'watchdog'){return [string]$actions[0].Arguments -match '(?:^|\s)-ReceiverWatchdog(?:\s|$)'}
     $execute=([string]$actions[0].Execute).Trim('"')
+    if($kind -eq 'watchdog'){
+        # powershell.exe … -File "<this folder>\e3_monitor_native.ps1" … -ReceiverWatchdog. The same task
+        # name pointing at a copy installed in another folder belongs to that copy, not to this one.
+        if([IO.Path]::GetFileName($execute) -notin @('powershell.exe','powershell')){return $false}
+        $arguments=[string]$actions[0].Arguments
+        if($arguments -notmatch '(?:^|\s)-ReceiverWatchdog(?:\s|$)'){return $false}
+        $file=[regex]::Match($arguments,'(?:^|\s)-File\s+(?:"([^"]+)"|(\S+))')
+        if(-not $file.Success){return $false}
+        $script=if($file.Groups[1].Success){$file.Groups[1].Value}else{$file.Groups[2].Value}
+        try{return [IO.Path]::GetFullPath($script) -ieq [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'e3_monitor_native.ps1'))}catch{return $false}
+    }
     try{return [IO.Path]::GetFullPath($execute) -ieq [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'start_teams_receiver.bat'))}catch{return $false}
 }
 
@@ -552,12 +612,14 @@ function Get-E3ReceiverOverview {
         heartbeat=$(if($hb){@{
             exists=$true;state=[string]$hb.state;alive=$alive;computer=[string]$hb.computer;startedUtc=[string]$hb.startedUtc;utc=[string]$hb.utc
             sleepGuard=[bool]$hb.sleepGuard;stopReason=[string]$hb.stopReason;mode=[string]$hb.mode;intentional=[bool]$hb.intentional
+            reloadMinutes=$(if($null -ne $hb.reloadMinutes){[int]$hb.reloadMinutes}else{$null})
             sources=@(@($hb.sources)|ForEach-Object{@{route=[string]$_.route;active=[bool]$_.active;lastOkUtc=[string]$_.lastOkUtc;error=[string]$_.error}})
         }}else{@{exists=$false}})
         health=@{ok=[bool]$health.ok;reason=[string]$health.reason}
         watchdog=$(if($state){@{alerted=[bool]$state.alerted;sinceUtc=[string]$state.sinceUtc;recoveredUtc=[string]$state.recoveredUtc;notify=[string]$state.notify}}else{@{alerted=$false}})
         senderLogin=$(if($sender){@{checked=$true;lastCheckUtc=[string]$sender.lastCheckUtc;ok=[bool]$sender.ok;reason=[string]$sender.reason;alerted=[bool]$sender.alerted;notify=[string]$sender.notify}}else{@{checked=$false}})
         pendingNotices=$pending
+        privilege=$($wd=$null;try{$wd=Read-E3WorkJson $paths.privilege}catch{};$cmp=Get-E3PrivilegeComparison $(if($hb){$hb.elevated}else{$null}) $wd;@{receiver=$cmp.receiver;watchdog=$cmp.watchdog;mismatch=[bool]$cmp.mismatch;text=[string]$cmp.text})
         autoRestart=$(if($restart -and @($restart.attempts).Count){@{lastUtc=[string]@($restart.attempts)[-1];count=@($restart.attempts).Count}}else{@{count=0}})
         tasks=$tasks;taskError=$taskError
     }

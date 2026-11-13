@@ -35,8 +35,8 @@ $script:E3WorkMayTerminate=[bool]$Setup -and -not $LibraryOnly
 $script:E3ReceiverProfileRoot=Join-Path $env:LOCALAPPDATA 'E3TeamsCommandReceiver'
 $script:E3CdpLogRoot=Join-Path $PSScriptRoot 'logs\teams_receiver'
 function Get-E3CdpStateRoot {return $script:E3ReceiverProfileRoot}
- 
- 
+
+
 function Get-E3ReceiverKey($binding,$message) {
     $time=[DateTimeOffset]::MinValue
     if(-not [DateTimeOffset]::TryParse([string]$message.time,[ref]$time)){throw '指令時間無法辨識'}
@@ -197,7 +197,7 @@ function Save-E3ReceiverHeartbeat($sources,[string]$state,[int]$busySeconds=0,[s
             mode=$(if($script:E3ReceiverHeadless){'headless'}else{'window'});intentional=[bool]$script:E3ReceiverIntentional;fatal=[bool]$script:E3ReceiverFatal
             startedUtc=$script:E3ReceiverStartedUtc;utc=$now.ToString('O')
             busyUntilUtc=$(if($busySeconds -gt 0){$now.AddSeconds($busySeconds).ToString('O')}else{$null})
-            sleepGuard=[bool]$script:E3ReceiverSleepGuard;stopReason=[string]$script:E3ReceiverStopReason
+            sleepGuard=[bool]$script:E3ReceiverSleepGuard;stopReason=[string]$script:E3ReceiverStopReason;elevated=$script:E3ReceiverElevated;reloadMinutes=[int]$script:E3ReceiverReloadMinutes
             sources=@($sources|ForEach-Object{@{route=[string]$_.target.route;active=[bool]$_.active;lastOkUtc=$_.lastOkUtc;error=[string]$_.error}})
         }
         $script:E3ReceiverHeartbeatAt=$now
@@ -321,6 +321,11 @@ function Get-E3ReceiverHealthLines($cfg,$tasks,[string]$route) {
         }else{'排程用的 Teams 登入：尚未檢查（需註冊離線監看任務）'}
     }
     Get-E3ReceiverWatchdogLine (Get-E3ReceiverWatchdogTaskState $tasks)
+    if(Get-Command Get-E3PrivilegeComparison -ErrorAction SilentlyContinue){
+        $wd=$null;try{$wd=Read-E3WorkJson (Join-Path $root 'watchdog_privilege.json')}catch{}
+        $mine=if($null -ne $script:E3ReceiverElevated){$script:E3ReceiverElevated}else{Test-E3ProcessElevated}
+        '執行權限：'+(Get-E3PrivilegeComparison $mine $wd).text
+    }
     $pending=0;try{$box=Join-Path $root 'outbox';if([IO.Directory]::Exists($box)){$pending=@(Get-ChildItem -LiteralPath $box -Filter '*.json' -File).Count}}catch{}
     if($pending){"待送通知：$pending 則（對話可用時會送出）"}
     $failed=0
@@ -357,7 +362,9 @@ function Get-E3ReceiverReply([string]$route='') {
 }
 function Get-E3ReceiverScript([string]$file,$target) {
     $source=[IO.File]::ReadAllText((Join-Path $PSScriptRoot ('teams_cdp\'+$file)))
-    return $source.Replace('/*E3_BINDING*/null',($target.binding|ConvertTo-Json -Depth 8 -Compress))
+    # Read-only scripts (latest messages, in-chat switch) check the chat ID and name only. The account
+    # proof breaks whenever Teams redraws its avatar button on a long-running page; replies verify it.
+    return $source.Replace('/*E3_BINDING*/null',((Get-E3ChatOnlyBinding $target)|ConvertTo-Json -Depth 8 -Compress))
 }
 function Read-E3ReceiverSnapshot($target,[int]$context) {
     return Invoke-E3Js (Get-E3ReceiverScript 'receiver-snapshot.js' $target) $context
@@ -365,9 +372,17 @@ function Read-E3ReceiverSnapshot($target,[int]$context) {
 function Read-E3ReceiverSettled($target,[int]$context,[int]$TimeoutMs=8000) {
     # A chat that was just opened may still be loading or moving to its newest message.
     # "Not at the newest message yet" is a wait, never a lost connection.
-    $until=[DateTime]::UtcNow.AddMilliseconds($TimeoutMs);$last=$null
+    $until=[DateTime]::UtcNow.AddMilliseconds($TimeoutMs);$last=$null;$accountRecoveryUsed=$false
     do{
         $last=Read-E3ReceiverSnapshot $target $context
+        if(-not $last.ok -and $last.error -ceq 'GROUP_REPORT_ACCOUNT_NOT_VERIFIED'){
+            if($accountRecoveryUsed){throw 'Teams 帳號驗證反覆失效，已停止本次讀取'}
+            $accountRecoveryUsed=$true
+            Restore-E3CdpAccountProof $target $context
+            $until=[DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+            $last=Read-E3ReceiverSnapshot $target $context
+            if(-not $last.ok -and $last.error -ceq 'GROUP_REPORT_ACCOUNT_NOT_VERIFIED'){throw 'Teams 帳號重新驗證後仍失效，已停止本次讀取'}
+        }
         if($last.ok -and $last.latest){return $last}
         Start-Sleep -Milliseconds 400
     }while([DateTime]::UtcNow -lt $until)
@@ -379,23 +394,34 @@ function Read-E3ReceiverSettled($target,[int]$context,[int]$TimeoutMs=8000) {
 # the tab to that chat (chat list click, else chat link), verifies it and reads the newest rows.
 $script:E3ReceiverTab=$null
 $script:E3ReceiverHeadless=$false
-$script:E3ReceiverReloadMinutes=30
+$script:E3ReceiverReloadMinutes=240
 $script:E3ReceiverHold=@{until=[DateTimeOffset]::MinValue;reason=''}
+function Get-E3ReceiverTeamsSettings {
+    # The receiver reads these once at start; a change needs a restart of the receiver.
+    try{return (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Raw -Encoding UTF8|ConvertFrom-Json).teams}catch{return $null}
+}
 function Get-E3ReceiverHeadless {
     # teams.receiver_headless=true runs the receiver's Edge without a window; default is a visible window.
-    try{
-        $cfg=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Raw -Encoding UTF8|ConvertFrom-Json
-        return ($cfg.teams.receiver_headless -eq $true)
-    }catch{return $false}
+    $teams=Get-E3ReceiverTeamsSettings
+    return ($teams -and $teams.receiver_headless -eq $true)
+}
+function Test-E3ReceiverReloadValue($value) {
+    # Allowed: 0 (only after a failed read) or whole minutes 15..1440.
+    return (($value -is [int] -or $value -is [long]) -and ($value -eq 0 -or ($value -ge 15 -and $value -le 1440)))
+}
+function Get-E3ReceiverReloadMinutes {
+    # teams.receiver_reload_minutes: idle reload of the work tab. Missing or invalid = every 4 hours.
+    $teams=Get-E3ReceiverTeamsSettings
+    if($teams -and (Test-E3ReceiverReloadValue $teams.receiver_reload_minutes)){return [int]$teams.receiver_reload_minutes}
+    return 240
+}
+function Get-E3ReceiverReloadText([int]$minutes) {
+    if($minutes -le 0){return '只在讀取失敗時重新開啟'}
+    if($minutes % 60 -eq 0){return "閒置時每 $($minutes/60) 小時重新載入"}
+    return "閒置時每 $minutes 分鐘重新載入"
 }
 function Get-E3ReceiverBrowserArguments {
-    # Headless Edge announces "HeadlessEdg". Set the normal product token at launch so it
-    # holds for every request; per-connection emulation is lost each time CDP reconnects.
-    $edge=@((Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe'))|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1
-    if(-not $edge){throw '找不到 Edge'}
-    $major=[Diagnostics.FileVersionInfo]::GetVersionInfo($edge).ProductMajorPart
-    if($major -lt 100){throw 'Edge 版本無法辨識，無法以無視窗模式啟動接收端'}
-    return '--window-size=1600,1000 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'+$major+'.0.0.0 Safari/537.36 Edg/'+$major+'.0.0.0"'
+    return Get-E3TeamsBrowserArguments
 }
 function Test-E3ReceiverHeadlessProcess($processes) {
     $main=@($processes|Where-Object{$_.CommandLine -notmatch '(?:^|\s)--type='})
@@ -468,7 +494,7 @@ function Open-E3ReceiverBrowser {
         return @{session=$session;blankTarget=$null}
     }
     Write-Host ("🔄 正在開啟接收端專用 Edge（{0}，沿用原登入資料）…" -f $(if($headless){'無視窗'}else{'有視窗'})) -ForegroundColor Cyan
-    $opened=if($headless){Start-E3TestBrowser $profile -Headless -ExtraArguments (Get-E3ReceiverBrowserArguments)}else{Start-E3TestBrowser $profile}
+    $opened=if($headless){Start-E3TestBrowser $profile -Headless -ExtraArguments (Get-E3ReceiverBrowserArguments)}else{Start-E3TestBrowser $profile -ExtraArguments '--window-size=1600,1000'}
     $session=@{port=$opened.port;browserUrl=$opened.browserUrl}
     Save-E3CdpState (Join-Path $root 'session.json') $session
     if($opened.process){$opened.process.Dispose()}
@@ -569,9 +595,19 @@ function Open-E3ReceiverChat($source,[switch]$Reload) {
     if($tab.ready -and -not $Reload){
         try{
             $script=Get-E3ReceiverScript 'receiver-switch.js' $target
-            $until=[DateTime]::UtcNow.AddSeconds(10)
+            $until=[DateTime]::UtcNow.AddSeconds(10);$accountRecoveryUsed=$false
             do{
                 $state=Invoke-E3Js $script $tab.context
+                if($state.reauth){
+                    # Recover in place only when revisiting the same bound chat.
+                    # A different source uses normal navigation and full verification below.
+                    if($tab.chatId -cne [string]$target.binding.chatId){break}
+                    if($accountRecoveryUsed){throw 'E3_RECEIVER_SOURCE：Teams 帳號驗證反覆失效，已停止本次切換'}
+                    $accountRecoveryUsed=$true
+                    try{Restore-E3CdpAccountProof $target $tab.context}catch{throw ('E3_RECEIVER_SOURCE：'+$_.Exception.Message)}
+                    $until=[DateTime]::UtcNow.AddSeconds(10)
+                    continue
+                }
                 if($state.ready){$tab.chatId=[string]$target.binding.chatId;return [int]$tab.context}
                 if($state.fatal){throw ('E3_RECEIVER_SOURCE：'+[string]$state.error)}
                 if(-not $state.ok){break}   # reopen through the chat link below
@@ -599,8 +635,10 @@ function Open-E3ReceiverChat($source,[switch]$Reload) {
     Enable-E3CdpBackgroundFocus
     $tab.ready=$false;$tab.chatId=$null;$tab.context=0
     try{
-        Move-E3HeadlessPage (Get-E3CdpChatUrl $target)
-        Wait-E3HeadlessChat $target 75
+        # The receiver holds the shared CDP lock here; a network error is retried by the source
+        # back-off (10 s, 20 s, …) without the lock, so a scheduled send is never kept waiting.
+        Move-E3HeadlessPage (Get-E3CdpChatUrl $target) -NetworkRetries 0 -RetriedLater
+        Wait-E3HeadlessChat $target 75 -ChatOnly
     }catch{
         if($_.Exception.Message -match '登入已過期|互動驗證'){
             if(-not $tab.loginAt){$tab.loginAt=[DateTimeOffset]::UtcNow}
@@ -608,7 +646,7 @@ function Open-E3ReceiverChat($source,[switch]$Reload) {
         }
         throw
     }
-    $context=Connect-E3CdpTarget $tab.session $target
+    $context=Connect-E3CdpTarget $tab.session $target -ChatOnly
     $tab.endpoint=$script:CdpEndpoint;$tab.context=[int]$context;$tab.ready=$true
     $tab.loadedAt=[DateTimeOffset]::UtcNow;$tab.chatId=[string]$target.binding.chatId;$tab.loginAt=$null
     return [int]$context
@@ -635,8 +673,9 @@ function Invoke-E3ReceiverVisit($sources,$source) {
     }
     Restore-E3ReceiverWindow
     $tab=$script:E3ReceiverTab
-    # A long-lived Teams page slowly degrades; reload it on a schedule while idle.
-    $reload=[bool]$source.reload -or ($tab.ready -and $tab.loadedAt -and ([DateTimeOffset]::UtcNow-$tab.loadedAt).TotalMinutes -ge $script:E3ReceiverReloadMinutes)
+    # A long-lived Teams page can slowly degrade; reload it while idle at the chosen interval
+    # (teams.receiver_reload_minutes; 0 = only after a failed read, which sets $source.reload).
+    $reload=[bool]$source.reload -or ($script:E3ReceiverReloadMinutes -gt 0 -and $tab.ready -and $tab.loadedAt -and ([DateTimeOffset]::UtcNow-$tab.loadedAt).TotalMinutes -ge $script:E3ReceiverReloadMinutes)
     $context=Open-E3ReceiverChat $source -Reload:$reload
     $first=Read-E3ReceiverSettled $source.target $context
     Start-Sleep -Milliseconds 500
@@ -787,6 +826,8 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous,[switch]$Pr
         $script:E3ReceiverWatchTaskAt=[DateTimeOffset]::UtcNow.AddMinutes(20)
         try{Resolve-E3ReceiverInterruptedClaims ([DateTimeOffset]::UtcNow)}catch{Write-Warning ('上次中斷的指令無法檢查：'+$_.Exception.Message)}
         $script:E3ReceiverHeadless=Get-E3ReceiverHeadless
+        $script:E3ReceiverReloadMinutes=Get-E3ReceiverReloadMinutes
+        $script:E3ReceiverElevated=Test-E3ProcessElevated
         # Idle sleep would stop remote control. Lock / screen-off stay allowed; the
         # request ends with this process and does not change the power plan.
         Initialize-E3DesktopProbe
@@ -802,7 +843,7 @@ function Invoke-E3ReceiverTest([int]$timeout=600,[switch]$Continuous,[switch]$Pr
         $script:E3ReceiverBindingsStamp=Get-E3ReceiverBindingsStamp
         Save-E3ReceiverStatus 'connecting' '正在開啟接收端工作分頁；暫時失敗會自動重試'
         Save-E3ReceiverHeartbeat $sources 'listening' -Force
-        Write-Host ("接收 {0} 個對話，使用一個{1}工作分頁輪流讀取；不需要讓任何對話保持開啟。" -f $sources.Count,$(if($script:E3ReceiverHeadless){'無視窗'}else{'有視窗'}))
+        Write-Host ("接收 {0} 個對話，使用一個{1}工作分頁輪流讀取；不需要讓任何對話保持開啟。Teams 頁面：{2}。" -f $sources.Count,$(if($script:E3ReceiverHeadless){'無視窗'}else{'有視窗'}),(Get-E3ReceiverReloadText $script:E3ReceiverReloadMinutes))
         Write-Host '可輸入 @日管 截圖 名稱、@日管 檢查 名稱、@日管 排程結果、@日管 主機、@日管 連線、@日管 狀態；輸入 @日管 說明 看全部用法。'
         Write-Host $(if($Continuous){'持續接收。專用 Edge、分頁或登入出問題時會自動重試；要停止請按 Ctrl+C 或執行 stop_teams_receiver.bat。'}else{'回覆一個指令後結束；Ctrl+C 停止。'})
         $deadline=[DateTimeOffset]::UtcNow.AddSeconds($timeout);$checkAt=[DateTimeOffset]::MinValue

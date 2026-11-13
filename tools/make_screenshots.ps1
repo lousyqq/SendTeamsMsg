@@ -2,7 +2,7 @@
     [int]$PageLoadMilliseconds = 4500
 )
 # ==============================================================================
-# 重新產生 USER_MANUAL.html 的 13 張設定工具截圖（calibrator.html 介面改版後執行一次）
+# 重新產生 USER_MANUAL.html 的 14 張設定工具截圖（calibrator.html 介面改版後執行一次）
 #
 # 資料來源（只讀，不修改）：
 #   - 專案目前的 config.json：頁面、分類、排程、收件名稱、規則都以實際設定顯示
@@ -16,7 +16,7 @@
 #     除錯埠由 Edge 隨機選擇（--remote-debugging-port=0），不需關閉正式設定工具
 #   - 以 CDP Fetch 攔截頁面所有請求，直接由記憶體回應；任何請求都不會連到真正的 127.0.0.1:8765
 #   - 只回應 GET；POST 等寫入／執行請求一律回 403（不存檔、不註冊排程、不送 Teams）
-#   - 13 張全部成功且與手冊 <img data-shot> 完全一致時，才以暫存檔 + File.Replace 原子替換
+#   - 14 張全部成功且與手冊 <img data-shot> 完全一致時，才以暫存檔 + File.Replace 原子替換
 #     手冊的 MANUAL_IMAGES 區塊；暫存資料夾保留原手冊與 PNG 供核對
 # ==============================================================================
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -101,11 +101,14 @@ $utc = { param([int]$minutesAgo) [DateTime]::UtcNow.AddMinutes(-$minutesAgo).ToS
 $api = @{
     '/api/schedule-status' = @{ ok = $true; tasks = $tasks }
     '/api/cdp-bindings'    = @{ ok = $true; targets = @($routes | ForEach-Object { @{ route = $_; label = $_; complete = $true; windowConfigured = $false } }) }
+    '/api/receiver-control' = @{ ok = $true; running = $true; setupOpen = $false }
     '/api/receiver-status' = @{ ok = $true
         heartbeat = @{ exists = $true; alive = $true; state = 'listening'; computer = '監控主機'; startedUtc = (& $utc 185); utc = (& $utc 1); sleepGuard = $true; mode = $(if ($cfg.teams.receiver_headless -eq $true) { 'headless' } else { 'window' }); intentional = $false
+                       reloadMinutes = $(if ($null -ne $cfg.teams.receiver_reload_minutes) { [int]$cfg.teams.receiver_reload_minutes } else { 240 })
                        sources = @(@{ route = $selfRoute; active = $true; lastOkUtc = (& $utc 1); error = $null }) }
         health = @{ ok = $true; reason = '' }; senderLogin = @{ checked = $true; ok = $true; lastCheckUtc = (& $utc 95) }
         pendingNotices = 0; watchdog = @{ alerted = $false }; autoRestart = @{ count = 0 }
+        privilege = @{ receiver = $false; watchdog = $false; mismatch = $false; text = '一致（皆為一般權限）' }
         tasks = @{ watchdog = @{ registered = $true; enabled = $true; next = $now.AddMinutes(7).ToString('MM/dd HH:mm') }; autostart = @{ registered = $true; enabled = $true } } }
     '/api/work-waits'       = @()
     '/api/test-self-active' = @()
@@ -325,16 +328,17 @@ try {
     Shot '02_page_form' 1600 1450 "const pi = $numericPage; selectPage(pi); const pid = config.pages[pi].id; openFold(JSON.stringify(['sidebarLogin', pid])); openFold(JSON.stringify(['sidebarZoom', pid])); openFold(JSON.stringify(['sidebarTime', pid])); setSideTab('pages'); setPageSection('page'); renderAll(); document.querySelector('details.advanced').open = true; document.querySelector('.sidebar').scrollTop = 0" '.sidebar'
     Shot '03_crop_tool' 1600 900 "selectPage($cropPage); setSideTab('pages'); setPageSection('page'); renderAll(); setToolMode('crop'); renderCanvas()"
     Shot '04_rules' 1600 1500 "const xi = $pixelPage; selectPage(xi); selectedRuleIdx = ruleIndex(config.pages[xi], r => (r.measure_mode || 'pixel') === 'pixel'); setSideTab('pages'); setPageSection('rules'); setToolMode('rule'); renderAll(); document.querySelectorAll('#ruleEditor details.advanced').forEach(d => d.open = true); document.querySelector('.sidebar').scrollTop = 0" '.sidebar'
-    Shot '05_schedule_tab' 1600 1000 "setSideTab('send'); const rs = $repeatSched; expandedScheduleIdx = config.schedules.findIndex(s => s.id === rs); previewScheduleId = rs; openFold('sidebar:schedulesFold:v2'); openFold(JSON.stringify(['pages', rs])); renderAll(); await refreshScheduleStatus(); document.getElementById('scheduleList').scrollIntoView({block: 'start'})"
-    Shot '06_preview_panel' 1600 1000 "setSideTab('send'); previewScheduleId = $firstSched; renderAll()" '.right-panel'
-    Shot '07_global_tab' 1600 700 "setSideTab('global'); renderAll()" '.sidebar'
+    Shot '05_schedule_tab' 1600 1000 "setSideTab('schedule'); const rs = $repeatSched; expandedScheduleIdx = config.schedules.findIndex(s => s.id === rs); previewScheduleId = rs; openFold('sidebar:schedulesFold:v2'); openFold(JSON.stringify(['pages', rs])); renderAll(); await refreshScheduleStatus(); document.getElementById('scheduleList').scrollIntoView({block: 'start'})"
+    Shot '06_preview_panel' 1600 1000 "setSideTab('schedule'); previewScheduleId = $firstSched; renderAll()" '.right-panel'
+    Shot '07_site_tab' 1600 700 "setSideTab('site'); renderAll()" '.sidebar'
     Shot '08_placeholder' 1600 700 "setSideTab('pages'); setPageSection('page'); document.getElementById('addPageBtn').click(); await sleep(400)"
     $reportJs = ConvertTo-Json -InputObject $detectReport -Compress
-    Shot '09_detect_teams' 1600 1000 "setSideTab('send'); openFold('sidebar:teamsSettingsFold'); renderAll(); const o = document.getElementById('detectTeamsResult'); o.hidden = false; o.textContent = $reportJs; document.getElementById('teamsSettingsFold').scrollIntoView({block: 'start'})" '.sidebar'
-    Shot '10_cdp_mode' 1600 1000 "setSideTab('send'); openFold('sidebar:teamsSettingsFold'); renderAll(); await refreshSavedCdpTargets(true); renderAll(); document.getElementById('teamsSettingsFold').scrollIntoView({block: 'start'})" '.sidebar'
+    Shot '09_detect_teams' 1600 1000 "setSideTab('teams'); openFold('sidebar:teamsSettingsFold'); renderAll(); const o = document.getElementById('detectTeamsResult'); o.hidden = false; o.textContent = $reportJs; document.getElementById('teamsSettingsFold').scrollIntoView({block: 'start'})" '.sidebar'
+    Shot '10_cdp_mode' 1600 1000 "setSideTab('teams'); openFold('sidebar:teamsSettingsFold'); renderAll(); await refreshSavedCdpTargets(true); renderAll(); document.getElementById('teamsSettingsFold').scrollIntoView({block: 'start'})" '.sidebar'
     Shot '11_numeric' 1600 1000 "const qi = $numericPage2; selectPage(qi); selectedRuleIdx = ruleIndex(config.pages[qi], r => r.measure_mode === 'numeric'); previewScheduleId = config.schedules.find(s => (s.pages || []).includes(config.pages[qi].id))?.id ?? $repeatSched; setSideTab('pages'); setPageSection('rules'); setToolMode('rule'); renderAll(); document.querySelectorAll('#ruleEditor details.advanced').forEach(d => d.open = true); document.getElementById('numericEditor').scrollIntoView({block: 'start'})"
-    Shot '12_self_test' 1600 1000 "setSideTab('send'); previewScheduleId = $repeatSched; openFold('sidebar:selfHelpFold'); renderAll()" '.preview-controls'
-    Shot '13_receiver' 1600 1000 "setSideTab('send'); openFold('sidebar:receiverFold'); renderAll(); await refreshReceiverStatus(true); await waitFor(() => receiverState.data, '手機遙控狀態'); document.getElementById('receiverFold').scrollIntoView({block: 'start'})" '#receiverFold'
+    Shot '12_self_test' 1600 1000 "setSideTab('schedule'); previewScheduleId = $repeatSched; openFold('sidebar:selfHelpFold'); renderAll()" '.preview-controls'
+    Shot '13_receiver' 1600 1200 "setSideTab('teams'); openFold('sidebar:receiverFold:v2'); openFold('sidebar:receiverSetupFold'); document.querySelectorAll('#receiverSetupFold details.inline-help').forEach(d => d.open = false); renderAll(); await refreshReceiverStatus(true); await waitFor(() => receiverState.data, '手機遙控狀態'); document.getElementById('receiverFold').scrollIntoView({block: 'start'})" '#receiverFold'
+    Shot '14_panels_collapsed' 1600 700 "$selectNumeric; renderAll(); setPanelCollapsed('left', true, {save: false}); setPanelCollapsed('right', true, {save: false}); await sleep(300); renderCanvas()"
     $script:ws.Dispose()
 
     # ---- 7. 核對後原子替換手冊的 MANUAL_IMAGES 區塊 ----
@@ -342,11 +346,13 @@ try {
     $referenced = @([regex]::Matches($html, 'data-shot="([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
     $made = @($shots.Keys | Sort-Object)
     if (($referenced -join '|') -ne ($made -join '|')) { throw "手冊引用的截圖（$($referenced -join ', ')）與本次產生的截圖（$($made -join ', ')）不一致，手冊未修改" }
-    if ($shots.Count -ne 13) { throw "只產生 $($shots.Count) 張截圖，手冊未修改" }
+    if ($shots.Count -ne 14) { throw "只產生 $($shots.Count) 張截圖，手冊未修改" }
     $pattern = '(?s)<!-- MANUAL_IMAGES_BEGIN.*?<!-- MANUAL_IMAGES_END -->'
     if ([regex]::Matches($html, $pattern).Count -ne 1) { throw 'USER_MANUAL.html 必須剛好有一組 MANUAL_IMAGES_BEGIN / END 標記，手冊未修改' }
     $lines = $shots.Keys | ForEach-Object { "  `"$_`": `"$($shots[$_])`"" }
-    $block = "<!-- MANUAL_IMAGES_BEGIN：此區由 tools\make_screenshots.ps1 自動產生，請勿手動編輯 -->`r`n<script>window.MANUAL_IMAGES = {`r`n" + ($lines -join ",`r`n") + "`r`n};</script>`r`n<!-- MANUAL_IMAGES_END -->"
+    # 圖片區塊沿用手冊其餘部分的換行（目前是 LF），避免同一個檔案混用兩種換行
+    $nl = if (([regex]::Matches($html, "`r`n")).Count -gt ([regex]::Matches($html, "(?<!`r)`n")).Count) { "`r`n" } else { "`n" }
+    $block = "<!-- MANUAL_IMAGES_BEGIN：此區由 tools\make_screenshots.ps1 自動產生，請勿手動編輯 -->$nl<script>window.MANUAL_IMAGES = {$nl" + ($lines -join ",$nl") + "$nl};</script>$nl<!-- MANUAL_IMAGES_END -->"
     $html = [regex]::Replace($html, $pattern, { param($m) $block })
     $temp = "$manual.tmp"
     [IO.File]::WriteAllText($temp, $html, [Text.UTF8Encoding]::new($false))

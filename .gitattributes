@@ -1,0 +1,2 @@
+# .bat files must be CRLF wherever the repository is checked out (cmd does not handle LF-only batch files reliably; tools\check_files.ps1 checks this too)
+*.bat text eol=crlf

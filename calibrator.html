@@ -95,7 +95,7 @@
     }
     .workspace {
       display: grid;
-      grid-template-columns: 365px 1fr 380px;
+      grid-template-columns: var(--left-w, 365px) 1fr var(--right-w, 380px);
       flex: 1;
       overflow: hidden;
     }
@@ -298,6 +298,24 @@
       color: #f87171;
       border: 1px solid rgba(239, 68, 68, 0.5);
     }
+    /* 左右欄收合：收起後留一條細欄（分頁圖示／狀態燈），中間畫布取得其餘寬度 */
+    .workspace.left-collapsed { --left-w: 44px; }
+    .workspace.right-collapsed { --right-w: 44px; }
+    .panel-rail { display: none; }
+    .workspace.left-collapsed > .sidebar > :not(.panel-rail),
+    .workspace.right-collapsed > .right-panel > :not(.panel-rail) { display: none !important; }
+    .workspace.left-collapsed > .sidebar,
+    .workspace.right-collapsed > .right-panel { padding: 8px 5px; overflow: hidden; }
+    .workspace.left-collapsed > .sidebar > .panel-rail,
+    .workspace.right-collapsed > .right-panel > .panel-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .panel-rail button { width: 32px; height: 32px; padding: 0; justify-content: center; font-size: 15px; position: relative; }
+    .panel-rail button.rail-expand { font-size: 13px; color: var(--accent); margin-bottom: 4px; }
+    .panel-rail button.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.16); }
+    .rail-dot { position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%; background: #64748b; border: 1px solid var(--panel); }
+    .rail-dot.ok { background: #22c55e; }
+    .rail-dot.bad { background: #ef4444; }
+    .panel-toggle { padding: 4px 8px; font-size: 13px; color: var(--muted); }
+    .panel-toggle:hover { color: var(--text); }
     .center-stage {
       position: relative;
       display: flex;
@@ -412,7 +430,7 @@
     }
     .side-tabs {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 4px;
       position: sticky;
       top: -14px;
@@ -422,11 +440,20 @@
       border-bottom: 1px solid var(--border);
       z-index: 2;
     }
+    /* 四個分頁：圖示在上、名稱在下，避免名稱在字中間換行 */
     .side-tabs button {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      padding: 6px 4px;
-      font-size: 12px;
+      gap: 1px;
+      padding: 5px 2px;
+      font-size: 11.5px;
+      line-height: 1.25;
+      white-space: nowrap;
+      text-align: center;
     }
+    .side-tabs .tab-icon { font-size: 14px; }
     .side-tabs button.active {
       background: rgba(56, 189, 248, 0.16);
       border-color: var(--accent);
@@ -437,8 +464,9 @@
       display: none;
     }
     .sidebar[data-active-tab="pages"] > .section-box[data-tab="pages"],
-    .sidebar[data-active-tab="send"] > .section-box[data-tab="send"],
-    .sidebar[data-active-tab="global"] > .section-box[data-tab="global"] {
+    .sidebar[data-active-tab="schedule"] > .section-box[data-tab="schedule"],
+    .sidebar[data-active-tab="teams"] > .section-box[data-tab="teams"],
+    .sidebar[data-active-tab="site"] > .section-box[data-tab="site"] {
       display: block;
     }
     /* 頁面分頁：「此頁設定」與「監測項目」一次只顯示一塊 */
@@ -601,7 +629,17 @@
     }
     .receiver-status { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
     .receiver-status .row { display: flex; gap: 6px; }
-    .receiver-status .label { color: var(--muted); flex: 0 0 64px; }
+    .receiver-status .label { color: var(--muted); flex: 0 0 6.6em; }
+    .receiver-actions { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 4px; margin: 6px 0 4px; }
+    .receiver-actions button { justify-content: center; padding: 5px 4px; font-size: 12px; }
+    .receiver-note { font-size: 12px; margin: 2px 0 6px; white-space: pre-wrap; }
+    .receiver-note:empty { display: none; }
+    #receiverSetupFold { margin: 10px 0 0; }
+    #receiverSetupFold > summary { cursor: pointer; font-size: 12.5px; color: var(--accent); }
+    .receiver-setup-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+    .receiver-setup-row button { padding: 3px 10px; font-size: 12px; }
+    .receiver-option { display: block; font-size: 12px; margin: 10px 0 2px; }
+    .receiver-option select { font-size: 12px; margin-left: 4px; }
     .receiver-status .warn { color: #fbbf24; }
     .receiver-status .bad { color: #f87171; }
     .receiver-status .good { color: #4ade80; }
@@ -669,10 +707,18 @@
   <div class="workspace">
     <!-- 左側設定面板 -->
     <div class="sidebar" data-active-tab="pages">
+      <div class="panel-rail" id="leftRail" aria-label="左欄已收起">
+        <button type="button" class="rail-expand" data-rail="expand" title="展開左欄（快捷鍵 [）" aria-label="展開左欄">»</button>
+        <button type="button" data-tab="pages" title="展開：頁面與監測">📄</button>
+        <button type="button" data-tab="schedule" title="展開：排程">📅</button>
+        <button type="button" data-tab="teams" title="展開：Teams 與手機">💬</button>
+        <button type="button" data-tab="site" title="展開：網站與其他">🌐</button>
+      </div>
       <div class="side-tabs" id="sideTabs">
-        <button data-tab="pages" class="active">📄 頁面與監測</button>
-        <button data-tab="send">📅 排程與發送</button>
-        <button data-tab="global">⚙️ 全域設定</button>
+        <button data-tab="pages" class="active" title="頁面、擷取範圍與監測項目"><span class="tab-icon">📄</span><span>頁面與監測</span></button>
+        <button data-tab="schedule" title="排程時段、要傳的頁面與收件對象"><span class="tab-icon">📅</span><span>排程</span></button>
+        <button data-tab="teams" title="手機遙控（@日管）與 Teams 傳送設定"><span class="tab-icon">💬</span><span>Teams 與手機</span></button>
+        <button data-tab="site" title="登入監控網站與手動傳送的訊息文字"><span class="tab-icon">🌐</span><span>網站與其他</span></button>
       </div>
 <!-- ===== 分頁：頁面與監測 ===== -->
       <div class="section-box" data-tab="pages">
@@ -878,8 +924,8 @@
       </div>
  
  
-      <!-- ===== 分頁：排程與發送（預覽與測試按鈕在右欄「排程預覽與測試」） ===== -->
-      <div class="section-box" data-tab="send" style="border-color:#a855f7;">
+      <!-- ===== 分頁：排程（預覽與測試按鈕在右欄「排程預覽與測試」） ===== -->
+      <div class="section-box" data-tab="schedule" style="border-color:#a855f7;">
         <details id="schedulesFold" class="panel-fold">
           <summary>排程時段<span id="schedulesFoldSummary" class="fold-meta"></span></summary>
           <div class="schedule-actions">
@@ -899,7 +945,45 @@
       </div>
  
  
-      <details class="section-box panel-fold" data-tab="send" id="teamsSettingsFold" style="border-color:#38bdf8;">
+      <!-- ===== 分頁：Teams 與手機 ===== -->
+      <details class="section-box panel-fold" data-tab="teams" id="receiverFold" style="border-color:#22c55e;">
+        <summary>手機遙控（@日管）<span class="fold-meta" id="receiverSummary">讀取中…</span></summary>
+        <div class="receiver-actions">
+          <button id="receiverStartBtn" type="button" title="與雙擊 start_teams_receiver.bat 相同；已註冊開機自動啟動時改由該 Windows 任務以一般權限啟動">▶ 啟動接收端</button>
+          <button id="receiverStopBtn" type="button" title="與執行 stop_teams_receiver.bat 相同；正在處理的指令會先完成">⏹ 停止</button>
+          <button id="receiverRestartBtn" type="button" title="先停止，等接收端結束後再啟動；改了下方「接收端設定」後用這個套用">🔄 重新啟動</button>
+          <button id="receiverRefreshBtn" type="button" title="重新讀取接收端狀態" aria-label="重新整理狀態">↻</button>
+        </div>
+        <div id="receiverControlResult" class="receiver-note" role="status"></div>
+        <div id="receiverStatus" class="receiver-status" aria-live="polite"></div>
+        <details class="inner-fold" id="receiverSetupFold">
+          <summary>⚙️ 接收端設定<span class="fold-meta" id="receiverSetupSummary"></span></summary>
+          <div class="receiver-setup-row">
+            <button id="receiverSetupBtn" type="button" title="與雙擊 setup_teams_receiver.bat 相同：選擇要接收 @日管 指令的 Teams 對話">🔗 設定接收對話</button>
+            <button id="receiverRegisterBtn" type="button" title="建立「E3 日管接收監看」與「E3 日管接收端」兩個 Windows 工作排程">註冊離線通知與開機自動啟動</button>
+          </div>
+          <details class="inline-help"><summary>ⓘ 第一次怎麼設定</summary>
+            <p>先按「🔗 設定接收對話」選擇要接收指令的對話，完成並關閉設定視窗後按「▶ 啟動接收端」；接收端只用一個分頁輪流讀取各對話，不需要讓對話保持開啟。再按「註冊離線通知與開機自動啟動」，接收端停掉時會通知、登入 Windows 後會自動開啟，而且由任務以一般權限啟動。手機在該對話輸入 <code>@日管 狀態</code> 即可測試。設定工具沒開時，也可以直接雙擊 <code>setup_teams_receiver.bat</code>、<code>start_teams_receiver.bat</code>、<code>stop_teams_receiver.bat</code>，效果相同。</p>
+          </details>
+          <div id="receiverRegisterResult" class="receiver-note" role="status"></div>
+          <label class="chk-row receiver-option"><input id="receiverHeadlessChk" type="checkbox"> <span>接收端使用無 Edge 視窗（背景執行）</span></label>
+          <details class="inline-help"><summary>ⓘ 有視窗與無視窗的差別</summary>
+            <p>預設有視窗：可被其他視窗蓋住或鎖定螢幕，但請勿最小化（最小化會被自動還原）。無視窗不會出現在桌面，但需要重新登入 Teams 時要先停止接收端再設定接收對話。</p>
+          </details>
+          <label class="receiver-option">Teams 頁面重新載入
+            <select id="receiverReloadSel">
+              <option value="240">閒置時每 4 小時（建議）</option>
+              <option value="30">閒置時每 30 分鐘</option>
+              <option value="0">只在讀取失敗時</option>
+            </select>
+          </label>
+          <details class="inline-help"><summary>ⓘ 重新載入是什麼</summary>
+            <p>接收端一直開著同一個分頁；這裡只決定多久重新整理一次 Teams 頁面。重新載入只在沒有處理指令時進行；讀不到畫面時不論選哪一項都會重新開啟。</p>
+          </details>
+          <div id="receiverSettingNote" class="receiver-note" role="status"></div>
+        </details>
+      </details>
+      <details class="section-box panel-fold" data-tab="teams" id="teamsSettingsFold" style="border-color:#38bdf8;">
         <summary>Teams 傳送設定<span class="fold-meta" id="teamsSettingsSummary"></span></summary>
         <div class="field">
           <label>預設 Teams 對話名稱（排程沒指定時使用）</label>
@@ -929,25 +1013,22 @@
             <button type="button" aria-describedby="cdpHelp">使用說明 ⓘ</button>
             <div id="cdpHelp" role="tooltip" hidden></div>
           </div>
+          <label class="chk-row" style="margin:10px 0 0;">
+            <input type="checkbox" id="autoPressEnterChk" checked />
+            <span>正式排程貼上後自動按 Enter 送出</span>
+          </label>
+          <div id="autoPressEnterHint" role="status" style="font-size:11px;line-height:1.6;margin-top:4px;"></div>
         </div>
       </details>
-      <details class="section-box panel-fold" data-tab="send" id="receiverFold" style="border-color:#22c55e;">
-        <summary>手機遙控（@日管）<span class="fold-meta" id="receiverSummary">讀取中…</span></summary>
-        <div id="receiverStatus" class="receiver-status" aria-live="polite"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-          <button id="receiverRefreshBtn" type="button" style="padding:3px 10px;font-size:12px;">重新整理</button>
-          <button id="receiverRegisterBtn" type="button" style="padding:3px 10px;font-size:12px;" title="建立「E3 日管接收監看」與「E3 日管接收端」兩個 Windows 工作排程">註冊離線通知與開機自動啟動</button>
-        </div>
-        <div id="receiverRegisterResult" role="status" style="font-size:12px;margin-top:6px;white-space:pre-wrap;"></div>
-        <label style="font-size:12px;margin-top:8px;display:block;"><input id="receiverHeadlessChk" type="checkbox"> 接收端使用無 Edge 視窗（背景執行）</label>
-        <div id="receiverModeHint" role="status" style="font-size:11px;color:var(--muted);line-height:1.6;">預設有視窗：可被其他視窗蓋住或鎖定螢幕，但請勿最小化（最小化會被自動還原）。無視窗不會出現在桌面，但需要重新登入 Teams 時要先停止接收端再執行 setup。</div>
-        <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;">第一次使用先雙擊 <code>setup_teams_receiver.bat</code> 選擇要接收指令的對話，再雙擊 <code>start_teams_receiver.bat</code> 開始接收；接收端只用一個分頁輪流讀取各對話，不需要讓對話保持開啟。停止請用 <code>stop_teams_receiver.bat</code>。手機在該對話輸入 <code>@日管 狀態</code> 即可測試。</div>
-      </details>
 
-
- 
- 
-      <details class="section-box panel-fold" data-tab="global" id="messageFold">
+      <!-- ===== 分頁：網站與其他 ===== -->
+      <div class="section-box" data-tab="site">
+        <div class="section-title"><span>監控網站登入</span></div>
+        <button id="loginSetupBtn" class="primary" style="width:100%;justify-content:center;margin-bottom:6px;" title="開啟專用 Edge，手動登入各監控網站一次">🔐 登入監控網站</button>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">會開啟一個 Edge 視窗，裡面是所有啟用頁面的網址。逐一登入（可勾「記住我」）後<b>直接關閉該視窗</b>即可。第一次使用、登入過期或抓圖抓到登入畫面時使用。</div>
+        <div style="font-size:11.5px;color:var(--muted);">各網站的帳密請到「📄 頁面與監測」，選擇頁面後勾選「使用帳密自動登入」。每頁可使用不同帳密；需要 MFA／驗證碼的網站請先在此手動登入。</div>
+      </div>
+      <details class="section-box panel-fold" data-tab="site" id="messageFold">
         <summary>手動全部頁面的訊息文字<span class="fold-meta" id="messageFoldSummary"></span></summary>
         <p style="font-size:12px;color:var(--muted);">只供「全部啟用頁面」手動傳送使用。各排程請展開該排程的「訊息文字」分別設定。</p>
         <div class="field">
@@ -964,25 +1045,7 @@
         </div>
         <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px;">順序：排程訊息開頭 → 預設訊息內容 → 正常／異常訊息。留空就略過，全部留空可只傳圖片。超標明細及截圖／登入失敗原因仍會附上。</div>
       </details>
- 
- 
-      <!-- ===== 分頁：全域設定 ===== -->
-      <div class="section-box" data-tab="global">
-        <div class="section-title"><span>監控網站登入</span></div>
-        <button id="loginSetupBtn" class="primary" style="width:100%;justify-content:center;margin-bottom:6px;" title="開啟專用 Edge，手動登入各監控網站一次">🔐 登入監控網站</button>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">會開啟一個 Edge 視窗，裡面是所有啟用頁面的網址。逐一登入（可勾「記住我」）後<b>直接關閉該視窗</b>即可。第一次使用、登入過期或抓圖抓到登入畫面時使用。</div>
-        <div style="font-size:11.5px;color:var(--muted);">各網站的帳密請到「📄 頁面與監測」，選擇頁面後勾選「使用帳密自動登入」。每頁可使用不同帳密；需要 MFA／驗證碼的網站請先在此手動登入。</div>
-      </div>
- 
- 
-      <div class="section-box" data-tab="global">
-        <div class="section-title"><span>Teams 發送安全</span></div>
-        <label class="chk-row" style="margin-bottom:0;">
-          <input type="checkbox" id="autoPressEnterChk" checked />
-          <span>正式排程貼上後自動按 Enter 送出</span>
-        </label>
-        <div id="autoPressEnterHint" role="status" style="font-size:11px;line-height:1.6;margin-top:4px;"></div>
-      </div>
+
     </div>
  
  
@@ -990,6 +1053,7 @@
     <div class="center-stage">
       <div class="canvas-toolbar">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <button id="toggleLeftBtn" type="button" class="panel-toggle" title="收起左欄（快捷鍵 [）" aria-label="收起左欄">«</button>
           <button id="modeCropBtn" title="顯示擷取的來源畫面，拖曳框出要傳送的範圍">✂️ 擷取範圍</button>
           <button id="modeRuleBtn" class="active-mode" title="編輯監測項目：拖曳新增監測框、拖曳紅線調整警戒線高度、框選刻度">📏 監測項目</button>
           <span style="width:1px;height:20px;background:var(--border);margin:0 2px;"></span>
@@ -999,6 +1063,7 @@
           <button class="zoom-btn" data-zoom="2">200%</button>
           <button class="zoom-btn" data-zoom="3">300%</button>
         </div>
+        <button id="toggleRightBtn" type="button" class="panel-toggle" style="margin-left:auto;" title="收起右欄（快捷鍵 ]）" aria-label="收起右欄">»</button>
         <div class="loupe-box">
           <canvas id="loupeCanvas" width="54" height="54" title="6x 像素放大鏡"></canvas>
           <div style="font-size:11px;line-height:1.4;min-width:96px;">
@@ -1019,6 +1084,12 @@
  
     <!-- 右側即時檢測結果與依 Teams 群組分流的預覽 -->
     <div class="right-panel">
+      <div class="panel-rail" id="rightRail" aria-label="右欄已收起">
+        <button type="button" class="rail-expand" data-rail="expand" title="展開右欄（快捷鍵 ]）" aria-label="展開右欄">«</button>
+        <button type="button" data-target="currentPageJudgeBox" id="railCurrentPage" title="目前頁面">🎯<span class="rail-dot"></span></button>
+        <button type="button" data-target="previewControlsBox" title="排程預覽與測試">👁</button>
+        <button type="button" data-target="overallJudgeBox" id="railOverall" title="排程判定結果">⚡<span class="rail-dot"></span></button>
+      </div>
       <!-- 正在編輯的這一頁：判定結果與它屬於哪些排程（與下方「排程」預覽分開，避免看錯） -->
       <div class="section-box" id="currentPageJudgeBox">
         <div class="section-title" style="margin-bottom:6px;">
@@ -1028,7 +1099,7 @@
         <div id="currentPageJudgeList" style="font-size:12px;line-height:1.6;"></div>
         <div id="currentPageScheduleHint" style="font-size:12px;line-height:1.6;margin-top:6px;"></div>
       </div>
-      <div class="section-box preview-controls">
+      <div class="section-box preview-controls" id="previewControlsBox">
         <div class="section-title" style="margin-bottom:6px;"><span>👁 排程預覽與測試</span></div>
         <select id="previewScheduleSelect" class="preview-select" aria-label="預覽與測試哪個排程"></select>
         <div id="selfTestScheduleHint" style="font-size:12px;color:#93c5fd;margin-top:6px;"></div>
@@ -1042,7 +1113,7 @@
         <button id="selfTestRefreshBtn" hidden style="margin-top:6px;padding:3px 10px;font-size:12px;" title="只查詢原測試，不建立新傳送">🔄 重新查詢測試狀態</button>
         <div id="selfTestStatus" role="status" style="font-size:12px;line-height:1.6;margin-top:6px;white-space:pre-wrap;"></div>
       </div>
-      <div class="section-box">
+      <div class="section-box" id="overallJudgeBox">
         <div class="section-title" style="margin-bottom:6px;">
           <span>⚡ 排程判定結果</span>
           <span id="overallBadge" class="status-pill status-ok">全部正常</span>
@@ -1065,6 +1136,9 @@
  
  
   <script>
+    // 本機服務的網址：經服務開啟（http://127.0.0.1:<埠>）時一律呼叫同一個服務，所以 -Port 改了埠號也能用；
+    // 直接開 HTML 檔（file://）時才用預設的 8765。與 work_control.js 的判斷相同。
+    const SERVICE_BASE = location.protocol === 'http:' && location.hostname === '127.0.0.1' ? location.origin : 'http://127.0.0.1:8765';
     const DEFAULT_CONFIG = {
       schedules: [
         { id: "morning", enabled: true, name: "早上 08:00 巡檢", time: "08:00", days: [], pages: ["page1", "page2", "page3", "page4"], target_chat_name: "", title: "" }
@@ -1334,7 +1408,7 @@ const numericCache = new WeakMap();
       const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),60000);
       try {
         const body=JSON.stringify({rule:JSON.parse(JSON.stringify(rule)),image:canvas.toDataURL('image/png')});
-        const response=await fetch('http://127.0.0.1:8765/api/numeric-preview',{method:'POST',headers:{'Content-Type':'application/json'},body,signal:controller.signal});
+        const response=await fetch(SERVICE_BASE + '/api/numeric-preview',{method:'POST',headers:{'Content-Type':'application/json'},body,signal:controller.signal});
         const data=await response.json();if(!response.ok)throw new Error(data.error||'本機辨識服務失敗');
         if (!['normal','exceeded','unknown'].includes(data.status))throw new Error('本機辨識結果格式不正確');
         numericCache.set(rule,{canvas,key,result:{...data,unknown:data.status==='unknown',count:0,hitPoints:[]}});
@@ -1479,7 +1553,7 @@ const numericCache = new WeakMap();
         const canvas = kind === "full" ? fullImages[pageId] : pageImageCanvases[pageId];
         if (!canvas) return false;
         try {
-          const resp = await fetch("http://127.0.0.1:8765/api/save-sample", {
+          const resp = await fetch(SERVICE_BASE + "/api/save-sample", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ pageId, kind, dataUrl: canvas.toDataURL("image/png") })
@@ -1959,10 +2033,12 @@ function renderCropFields() {
     let expandedScheduleIdx = -1;
     function refreshSidebarFolds() {
       const page=config.pages[currentPageIdx];
-      const ids=['categoryManageFold','teamsSettingsFold','selfHelpFold','scheduleHelpFold','receiverFold'];
+      const ids=['categoryManageFold','teamsSettingsFold','selfHelpFold','scheduleHelpFold','receiverSetupFold'];
       for(const id of ids) bindPanelFold(document.getElementById(id),'sidebar:'+id,false);
       // 排程時段是排程分頁的主要編輯區：預設展開。換新的記憶鍵，讓先前記住「收合」的使用者也先看到展開。
       bindPanelFold(document.getElementById('schedulesFold'),'sidebar:schedulesFold:v2',true);
+      // 手機遙控是「Teams 與手機」分頁的主要區塊：預設展開（新記憶鍵）
+      bindPanelFold(document.getElementById('receiverFold'),'sidebar:receiverFold:v2',true);
       if(page){
         bindPanelFold(document.getElementById('pageLoginFold'),JSON.stringify(['sidebarLogin',page.id]),false);
         bindPanelFold(document.getElementById('pageZoomFold'),JSON.stringify(['sidebarZoom',page.id]),false);
@@ -2213,7 +2289,7 @@ function daysText(s) {
       const schedules = config.schedules || [];
       if (!schedules.length) {
         const none = document.createElement('div'); none.className = 'muted';
-        none.textContent = '還沒有任何排程，請到「📅 排程與發送」新增。';
+        none.textContent = '還沒有任何排程，請到「📅 排程」新增。';
         wrap.appendChild(none); return;
       }
       schedules.forEach(s => {
@@ -2255,7 +2331,7 @@ function daysText(s) {
       el.appendChild(line);
       if (!isTargetUsable(target)) {
         const hint = document.createElement("div");
-        hint.textContent = "請到「📅 排程與發送」填入預設的 Teams 對話名稱。";
+        hint.textContent = "請到「💬 Teams 與手機」→「Teams 傳送設定」填入預設的 Teams 對話名稱。";
         el.appendChild(hint);
       }
       (config.schedules || [])
@@ -2334,7 +2410,7 @@ function daysText(s) {
         if (info.state === 'alert') line.style.color = '#f87171';
         else if (info.state === 'unknown') line.style.color = '#fbbf24';
         else if (info.state === 'off') line.style.color = 'var(--muted)';
-        line.onclick = () => { selectedRuleIdx = idx; setSideTab('pages'); setPageSection('rules'); setToolMode('rule'); renderAll(); };
+        line.onclick = () => { selectedRuleIdx = idx; setSideTab('pages'); setPageSection('rules'); if (isPanelCollapsed('left')) setPanelCollapsed('left', false); setToolMode('rule'); renderAll(); };
         list.appendChild(line);
       });
       const parts = [];
@@ -2443,7 +2519,7 @@ function renderTeamsPreview() {
         const shared = groups.get(scheduleTargets[0]);
         scheduleTargets.slice(1).forEach(target => groups.set(target, {...shared, pages:[...shared.pages], alerts:[...shared.alerts], problems:[...shared.problems]}));
       }
-      if (!pages.length && !missingPages.length) summaryEl.textContent = "此排程沒有可傳送的頁面（請到「排程與發送」勾選頁面）。";
+      if (!pages.length && !missingPages.length) summaryEl.textContent = "此排程沒有可傳送的頁面（請到「📅 排程」勾選頁面）。";
       overallBadge.className = "status-pill " + (totalAlerts || totalProblems ? "status-alert" : "status-ok");
       overallBadge.textContent = totalProblems ? `${totalAlerts} 項超標／${totalProblems} 項待確認` : totalAlerts ? `${totalAlerts} 項超標` : "未偵測到超標";
       refreshPanelSummaries(pages.length + missingPages.length);
@@ -2604,7 +2680,7 @@ function renderTeamsPreview() {
       if (scheduleRunInfoBusy || !location.protocol.startsWith('http')) return;
       scheduleRunInfoBusy = true;
       try {
-        const resp = await fetch("http://127.0.0.1:8765/api/schedule-status", { cache: "no-store" });
+        const resp = await fetch(SERVICE_BASE + "/api/schedule-status", { cache: "no-store" });
         if (!resp.ok) return;
         const data = await resp.json();
         scheduleTaskInfo = {};
@@ -2983,7 +3059,7 @@ WEEK_DAYS.forEach(([code, label]) => {
       document.getElementById("scheduleSyncStatus").textContent = "⏳ 正在同步 Windows 工作排程...";
       try { localStorage.setItem("e3_monitor_config_v1", jsonStr); } catch (e) {}
       try {
-        const resp = await fetch("http://127.0.0.1:8765/api/register-schedules", {
+        const resp = await fetch(SERVICE_BASE + "/api/register-schedules", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: jsonStr
@@ -3033,7 +3109,7 @@ WEEK_DAYS.forEach(([code, label]) => {
       const el = document.getElementById("scheduleSyncStatus");
       let synchronized = false;
       try {
-        const resp = await fetch("http://127.0.0.1:8765/api/schedule-status", { cache: "no-store" });
+        const resp = await fetch(SERVICE_BASE + "/api/schedule-status", { cache: "no-store" });
         if (resp.ok === false) throw new Error('讀取排程失敗');
         const data = await resp.json();
         scheduleTaskInfo = {};
@@ -3065,7 +3141,7 @@ WEEK_DAYS.forEach(([code, label]) => {
  
     document.getElementById("loginSetupBtn").onclick = async () => {
       try {
-        const resp = await fetch("http://127.0.0.1:8765/api/login-setup", { method: "POST" });
+        const resp = await fetch(SERVICE_BASE + "/api/login-setup", { method: "POST" });
         if (!resp.ok) throw new Error(resp.status);
         showSaveToast("🔐 已開啟登入用的 Edge 視窗，登入各網站後關閉它即可");
       } catch (e) {
@@ -3168,7 +3244,7 @@ WEEK_DAYS.forEach(([code, label]) => {
         part('approve').disabled = part('cancel').disabled = part('checked').disabled = true;
         part('status').textContent = decision === 'approve' ? '正在提交確認，請勿重複操作…' : '正在取消，本次不傳送…';
         try {
-          const {response, result} = await selfTestRequest('http://127.0.0.1:8765/api/test-self-confirm', {
+          const {response, result} = await selfTestRequest(SERVICE_BASE + '/api/test-self-confirm', {
             method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id,token:info.token,decision})
           });
           if (selfTestConfirmation !== current || selfTestJobId !== id) return;
@@ -3210,7 +3286,7 @@ WEEK_DAYS.forEach(([code, label]) => {
         for (;;) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           if (serial !== selfTestWatchSerial) return;
-          const {response, result} = await selfTestRequest('http://127.0.0.1:8765/api/test-self-status?id=' + encodeURIComponent(id), {}, 10000);
+          const {response, result} = await selfTestRequest(SERVICE_BASE + '/api/test-self-status?id=' + encodeURIComponent(id), {}, 10000);
           if (serial !== selfTestWatchSerial) return;
           if (!response.ok) throw new Error(result.error || result.message || '無法查詢測試結果');
           status.textContent = result.message || '正在查詢原測試狀態…';
@@ -3285,7 +3361,7 @@ WEEK_DAYS.forEach(([code, label]) => {
       status.textContent = kind === 'schedule' ? `本次排程：${selected.name || selected.id}，預計擷取 ${selectedCount} 張。正在啟動實際擷取與判定；完成後在本頁確認才會傳給自己。測試不受「僅異常時發送」限制。` : '正在啟動自己對話辨識，請在本頁確認；尚未確認前不會送出。本次測試不受「僅異常時發送」限制。';
       try {
         const endpoint = kind === 'schedule' ? '/api/test-self-schedule' : '/api/test-self';
-        const {response, result} = await selfTestRequest('http://127.0.0.1:8765' + endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const {response, result} = await selfTestRequest(SERVICE_BASE + endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
         if (selfTestJobId !== payload.id) return;
         if (!response.ok) {
           sessionStorage.removeItem('e3SelfTestJob');
@@ -3313,7 +3389,7 @@ WEEK_DAYS.forEach(([code, label]) => {
 async function cdpApiRequest(path, options={}) {
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
       try{
-        const response=await fetch('http://127.0.0.1:8765'+path,{...options,signal:controller.signal,cache:'no-store'});
+        const response=await fetch(SERVICE_BASE + path,{...options,signal:controller.signal,cache:'no-store'});
         const data=await response.json();
         if(!response.ok)throw new Error(data.error||'本機服務沒有回應');
         return data;
@@ -3658,7 +3734,7 @@ async function cdpApiRequest(path, options={}) {
       delete fullImages[removedId];
       delete pageImageCanvases[removedId];
       delete pageImages[removedId];
-      fetch("http://127.0.0.1:8765/api/delete-sample", {
+      fetch(SERVICE_BASE + "/api/delete-sample", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pageId: removedId })
@@ -3712,7 +3788,7 @@ async function cdpApiRequest(path, options={}) {
         captureSaveLock = true;
         if (!await saveConfigDirectly("", "", true)) throw new Error("此頁設定儲存失敗，未啟動抓圖");
         assertCaptureCurrent();
-        const resp = await fetch("http://127.0.0.1:8765/api/capture-url", {
+        const resp = await fetch(SERVICE_BASE + "/api/capture-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(request)
@@ -3724,7 +3800,7 @@ async function cdpApiRequest(path, options={}) {
         const deadline = Date.now() + 12 * 60 * 1000;
         while (data && data.ok && data.pending && Date.now() < deadline) {
           await new Promise(r => setTimeout(r, 1000));
-          data = await (await fetch("http://127.0.0.1:8765/api/capture-status", { cache: "no-store" })).json();
+          data = await (await fetch(SERVICE_BASE + "/api/capture-status", { cache: "no-store" })).json();
         }
         if (data && data.pending) data = { ok: false, error: "等待抓圖結果逾時，請關閉抓圖用的 Edge 視窗後再試" };
         if (data && data.ok && data.dataUrl) {
@@ -3753,7 +3829,7 @@ async function cdpApiRequest(path, options={}) {
           for (const kind of ['full','crop']) clearTimeout(sampleSaveTimers[`${page.id}:${kind}`]);
           let committed;
           try {
-            const response = await fetch('http://127.0.0.1:8765/api/commit-capture', {
+            const response = await fetch(SERVICE_BASE + '/api/commit-capture', {
               method:'POST',headers:{'Content-Type':'application/json'},
               body:JSON.stringify({pageId:page.id,expectedPage:page,capture_view:candidate.capture_view,crop_region:c,
                 full:full.toDataURL('image/png'),crop:cropped.toDataURL('image/png')})
@@ -3965,7 +4041,7 @@ document.getElementById("pageUrlInput").oninput = e => {
       state.loading=true;renderSavedCdpTargets();
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
       try{
-        const response=await fetch('http://127.0.0.1:8765/api/cdp-bindings',{cache:'no-store',signal:controller.signal});
+        const response=await fetch(SERVICE_BASE + '/api/cdp-bindings',{cache:'no-store',signal:controller.signal});
         const data=await response.json();
         if(!response.ok||!data.ok||!Array.isArray(data.targets)||data.targets.some(t=>!t||typeof t.route!=='string'||typeof t.label!=='string'||typeof t.complete!=='boolean'||typeof t.windowConfigured!=='boolean'))throw new Error('無法讀取已設定對象，請確認本機服務已更新並啟動。');
         state.targets=data.targets;state.error='';
@@ -3996,14 +4072,27 @@ document.getElementById("pageUrlInput").oninput = e => {
       if(!data.health.ok)return {text:'執行中，但無法讀取 Teams',cls:'warn'};
       return {text:hb.state==='processing'?'正在處理指令':'接收中',cls:'good'};
     }
+    // 接收端的 Teams 頁面重新載入間隔（分鐘；0＝只在讀取失敗時）。缺少或無效時與接收端相同，視為 240。
+    function receiverReloadMinutes(){const v=config.teams.receiver_reload_minutes;return Number.isInteger(v)&&(v===0||(v>=15&&v<=1440))?v:240;}
+    function receiverReloadName(m){return m===0?'只在讀取失敗時':m%60===0?`閒置時每 ${m/60} 小時`:`閒置時每 ${m} 分鐘`;}
     function renderReceiverMode(){
       document.getElementById('receiverHeadlessChk').checked=config.teams.receiver_headless===true;
+      const sel=document.getElementById('receiverReloadSel'), m=receiverReloadMinutes();
+      // 直接改 config.json 填入的其他合法間隔：加一個對應選項，不改掉使用者的值
+      if(![...sel.options].some(o=>o.value===String(m))){const o=document.createElement('option');o.value=String(m);o.textContent=receiverReloadName(m);sel.append(o);}
+      sel.value=String(m);
     }
-    document.getElementById('receiverHeadlessChk').onchange=e=>{
-      config.teams.receiver_headless=e.target.checked;
-      document.getElementById('receiverModeHint').textContent='已儲存設定；重新啟動接收端（stop_teams_receiver.bat 後再 start_teams_receiver.bat）才會生效。';
+    document.getElementById('receiverReloadSel').onchange=e=>{
+      config.teams.receiver_reload_minutes=Number(e.target.value);
+      document.getElementById('receiverSettingNote').textContent='已儲存設定；按上方「🔄 重新啟動」後生效。';
       renderReceiverStatus();
     };
+    document.getElementById('receiverHeadlessChk').onchange=e=>{
+      config.teams.receiver_headless=e.target.checked;
+      document.getElementById('receiverSettingNote').textContent='已儲存設定；按上方「🔄 重新啟動」後生效。';
+      renderReceiverStatus();
+    };
+    let receiverSetupAutoOpened=false;
     function renderReceiverStatus(){
       const box=document.getElementById('receiverStatus'), summary=document.getElementById('receiverSummary');
       document.getElementById('receiverRefreshBtn').disabled=receiverState.loading;
@@ -4017,7 +4106,12 @@ document.getElementById("pageUrlInput").oninput = e => {
       const row=(label,text,cls)=>{const r=document.createElement('div');r.className='row';const a=document.createElement('span');a.className='label';a.textContent=label;const b=document.createElement('span');b.textContent=text;if(cls)b.className=cls;r.append(a,b);box.append(r);return r;};
       const hb=data.heartbeat||{};
       row('接收端',head.text+(hb.exists&&hb.computer?`（${hb.computer}）`:''),head.cls);
-      if(!hb.exists){row('','尚未有接收紀錄：請雙擊 start_teams_receiver.bat。');}
+      // 接收端設定摺疊區的摘要；第一次使用（從未啟動過）時自動展開，讓使用者看到「設定接收對話」
+      const setupFold=document.getElementById('receiverSetupFold');
+      document.getElementById('receiverSetupSummary').textContent=` · ${config.teams.receiver_headless===true?'無視窗':'有視窗'} · ${receiverReloadName(receiverReloadMinutes())} · 離線通知${tasks?(tasks.watchdog?.registered?'已設定':'未設定'):'未知'}`;
+      // 摺疊狀態每次重繪都依記憶套用，所以同時改記憶（只在這次開啟期間，不寫回 localStorage）
+      if(!hb.exists&&!receiverSetupAutoOpened){receiverSetupAutoOpened=true;panelLayout.folds['sidebar:receiverSetupFold']=true;setupFold.open=true;}
+      if(!hb.exists){row('','尚未有接收紀錄：先在下方「接收端設定」按「🔗 設定接收對話」，完成後按「▶ 啟動接收端」。');}
       else{
         if(hb.alive&&hb.startedUtc)row('已執行',receiverDuration(hb.startedUtc));
         row('最後回報',receiverTime(hb.utc)||'無');
@@ -4027,6 +4121,11 @@ document.getElementById("pageUrlInput").oninput = e => {
           // 接收端只在啟動時讀取視窗模式；設定與執行中的模式不同時提醒重新啟動
           const wanted=config.teams.receiver_headless===true?'headless':'window', name=m=>m==='headless'?'無視窗':'有視窗';
           row('視窗模式',`${name(hb.mode)}（一個工作分頁輪流讀取）`+(hb.mode===wanted?'':`；設定已改為${name(wanted)}，重新啟動接收端後生效`),hb.mode===wanted?'':'warn');
+        }
+        if(hb.alive){
+          // 舊版接收端沒有回報間隔（固定每 30 分鐘）
+          const running=typeof hb.reloadMinutes==='number'?hb.reloadMinutes:30, wantedReload=receiverReloadMinutes();
+          row('頁面重新載入',receiverReloadName(running)+(running===wantedReload?'':`；設定已改為${receiverReloadName(wantedReload)}，重新啟動接收端後生效`),running===wantedReload?'':'warn');
         }
         const sources=Array.isArray(hb.sources)?hb.sources:[];
         const r=row('接收對話',sources.length?'':'沒有');
@@ -4057,6 +4156,8 @@ document.getElementById("pageUrlInput").oninput = e => {
         row('開機啟動',taskText(a)+(a?.registered?'（登入 Windows 1 分鐘後）':''),a?.registered?'':'warn');
         row('自動重啟',w?.registered?('接收程式結束或卡住時由監看任務重新啟動'+(data.autoRestart?.count?`；最近一次 ${receiverTime(data.autoRestart.lastUtc)}`:'')):'未啟用：需先註冊離線通知',w?.registered?'':'warn');
       }
+      // 接收端與監看任務的執行權限：接收端權限較高時，監看任務無法結束卡住的接收端
+      if(data.privilege?.text)row('執行權限',data.privilege.text,data.privilege.mismatch?'warn':'');
       renderReceiverMode();
       document.getElementById('receiverRegisterBtn').textContent=tasks?.watchdog?.registered&&tasks?.autostart?.registered?'重新註冊離線通知與開機自動啟動':'註冊離線通知與開機自動啟動';
     }
@@ -4086,9 +4187,78 @@ document.getElementById("pageUrlInput").oninput = e => {
       }catch(error){out.textContent='❌ '+(error.name==='AbortError'?'本機服務逾時，請按「重新整理」確認是否已建立':error.message);}
       finally{clearTimeout(timer);btn.disabled=false;refreshReceiverStatus(true);}
     };
-    window.addEventListener('focus',()=>refreshReceiverStatus(true));
-    setInterval(()=>{if(!document.hidden)refreshReceiverStatus();},30000);
-    refreshReceiverStatus(true);
+    // ===== 接收端啟動／停止／重新啟動／設定接收對話（與四個 bat 檔做同一件事） =====
+    const receiverControl={running:null,setupOpen:false,busy:false};
+    function renderReceiverControl(){
+      const c=receiverControl, off=c.busy||c.running===null;
+      document.getElementById('receiverStartBtn').disabled=off||c.running||c.setupOpen;
+      document.getElementById('receiverStopBtn').disabled=off||!c.running;
+      document.getElementById('receiverRestartBtn').disabled=off||!c.running;
+      document.getElementById('receiverSetupBtn').disabled=off||c.setupOpen;
+    }
+    async function receiverControlCall(method,action){
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+      try{
+        const response=await fetch('/api/receiver-control',method==='GET'?{cache:'no-store',signal:controller.signal}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action}),signal:controller.signal});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok||!data.ok)throw new Error(data.error||'本機服務沒有回應');
+        return data;
+      }catch(error){throw error.name==='AbortError'?new Error('本機服務逾時'):error;}
+      finally{clearTimeout(timer);}
+    }
+    async function refreshReceiverControl(){
+      if(!location.protocol.startsWith('http'))return;
+      try{const d=await receiverControlCall('GET');receiverControl.running=!!d.running;receiverControl.setupOpen=!!d.setupOpen;}
+      catch{receiverControl.running=null;}
+      renderReceiverControl();
+    }
+    const receiverSay=text=>{document.getElementById('receiverControlResult').textContent=text;};
+    // 停止後等接收端真的結束（正在處理的指令會先完成，最多等 30 分鐘）
+    async function waitReceiverStopped(){
+      const until=Date.now()+30*60000;
+      while(Date.now()<until){
+        await new Promise(r=>setTimeout(r,3000));
+        try{const d=await receiverControlCall('GET');if(!d.running)return true;}catch{}
+      }
+      return false;
+    }
+    async function runReceiverAction(steps){
+      receiverControl.busy=true;renderReceiverControl();
+      try{await steps();}
+      catch(error){receiverSay('❌ '+error.message);}
+      finally{receiverControl.busy=false;await refreshReceiverControl();refreshReceiverStatus(true);}
+    }
+    async function stopReceiverAndWait(){
+      receiverSay((await receiverControlCall('POST','stop')).message);
+      receiverSay('等待接收端結束…（正在處理的指令會先完成）');
+      if(!await waitReceiverStopped())throw new Error('接收端在 30 分鐘內沒有結束；請查看接收視窗，必要時直接關閉它');
+    }
+    document.getElementById('receiverStartBtn').onclick=()=>runReceiverAction(async()=>{
+      receiverSay('正在啟動…');receiverSay('✅ '+(await receiverControlCall('POST','start')).message+'。接收視窗會出現在桌面，約 1 分鐘內開始接收。');
+    });
+    document.getElementById('receiverStopBtn').onclick=()=>{
+      if(!confirm('停止接收端後，手機的 @日管 指令不會有回應，監看任務也不會自動重新啟動它，直到再按「啟動接收端」。\n\n確定停止？'))return;
+      runReceiverAction(async()=>{await stopReceiverAndWait();receiverSay('✅ 接收端已停止。要再接收請按「啟動接收端」。');});
+    };
+    document.getElementById('receiverRestartBtn').onclick=()=>{
+      if(!confirm('重新啟動接收端：先停止（正在處理的指令會先完成），結束後再啟動。期間手機指令要等重新啟動完成才會處理。\n\n確定重新啟動？'))return;
+      runReceiverAction(async()=>{
+        await stopReceiverAndWait();
+        receiverSay('接收端已停止，正在重新啟動…');
+        receiverSay('✅ '+(await receiverControlCall('POST','start')).message+'。新的設定已套用，約 1 分鐘內開始接收。');
+      });
+    };
+    document.getElementById('receiverSetupBtn').onclick=()=>{
+      const running=receiverControl.running;
+      if(running&&!confirm('設定接收對話前要先停止接收端（正在處理的指令會先完成）。設定完成後請再按「啟動接收端」。\n\n要停止接收端並開啟設定視窗嗎？'))return;
+      runReceiverAction(async()=>{
+        if(running)await stopReceiverAndWait();
+        receiverSay('✅ '+(await receiverControlCall('POST','setup')).message+'。');
+      });
+    };
+    window.addEventListener('focus',()=>{refreshReceiverStatus(true);refreshReceiverControl();});
+    setInterval(()=>{if(!document.hidden){refreshReceiverStatus();if(!receiverControl.busy)refreshReceiverControl();}},30000);
+    refreshReceiverStatus(true);refreshReceiverControl();
     document.getElementById('cdpHeadlessChk').onchange = e => {
       config.teams.cdp_headless = e.target.checked;
       renderCdpMode();
@@ -4230,8 +4400,8 @@ document.getElementById("pageUrlInput").oninput = e => {
       if (scheduleId) params.set("schedule", scheduleId);
       if (testMode === "send") params.set("send", "1");
       const endpoint = triggerTest
-        ? "http://127.0.0.1:8765/api/test-teams?" + params.toString()
-        : "http://127.0.0.1:8765/api/save";
+        ? SERVICE_BASE + "/api/test-teams?" + params.toString()
+        : SERVICE_BASE + "/api/save";
       try {
         const resp = await fetch(endpoint, {
           method: "POST",
@@ -4286,7 +4456,7 @@ document.getElementById("pageUrlInput").oninput = e => {
         return;
       }
       if (targets.some(t => t.startsWith("⚠️"))) {
-        alert("發送對象尚未設定或無法使用（連結 / Email），請先到「排程與發送」填入 Teams 對話名稱。");
+        alert("發送對象尚未設定或無法使用（連結 / Email），請先到「💬 Teams 與手機」→「Teams 傳送設定」填入 Teams 對話名稱。");
         return;
       }
       const policy = s && s.alert_only === true ? '\n發送條件：僅異常時發送；本次範例圖若未超標且無失敗，就不發送。' : '';
@@ -4295,11 +4465,15 @@ document.getElementById("pageUrlInput").oninput = e => {
     };
  
  
-    // 左側三個分頁 (記住上次停留的分頁)
+    // 左側四個分頁 (記住上次停留的分頁；舊版的 send／global 對應到 schedule／site)
+    const SIDE_TABS = ['pages', 'schedule', 'teams', 'site'];
     function setSideTab(tab) {
+      tab = ({send: 'schedule', global: 'site'})[tab] || tab;
+      if (!SIDE_TABS.includes(tab)) tab = 'pages';
       document.querySelector(".sidebar").dataset.activeTab = tab;
       document.querySelectorAll("#sideTabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
       try { localStorage.setItem("e3_calibrator_tab", tab); } catch (e) {}
+      document.querySelectorAll('#leftRail button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     }
     // 頁面分頁內：「⚙️ 此頁設定」或「📏 監測項目」，一次只顯示一塊並記住選擇
     function setPageSection(section) {
@@ -4321,8 +4495,68 @@ document.getElementById("pageUrlInput").oninput = e => {
     });
     try {
       const savedTab = localStorage.getItem("e3_calibrator_tab");
-      if (["pages", "send", "global"].includes(savedTab)) setSideTab(savedTab);
+      if (savedTab) setSideTab(savedTab);
     } catch (e) {}
+    // ===== 左右欄收合：收起後留細欄（左：四個分頁圖示；右：目前頁面／判定結果狀態燈），記住狀態，快捷鍵 [ 與 ] =====
+    const PANEL_STATE_KEY = 'e3_calibrator_panels';
+    function isPanelCollapsed(side) { return document.querySelector('.workspace').classList.contains(side + '-collapsed'); }
+    function setPanelCollapsed(side, collapsed, { save = true } = {}) {
+      document.querySelector('.workspace').classList.toggle(side + '-collapsed', !!collapsed);
+      const btn = document.getElementById(side === 'left' ? 'toggleLeftBtn' : 'toggleRightBtn');
+      const name = side === 'left' ? '左欄' : '右欄', key = side === 'left' ? '[' : ']';
+      btn.textContent = side === 'left' ? (collapsed ? '»' : '«') : (collapsed ? '«' : '»');
+      btn.title = `${collapsed ? '展開' : '收起'}${name}（快捷鍵 ${key}）`;
+      btn.setAttribute('aria-label', `${collapsed ? '展開' : '收起'}${name}`);
+      if (save) {
+        try {
+          const state = JSON.parse(localStorage.getItem(PANEL_STATE_KEY) || '{}') || {};
+          state[side] = !!collapsed;
+          localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(state));
+        } catch (e) {}
+      }
+      updatePanelRails();
+      // 中間區域寬度改變：重新「符合寬度」並重算監測框位置
+      requestAnimationFrame(() => { try { renderCanvas(); } catch (e) {} });
+    }
+    function railDotClass(badge) {
+      if (!badge || !badge.textContent.trim()) return '';
+      return badge.classList.contains('status-alert') ? 'bad' : badge.classList.contains('status-ok') ? 'ok' : '';
+    }
+    function updatePanelRails() {
+      const tab = document.querySelector('.sidebar').dataset.activeTab;
+      document.querySelectorAll('#leftRail button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      for (const [railId, badgeId, label] of [['railCurrentPage', 'currentPageJudgeBadge', '目前頁面'], ['railOverall', 'overallBadge', '排程判定結果']]) {
+        const badge = document.getElementById(badgeId), rail = document.getElementById(railId);
+        rail.querySelector('.rail-dot').className = 'rail-dot ' + railDotClass(badge);
+        rail.title = `${label}：${badge.textContent.trim() || '—'}（點一下展開右欄）`;
+      }
+    }
+    document.getElementById('toggleLeftBtn').onclick = () => setPanelCollapsed('left', !isPanelCollapsed('left'));
+    document.getElementById('toggleRightBtn').onclick = () => setPanelCollapsed('right', !isPanelCollapsed('right'));
+    document.querySelectorAll('#leftRail button').forEach(b => b.onclick = () => {
+      if (b.dataset.tab) setSideTab(b.dataset.tab);
+      setPanelCollapsed('left', false);
+    });
+    document.querySelectorAll('#rightRail button').forEach(b => b.onclick = () => {
+      setPanelCollapsed('right', false);
+      if (b.dataset.target) requestAnimationFrame(() => document.getElementById(b.dataset.target)?.scrollIntoView({ block: 'start' }));
+    });
+    // 判定徽章由各自的繪製函式更新；細欄只跟著它們變色，不另外計算
+    const railObserver = new MutationObserver(() => updatePanelRails());
+    for (const id of ['currentPageJudgeBadge', 'overallBadge']) railObserver.observe(document.getElementById(id), { attributes: true, childList: true, characterData: true, subtree: true });
+    document.addEventListener('keydown', e => {
+      if ((e.key !== '[' && e.key !== ']') || e.ctrlKey || e.altKey || e.metaKey) return;
+      const el = e.target;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      e.preventDefault();
+      const side = e.key === '[' ? 'left' : 'right';
+      setPanelCollapsed(side, !isPanelCollapsed(side));
+    });
+    try {
+      const state = JSON.parse(localStorage.getItem(PANEL_STATE_KEY) || '{}') || {};
+      setPanelCollapsed('left', state.left === true, { save: false });
+      setPanelCollapsed('right', state.right === true, { save: false });
+    } catch (e) { updatePanelRails(); }
  
  
     // 直接雙擊 calibrator.html (file://) 開啟時：讀不到截圖、抓圖後的裁切圖也存不回去，
@@ -4343,8 +4577,8 @@ document.getElementById("pageUrlInput").oninput = e => {
       if (location.protocol === "file:") {
         try {
           // no-cors：本機服務不允許其他來源讀取，這裡只確認服務有沒有開 (有回應就不會丟例外)
-          await fetch("http://127.0.0.1:8765/calibrator.html", { mode: "no-cors", cache: "no-store" });
-          location.replace("http://127.0.0.1:8765/calibrator.html");
+          await fetch(SERVICE_BASE + "/calibrator.html", { mode: "no-cors", cache: "no-store" });
+          location.replace(SERVICE_BASE + "/calibrator.html");
           return;
         } catch (e) {}
         showServiceBanner("⚠️ 本機服務沒有啟動：讀不到截圖，抓圖與儲存都無法寫入 config.json。請關閉此頁，雙擊 open_calibrator.bat 開啟設定工具。");
@@ -4353,7 +4587,7 @@ document.getElementById("pageUrlInput").oninput = e => {
       let fromServer = false;
       let configError = "";
       let resp = null;
-      try { resp = await fetch("http://127.0.0.1:8765/api/config"); } catch (e) {}
+      try { resp = await fetch(SERVICE_BASE + "/api/config"); } catch (e) {}
       if (resp && resp.ok) {
         // 服務有回應但內容無法解析 = config.json 本身格式錯誤 (例如手動編輯、複製貼上帶入特殊空白)，不是服務沒開
         const text = await resp.text();

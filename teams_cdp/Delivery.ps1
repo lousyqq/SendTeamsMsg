@@ -3,7 +3,7 @@
 # Dot-sourcing only defines functions and loads the shared batching helper; no browser or send.
 . (Join-Path (Split-Path $PSScriptRoot -Parent) 'teams_delivery.ps1')
 . (Join-Path (Split-Path $PSScriptRoot -Parent) 'work_control.ps1')
- 
+
 #region Transport
 # Shared transport. Import has no browser, network or send side effects.
 $script:E3CdpLogRoot=Join-Path (Split-Path $PSScriptRoot -Parent) 'logs'
@@ -236,7 +236,7 @@ function Get-E3SelfBinding([int]$context,[switch]$AllowGroup) {
     # One synthetic profile click, bounded reads, strict original account/self proof.
     # The user can stay in PowerShell; no foreground activation or system input is needed.
     $token='bind-'+[guid]::NewGuid().ToString('N')
-    $began=$false
+    $began=$false;$script:E3CdpAccountState=$null
     try {
         Invoke-E3Cdp 'Page.setWebLifecycleState' @{state='active'}|Out-Null
         $frame=Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('start','$token')"
@@ -246,6 +246,7 @@ function Get-E3SelfBinding([int]$context,[switch]$AllowGroup) {
         # one avatar exists instead of failing on the first read; still fail if it never settles.
         do {
             $begin=Invoke-E3Js 'E3Cdp.beginBinding()' $context
+            $script:E3CdpAccountState=@{phase='avatar';ok=[bool]$begin.ok;error=[string]$begin.error;profileCount=$begin.profileCount}
             if($begin.ok -or $begin.error -cne 'ACCOUNT_PROFILE_AMBIGUOUS'){break}
             Start-Sleep -Milliseconds 250
         }while(([DateTime]::UtcNow-$started).TotalSeconds -lt 10)
@@ -261,6 +262,7 @@ function Get-E3SelfBinding([int]$context,[switch]$AllowGroup) {
             Invoke-E3Js "globalThis[Symbol.for('d46518.teamsCodex.imageFrameProbe')]?.control('pulse','$token',$elapsed)"|Out-Null
             $allow=if($AllowGroup){'true'}else{'false'}
             $last=Invoke-E3Js "E3Cdp.bind($allow)" $context
+            $script:E3CdpAccountState.phase='account_menu';$script:E3CdpAccountState.ok=[bool]$last.ok;$script:E3CdpAccountState.error=[string]$last.error
             if($last.ok){return $last}
             Start-Sleep -Milliseconds 150
         }while(([DateTime]::UtcNow-$bindStarted).TotalSeconds -lt 10)
@@ -435,6 +437,15 @@ function Reset-E3HeadlessBrowserForNewDelivery {
     do {if(-not @(Get-E3ProfileEdgeProcesses $profile).Count){return};Start-Sleep -Milliseconds 100}while([DateTime]::UtcNow -lt $until)
     throw '舊專用 Edge 尚未結束，未啟動重複瀏覽器'
 }
+function Get-E3TeamsBrowserArguments {
+    # Headless Edge announces "HeadlessEdg". Set the normal product token at launch so it
+    # holds for every request; per-connection emulation is lost each time CDP reconnects.
+    $edge=@((Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe'))|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1
+    if(-not $edge){throw '找不到 Edge'}
+    $major=[Diagnostics.FileVersionInfo]::GetVersionInfo($edge).ProductMajorPart
+    if($major -lt 100){throw 'Edge 版本無法辨識，無法以無視窗模式啟動 Teams'}
+    return '--window-size=1600,1000 --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'+$major+'.0.0.0 Safari/537.36 Edg/'+$major+'.0.0.0"'
+}
 function Start-E3TestBrowser([string]$profile,[switch]$Headless,[switch]$InteractiveRestart,[string]$ExtraArguments='') {
     Assert-E3DebugPolicy
     $edge=@((Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),(Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe'))|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1
@@ -544,9 +555,9 @@ function Close-E3TestBrowser($browser) {
     }
     if($script:CdpSocket){$script:CdpSocket.Dispose();$script:CdpSocket=$null}
 }
- 
+
 #endregion
- 
+
 #region Owned browser lifecycle
 # Owned headless browser lifecycle. Loaded by Delivery.ps1; import has no side effects.
 function Test-E3UseHeadless($teamsCfg) {
@@ -579,6 +590,33 @@ function Assert-E3CdpComposerEmpty([int]$context) {
     $d=Invoke-E3Js 'BridgeAdapter.diagnostics(document,location.href,true).deliveryEvidence' $context
     if($d.composerCount -ne 1 -or $d.hasTextDraft -or $d.hasRichDraft -or $d.hasAttachments){throw '輸入框仍有草稿或附件，請先核對並處理；本次未貼圖、未送出'}
 }
+function Restore-E3CdpAccountProof($target,[int]$context) {
+    # Only before a new delivery or while the receiver is reading. Never recover
+    # a transport error, navigate, or re-enter an active/uncertain send here.
+    if($script:E3SendNetwork){throw '傳送期間不能重新驗證帳號；保留本次結果，不重送'}
+    $state=Invoke-E3Js 'E3Cdp.status()' $context
+    if(-not $state -or $state.stage -notin @('idle','finished')){throw '目前仍有 Teams 工作，未重新驗證帳號；不重送'}
+    $actual=Get-E3SelfBinding $context -AllowGroup
+    if(-not $actual.ok){throw "Teams 帳號重新驗證失敗：$($actual.error)；未繼續讀取或清除草稿"}
+    foreach($key in @('accountId','chatId','label')){
+        if(-not $target.binding.$key -or $actual.binding.$key -cne $target.binding.$key){throw "Teams $key 與原綁定不符，已停止；未繼續讀取或清除草稿"}
+    }
+    Write-Host '🔎 Teams 帳號驗證已恢復，原帳號與聊天室核對通過。' -ForegroundColor Gray
+}
+function Invoke-E3PreparationCheck($target,[int]$context,[string]$source,[ref]$AccountRecoveryUsed) {
+    $result=Invoke-E3Js $source $context
+    # This flag is returned only before the script changes focus or attachments.
+    # A thrown CDP error never reaches this branch and must not be replayed.
+    if($result -and -not $result.ok -and $result.accountProofLost){
+        if($AccountRecoveryUsed.Value){throw 'Teams 帳號驗證反覆失效，已停止；本次未貼圖、未送出'}
+        $AccountRecoveryUsed.Value=$true
+        Restore-E3CdpAccountProof $target $context
+        $result=Invoke-E3Js $source $context
+        if($result -and -not $result.ok -and $result.accountProofLost){throw 'Teams 帳號重新驗證後仍失效，已停止；本次未貼圖、未送出'}
+        if($result){$result|Add-Member -NotePropertyName accountProofRefreshed -NotePropertyValue $true -Force}
+    }
+    return $result
+}
 function Clear-E3HeadlessDraftForNewDelivery($target,[int]$context,$ownedBrowser,[switch]$Visible) {
     # Explicit user policy: discard old unsent composer content only in the exclusive owned headless browser.
     $profile=Join-Path (Get-E3CdpStateRoot) 'profile'
@@ -589,7 +627,7 @@ function Clear-E3HeadlessDraftForNewDelivery($target,[int]$context,$ownedBrowser
         throw '無法確認無視窗專用瀏覽器的擁有權，未清除草稿'
     }
     $actual=Get-E3SelfBinding $context -AllowGroup
-    if(-not $actual.ok){throw '無法核對收件對話，未清除草稿'}
+    if(-not $actual.ok){throw "無法核對收件對話，未清除草稿：$($actual.error)"}
     foreach($key in @('accountId','chatId','label')){if($actual.binding.$key -cne $target.binding.$key){throw "Teams $key 不符，未清除草稿"}}
     $status=Invoke-E3Js 'E3Cdp.recover()' $context
     if(-not $status){throw '無法確認舊工作狀態，未清除草稿'}
@@ -600,20 +638,23 @@ function Clear-E3HeadlessDraftForNewDelivery($target,[int]$context,$ownedBrowser
     }
     $bindingJson=ConvertTo-Json -InputObject $target.binding -Depth 8 -Compress
     $check=(Get-E3CdpRuntimeSource 'resume-check.js').Replace('/*E3_BINDING*/null',$bindingJson)
-    $proof=Invoke-E3Js $check $context
-    if(-not $proof.ok -or $proof.pendingRows -ne 0){throw 'Teams 仍有傳送中的訊息或對話無法核對，無法確認取消完成；本次未送出'}
+    $accountRecoveryUsed=$false
+    $proof=Invoke-E3PreparationCheck $target $context $check ([ref]$accountRecoveryUsed)
+    if(-not $proof.ok -or $proof.pendingRows -ne 0){throw "Teams 仍有傳送中的訊息或對話無法核對，無法確認取消完成；本次未送出。$($proof.reason)"}
     $source=(Get-E3CdpRuntimeSource 'discard-draft.js').Replace('/*E3_BINDING*/null',$bindingJson)
     $until=[DateTime]::UtcNow.AddSeconds(15);$stable=$null;$clears=0;$removed=0
     Write-Host '🧹 CDP 新工作：正在清除目標對話先前未送出的文字與附件…' -ForegroundColor Cyan
     do {
-        $step=Invoke-E3Js $source $context
+        $step=Invoke-E3PreparationCheck $target $context $source ([ref]$accountRecoveryUsed)
+        if($step.accountProofRefreshed){$stable=$null;$until=[DateTime]::UtcNow.AddSeconds(15)}
         if(-not $step -or -not $step.ok){throw "無法清除舊草稿：$($step.reason)；本次未貼圖、未送出"}
         if($step.state -eq 'empty'){
             if(-not $stable){$stable=[DateTime]::UtcNow}
             if(([DateTime]::UtcNow-$stable).TotalMilliseconds -ge 1000){
                 Assert-E3CdpComposerEmpty $context
-                $proof=Invoke-E3Js $check $context
+                $proof=Invoke-E3PreparationCheck $target $context $check ([ref]$accountRecoveryUsed)
                 if(-not $proof.ok -or $proof.pendingRows -ne 0){throw '清除後仍有傳送中的訊息，停止本次傳送'}
+                if($proof.accountProofRefreshed){$stable=$null;$until=[DateTime]::UtcNow.AddSeconds(15);continue}
                 return @{editorClears=$clears;attachmentRemovals=$removed;oldRuntime=$status;composerEmpty=$true}
             }
         }else{
@@ -666,26 +707,47 @@ function Restore-E3NavigationConnection([string]$endpoint,[int]$TimeoutMs=10000)
     if(-not [Uri]::TryCreate($endpoint,[UriKind]::Absolute,[ref]$uri) -or $uri.AbsolutePath -notlike '/devtools/page/*'){throw '無法確認原專用分頁，停止重連'}
     Connect-E3Cdp $endpoint -TimeoutMs $TimeoutMs
 }
-function Move-E3HeadlessPage([string]$url,[int]$TimeoutMs=30000) {
+# Chromium network errors that only mean "Teams could not be reached this time". Opening the
+# page again is safe: it happens before any paste or send, so nothing can be delivered twice.
+$script:E3RetryableNavigationErrors='^net::ERR_(TIMED_OUT|CONNECTION_TIMED_OUT|CONNECTION_RESET|CONNECTION_REFUSED|CONNECTION_CLOSED|CONNECTION_ABORTED|CONNECTION_FAILED|EMPTY_RESPONSE|NAME_NOT_RESOLVED|NAME_RESOLUTION_FAILED|NETWORK_CHANGED|INTERNET_DISCONNECTED|ADDRESS_UNREACHABLE|NETWORK_IO_SUSPENDED|PROXY_CONNECTION_FAILED|TUNNEL_CONNECTION_FAILED)$'
+$script:E3NavigationRetryWaits=@(10,20)
+function Move-E3HeadlessPage([string]$url,[int]$TimeoutMs=30000,[int]$NetworkRetries=2,[switch]$RetriedLater) {
+    # NetworkRetries: how many times a network error is retried (waits 10 s, then 20 s). Callers that
+    # hold the shared CDP lock while polling (the receiver) pass 0 and retry later without the lock.
     $endpoint=$script:CdpEndpoint
-    try {
-        $nav=Invoke-E3Cdp 'Page.navigate' @{url=$url} -TimeoutMs $TimeoutMs
-        if($nav.errorText){throw "Teams 導航失敗：$($nav.errorText)"}
-    }catch{
-        if($_.Exception.Message -notmatch 'CDP_TIMEOUT'){throw}
-        Write-Host "⚠️ $($_.Exception.Message)；只重連原分頁並檢查載入結果，不重複導航。" -ForegroundColor Yellow
-        Restore-E3NavigationConnection $endpoint
+    $script:E3CdpNavigationAttempts=@()
+    for($attempt=1;;$attempt++){
+        try {
+            $nav=Invoke-E3Cdp 'Page.navigate' @{url=$url} -TimeoutMs $TimeoutMs
+            $navError=[string]$nav.errorText
+            $script:E3CdpNavigationAttempts+=@{attempt=$attempt;utc=[DateTime]::UtcNow.ToString('o');error=$navError}
+            if(-not $navError){return}
+            $retries=[Math]::Min($NetworkRetries,$script:E3NavigationRetryWaits.Count)
+            if($navError -notmatch $script:E3RetryableNavigationErrors -or $attempt -gt $retries -or $script:E3SendNetwork){
+                $note=if($attempt -gt 1){"（共試 $attempt 次）"}elseif($RetriedLater -and $navError -match $script:E3RetryableNavigationErrors){'（網路暫時連不上，稍後會自動再試）'}else{''}
+                throw "Teams 導航失敗：$navError$note"
+            }
+            $wait=$script:E3NavigationRetryWaits[$attempt-1]
+            Write-Host "⚠️ 開啟 Teams 時網路錯誤（$navError），$wait 秒後重新開啟（第 $($attempt+1) 次）；尚未貼圖、未送出。" -ForegroundColor Yellow
+            Start-Sleep -Seconds $wait
+        }catch{
+            if($_.Exception.Message -notmatch 'CDP_TIMEOUT'){throw}
+            Write-Host "⚠️ $($_.Exception.Message)；只重連原分頁並檢查載入結果，不重複導航。" -ForegroundColor Yellow
+            Restore-E3NavigationConnection $endpoint
+            return
+        }
     }
 }
-function Wait-E3HeadlessChat($target,[int]$TimeoutSeconds=120) {
+function Wait-E3HeadlessChat($target,[int]$TimeoutSeconds=120,[switch]$ChatOnly) {
+    $script:E3CdpNavigationState=$null
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $label=ConvertTo-Json -InputObject ([string]$target.binding.label) -Compress
     $chatId=ConvertTo-Json -InputObject ([string]$target.binding.chatId) -Compress
-    $source=(Get-E3CdpRuntimeSource 'navigation.js').Replace('/*E3_LABEL*/null',$label).Replace('/*E3_CHAT_ID*/null',$chatId)
+    $source=(Get-E3CdpRuntimeSource 'navigation.js').Replace('/*E3_LABEL*/null',$label).Replace('/*E3_CHAT_ID*/null',$chatId).Replace('/*E3_REQUIRE_ACCOUNT*/true',$(if($ChatOnly){'false'}else{'true'}))
     $last='loading';$nextLog=[DateTime]::UtcNow.AddSeconds(20);$fallbackAt=[DateTime]::UtcNow.AddSeconds(45);$fallback=$false;$loginSince=$null
     $endpoint=$script:CdpEndpoint;$reconnects=0;$contextChanges=0;$progress=$false
     while([DateTime]::UtcNow -lt $deadline){
-        if([DateTime]::UtcNow -ge $nextLog){Write-Host "  等待 headless Teams 載入綁定對話（$last；重連 $reconnects/2；navigation1）…";$nextLog=[DateTime]::UtcNow.AddSeconds(20)}
+        if([DateTime]::UtcNow -ge $nextLog){Write-Host "  等待 headless Teams 載入綁定對話（$last；重連 $reconnects/2；navigation2）…";$nextLog=[DateTime]::UtcNow.AddSeconds(20)}
         $remaining=[int]($deadline-[DateTime]::UtcNow).TotalMilliseconds
         if($remaining -lt 250){break}
         try{$st=Invoke-E3Js $source -TimeoutMs ([Math]::Min(30000,$remaining));$contextChanges=0}
@@ -705,6 +767,7 @@ function Wait-E3HeadlessChat($target,[int]$TimeoutSeconds=120) {
             if($reason -match 'Execution context was destroyed|Cannot find context|Inspected target navigated' -and $contextChanges -lt 3){$contextChanges++;Start-Sleep -Milliseconds 500;continue}
             throw "聊天室載入檢查失敗（$last）：$reason"
         }
+        $script:E3CdpNavigationState=@{stage=[string]$st.stage;ready=[bool]$st.ready;login=[bool]$st.login;profileCount=$st.profileCount;reconnects=$reconnects}
         # Existing SSO sessions can briefly redirect through the login host without user input.
         if($st.login){
             if(-not $loginSince){$loginSince=[DateTime]::UtcNow}
@@ -721,19 +784,20 @@ function Wait-E3HeadlessChat($target,[int]$TimeoutSeconds=120) {
             $fallback=$true
             $remaining=[int]($deadline-[DateTime]::UtcNow).TotalMilliseconds
             if($remaining -lt 250){break}
-            Move-E3HeadlessPage (Get-E3TeamsHomeUrl) -TimeoutMs ([Math]::Min(30000,$remaining))
+            Move-E3HeadlessPage (Get-E3TeamsHomeUrl) -TimeoutMs ([Math]::Min(30000,$remaining)) -NetworkRetries 0
         }
         Start-Sleep -Milliseconds 500
     }
-    throw "headless Teams 未在 $TimeoutSeconds 秒內開啟綁定對話（$last）；請用「設定 CDP 收件對象」檢查登入與對話，或取消勾選無視窗模式；本次未貼圖、未送出"
+    $detail=if($last -eq 'wait_account'){"；帳號頭像數量=$($script:E3CdpNavigationState.profileCount)，帳號介面尚未就緒"}else{''}
+    throw "headless Teams 未在 $TimeoutSeconds 秒內開啟綁定對話（$last$detail）；請用「設定 CDP 收件對象」檢查登入與對話，或取消勾選無視窗模式；本次未貼圖、未送出"
 }
 function Open-E3HeadlessTarget($target) {
     $profile=Join-Path (Get-E3CdpStateRoot) 'profile'
     if(-not(Test-Path -LiteralPath (Join-Path $profile 'Default'))){throw '尚無 CDP 專用登入資料，請先在解鎖後執行「設定 CDP 收件對象」'}
-    $browser=$null;$stage='start_browser';$script:E3CdpLastCommand=$null
+    $browser=$null;$stage='start_browser';$script:E3CdpLastCommand=$null;$script:E3CdpNavigationState=$null;$script:E3CdpAccountState=$null;$script:E3CdpNavigationAttempts=@()
     try {
-        Write-Host '🌐 準備無視窗 Teams（navigation1）：載入逾時會檢查並重連原分頁；尚未貼圖、未送出。' -ForegroundColor Gray
-        $browser=Start-E3TestBrowser $profile -Headless
+        Write-Host '🌐 準備無視窗 Teams（navigation2）：等待對話與帳號介面就緒；尚未貼圖、未送出。' -ForegroundColor Gray
+        $browser=Start-E3TestBrowser $profile -Headless -ExtraArguments (Get-E3TeamsBrowserArguments)
         $stage='initialize_headless'
         Initialize-E3HeadlessPage
         $stage='navigate_chat'
@@ -750,15 +814,15 @@ function Open-E3HeadlessTarget($target) {
     } catch {
         $reason=$_.Exception.Message;$command=$script:E3CdpLastCommand
         $diagnostic=Join-Path $script:E3CdpLogRoot ([DateTime]::Now.ToString('yyyy-MM-dd')+'\startup_'+[guid]::NewGuid().ToString('N')+'.json')
-        try{Save-E3CdpState $diagnostic @{version='navigation1';stage=$stage;error=$reason;lastCommand=$command;edgeStderr=$browser.stderrLog;pasteAttempted=$false;sendAttempted=$false;utc=[DateTime]::UtcNow.ToString('o')}}
+        try{Save-E3CdpState $diagnostic @{version='navigation2';stage=$stage;error=$reason;lastCommand=$command;navigationAttempts=@($script:E3CdpNavigationAttempts);navigation=$script:E3CdpNavigationState;account=$script:E3CdpAccountState;edgeStderr=$browser.stderrLog;pasteAttempted=$false;sendAttempted=$false;utc=[DateTime]::UtcNow.ToString('o')}}
         catch{$diagnostic='紀錄檔寫入失敗：'+$_.Exception.Message}
         Close-E3OwnedBrowser $browser
         throw "Teams 無視窗啟動失敗（$stage）：$reason。本次未貼圖、未送出。診斷：$diagnostic"
     }
 }
- 
+
 #endregion
- 
+
 #region Binding and delivery
 function Get-E3CdpStateRoot { Join-Path $env:LOCALAPPDATA 'E3TeamsCdpSendTest' }
 function Assert-E3CdpRecordPath([string]$path) {
@@ -990,7 +1054,7 @@ function Connect-E3CdpPageContext($session,$target,[ValidateRange(250,60000)][in
     }catch{throw "送出前分頁初始化失敗（$($diagnostic.stage)）：$($_.Exception.Message)；連線診斷：$path"}
     finally{$timer.Stop();$diagnostic.elapsedMs=$timer.ElapsedMilliseconds;$null=Save-E3BrowserStartupDiagnostic $path $diagnostic}
 }
-function Connect-E3CdpTarget($session,$target,[switch]$PrepareNew) {
+function Connect-E3CdpTarget($session,$target,[switch]$PrepareNew,[switch]$ChatOnly) {
     $prepared=Connect-E3CdpPageContext $session $target
     $context=[int]$prepared.context;$runtime=$prepared.runtime
     if($runtime.exists -and $runtime.version -notin @('2026-11-05-headless1','2026-11-06-optionaltext1','2026-11-06-receipt2','2026-11-09-preflight1','2026-11-10-preparation1','2026-11-10-captionspace1','2026-11-11-receipttext1','2026-11-10-receiptbreak1','2026-11-12-history1')){throw 'Teams 分頁控制程式版本不符。請先核對已送訊息與草稿，再重新整理原分頁並回到綁定對話；不用清除登入資料'}
@@ -1000,6 +1064,16 @@ function Connect-E3CdpTarget($session,$target,[switch]$PrepareNew) {
         }
     }
     if($PrepareNew){Stop-E3PriorPreparation $context}
+    if($ChatOnly){
+        # Receiver reads only: the open chat must have the saved chat ID and name. No account flyout,
+        # no avatar requirement; every reply verifies the account again (Enter-E3ReceiverChat).
+        $chat=Get-E3ChatOnlyBinding $target
+        $seen=Invoke-E3Js ("(()=>{const r=BridgeAdapter.inspect(document,location.href,"+($chat|ConvertTo-Json -Depth 8 -Compress)+");return r.ok?{ok:true,binding:r.binding}:{ok:false,error:r.error};})()") $context
+        if(-not $seen.ok){throw "無法核對 Teams 聊天室：$($seen.error)"}
+        foreach($key in @('chatId','label')){if([string]$seen.binding.$key -cne [string]$target.binding.$key){throw "Teams $key 與保存的收件對象不同，已停止；請回到專用聊天室或重新綁定"}}
+        Update-E3CdpReceiptRuntime $context
+        return $context
+    }
     $actual=Get-E3SelfBinding $context -AllowGroup
     if(-not $actual.ok){throw "無法驗證 Teams 帳號／聊天室：$($actual.error)"}
     foreach($key in @('accountId','chatId','label')){if($actual.binding.$key -cne $target.binding.$key){throw "Teams $key 與保存的收件對象不同，已停止；請回到專用聊天室或重新綁定"}}
@@ -1007,6 +1081,14 @@ function Connect-E3CdpTarget($session,$target,[switch]$PrepareNew) {
     return $context
 }
 # Configured destinations, including missing bindings; ignore disabled page/schedule overrides.
+function Get-E3ChatOnlyBinding($target) {
+    # The saved binding without the per-read account proof flag (groupReport). Used only for
+    # read-only receiver checks; sending keeps the full binding and its account verification.
+    $copy=[ordered]@{}
+    foreach($p in $target.binding.PSObject.Properties){if($p.Name -ne 'groupReport'){$copy[$p.Name]=$p.Value}}
+    if($target.binding -is [Collections.IDictionary]){$copy=[ordered]@{};foreach($k in $target.binding.Keys){if($k -ne 'groupReport'){$copy[$k]=$target.binding[$k]}}}
+    return [pscustomobject]$copy
+}
 function Get-E3ConfiguredRoutes($cfg) {
     $names=@($cfg.teams.target_chat_name)+@($cfg.pages|Where-Object{$_.enabled -ne $false}|ForEach-Object{$_.target_chat_name})+@($cfg.schedules|Where-Object{$_.enabled -ne $false}|ForEach-Object{Get-TeamsScheduleTargets $_})
     $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -1045,7 +1127,7 @@ function Get-E3BrowserSelectedRoute($binding,$existing) {
 function Open-E3HeadlessBrowser {
     $profile=Join-Path (Get-E3CdpStateRoot) 'profile'
     if(-not(Test-Path -LiteralPath (Join-Path $profile 'Default'))){throw '尚無 CDP 專用登入資料，請先在解鎖後執行「設定 CDP 收件對象」'}
-    return Start-E3TestBrowser $profile -Headless
+    return Start-E3TestBrowser $profile -Headless -ExtraArguments (Get-E3TeamsBrowserArguments)
 }
 function Open-E3HeadlessChat($browser,$target) {
     # Reuse the browser's first tab. Page emulation and the bootstrap script belong to the CDP
@@ -1136,6 +1218,25 @@ function Open-E3BindingTab($session) {
     Invoke-E3Cdp 'Page.enable'|Out-Null
     return $tabId
 }
+function Test-E3BindingBrowserInteractive($session) {
+    # A live CDP endpoint can belong to a headless receiver left running after Stop.
+    # Verify its profile and listening process before reusing it for manual setup.
+    $profile=Join-Path (Get-E3CdpStateRoot) 'profile'
+    $main=@(Get-E3ProfileEdgeProcesses $profile | Where-Object {$_.CommandLine -notmatch '(?:^|\s)--type='})
+    $listeners=@(Get-NetTCPConnection -State Listen -LocalPort ([int]$session.port) -ErrorAction Stop)
+    $owner=@($main | Where-Object {$_.ProcessId -in $listeners.OwningProcess})
+    if($owner.Count -ne 1){throw '無法確認設定連線屬於這份專用 Edge，已停止；請正常關閉接收端專用 Edge 後重新設定'}
+    return ($owner[0].CommandLine -notmatch '(?:^|\s)--headless(?:=\S+)?(?:\s|$)')
+}
+function Show-E3BindingWindow([string]$tabId) {
+    # Only called for interactive binding, never by background delivery or polling.
+    try {
+        $window=Invoke-E3Cdp 'Browser.getWindowForTarget' @{targetId=$tabId}
+        Invoke-E3Cdp 'Browser.setWindowBounds' @{windowId=[int]$window.windowId;bounds=@{windowState='normal'}}|Out-Null
+        Invoke-E3Cdp 'Browser.setWindowBounds' @{windowId=[int]$window.windowId;bounds=@{windowState='maximized'}}|Out-Null
+        Invoke-E3Cdp 'Page.bringToFront' @{}|Out-Null
+    }catch{throw "無法顯示 Teams 設定視窗，尚未要求選擇聊天室：$($_.Exception.Message)。請正常關閉專用 Edge 後重新設定"}
+}
 function Set-E3CdpBinding($cfg,[switch]$SelectInBrowser) {
     $mutex=[Threading.Mutex]::new($false,'Local\E3TeamsCdpShared')
     $locked=$false;$ownedBrowser=$null;$headless=Test-E3UseHeadless $cfg.teams;$restartedProfile=$false
@@ -1150,9 +1251,15 @@ function Set-E3CdpBinding($cfg,[switch]$SelectInBrowser) {
         for($index=0;$index -lt $queue.Count;$index++){
             $route=$queue[$index]
             if($index -eq 0){
-                if(-not $headless){try{$session=Get-E3CdpSession}catch{Write-Host '正在開啟 CDP 專用 Edge…'}}
+                if(-not $headless){
+                    try{$session=Get-E3CdpSession}catch{Write-Host '正在開啟 CDP 專用 Edge…'}
+                    if($session -and -not (Test-E3BindingBrowserInteractive $session)){
+                        Write-Host '原專用 Edge 正以無視窗模式執行，無法手動選聊天室；接下來會詢問是否保留登入資料並重開有視窗 Edge。' -ForegroundColor Yellow
+                        $session=$null
+                    }
+                }
                 if(-not $session){
-                    $opened=Start-E3TestBrowser (Join-Path $stateRoot 'profile') -InteractiveRestart
+                    $opened=Start-E3TestBrowser (Join-Path $stateRoot 'profile') -InteractiveRestart -ExtraArguments '--new-window --start-maximized'
                     $restartedProfile=[bool]$opened.restartedProfile
                     if($headless){$ownedBrowser=$opened}
                     $session=@{port=$opened.port;browserUrl=$opened.browserUrl}
@@ -1175,6 +1282,7 @@ function Set-E3CdpBinding($cfg,[switch]$SelectInBrowser) {
             Write-Host '輸入框請保持空白。帳號選單會自動驗證，不需手動開啟。'
             $result=$null
             while($true){
+                Show-E3BindingWindow $tabId
                 $answer=[string](Read-Host $(if($SelectInBrowser){'選好聊天室後按 Enter'}else{'選好聊天室後按 Enter；輸入 S 略過此對象'}))
                 if(-not $SelectInBrowser -and $answer.Trim() -ieq 'S'){break}
                 $frame=(Invoke-E3Cdp 'Page.getFrameTree').frameTree.frame.id
@@ -1455,9 +1563,9 @@ function Send-GroupToTeamsCdp([string]$targetChatName,[string[]]$imageFiles,[str
         if($locked){Unregister-E3WorkOwner 'cdp';$mutex.ReleaseMutex()};$mutex.Dispose()
     }
 }
- 
+
 #endregion
- 
+
 #region Browser scripts
 # Browser sources are literal here-strings: no PowerShell interpolation or runtime extraction.
 # Historical source names below are section identifiers, not filesystem dependencies.
@@ -1585,7 +1693,7 @@ function Get-E3CdpRuntimeSource([string]$file) {
   const profileFingerprint = (node) => JSON.stringify([node.id, node.getAttribute('aria-label'),
     node.getAttribute('data-account-email'), node.getAttribute('data-account-id'),
     [...node.querySelectorAll('[data-tid="me-control-avatar"]')].map((avatar) => [avatar.id, avatar.getAttribute('aria-label'), avatar.textContent])]);
- 
+
   function refreshIdentity(doc) {
     const profiles = [...doc.querySelectorAll('[data-tid="me-control-avatar-trigger"]')];
     const profile = profiles.length === 1 ? profiles[0] : null;
@@ -1637,12 +1745,12 @@ function Get-E3CdpRuntimeSource([string]$file) {
     }
     return proof ? finish(evidence.profileExpanded ? 'ACCOUNT_VERIFIED' : 'ACCOUNT_VERIFIED_CACHED', proof) : finish('ACCOUNT_MENU_NOT_OPEN');
   }
- 
+
   function accountEvidence(doc) {
     refreshIdentity(doc);
     return {...identityState.evidence};
   }
- 
+
   function chatFromUrl(href) {
     try {
       const url = new URL(href);
@@ -1655,8 +1763,8 @@ function Get-E3CdpRuntimeSource([string]$file) {
       return '';
     }
   }
- 
-  function inspect(doc, href, expected, allowGroup = false) {
+
+function inspect(doc, href, expected, allowGroup = false) {
     if (expected?.groupReport && !globalThis.BridgeGroupReportRuntime?.accountMatches(expected))
       return fail('GROUP_REPORT_ACCOUNT_NOT_VERIFIED');
     try {
@@ -1700,7 +1808,7 @@ function Get-E3CdpRuntimeSource([string]$file) {
 function sameBinding(actual, expected) {
     return !!actual && !!expected && actual.accountId === expected.accountId && actual.chatId === expected.chatId;
   }
- 
+
   function diagnostics(doc, href = '', deliveryOnly = false) {
     const groups = {pane: paneSelector, profile: '[data-tid="me-control-avatar-trigger"], [data-tid="me-control-profile"], [data-tid="me-control-account-info"]', header: headerSelector, composer: composerSelector, sendButton: sendSelector};
     const report = Object.fromEntries(Object.entries(groups).map(([name, selector]) => {
@@ -1830,7 +1938,7 @@ function sameBinding(actual, expected) {
     }))};
     return report;
   }
- 
+
   function readRows(root, delivery = false) {
     const messages = [];
     const ids = new Set();
@@ -1915,7 +2023,7 @@ function sameBinding(actual, expected) {
     const rows = readRows(context.root, delivery);
     return rows.ok ? {...rows, binding: context.binding} : rows;
   }
- 
+
   function deliverySnapshot(doc, href, binding, boundary = null) {
     const current = snapshot(doc, href, binding, true);
     if (!current.ok) return current;
@@ -1928,20 +2036,20 @@ function sameBinding(actual, expected) {
     if (boundary && !hasContinuity(boundary.ids, current.messages)) return blocked('聊天紀錄與傳送基準不連續；請等待頁面穩定');
     return current;
   }
- 
+
   function hasContinuity(prior, messages) {
     if (!prior.length) return true;
     const ids = new Set(messages.map((message) => message.id));
     return prior.some((id) => ids.has(id));
   }
- 
+
   function atLatest(doc) {
     const root = doc.querySelector(paneSelector);
     const list = root?.querySelector(listSelector);
     if (!root || !list || !list.clientHeight || root.querySelector('[data-tid="jump-to-latest"], [data-tid="jump-to-latest-button"]')) return false;
     return list.scrollTop + list.clientHeight >= list.scrollHeight - 2 && root.querySelectorAll(rowSelector).length > 0;
   }
- 
+
   function followLatest(doc, binding) {
     const current = inspect(doc, doc.location.href, binding);
     if (!current.ok || !sameBinding(current.binding, binding)) return false;
@@ -1989,13 +2097,12 @@ function sameBinding(actual, expected) {
     latestViewport = {node: list, position};
     return latest;
   }
- 
-  function mergeMessages(windows) {
+function mergeMessages(windows) {
     const rows = new Map();
     for (const messages of windows) for (const message of messages) if (!rows.has(message.id)) rows.set(message.id, message);
     return [...rows.values()].sort((left, right) => Date.parse(left.time) - Date.parse(right.time));
   }
- 
+
   function eligibleMessages(messages, boundary) {
     if (!boundary?.time) return messages;
     const initialIds = new Set(boundary.ids || []);
@@ -2004,7 +2111,7 @@ function sameBinding(actual, expected) {
     messages.forEach((message, index) => { if (initialIds.has(message.id) && Date.parse(message.time) === cutoff) lastAnchor = index; });
     return messages.filter((message, index) => initialIds.has(message.id) || Date.parse(message.time) > cutoff || (lastAnchor !== -1 && index > lastAnchor && Date.parse(message.time) === cutoff));
   }
- 
+
   async function catchUp(doc, href, expected, anchors, options = {}) {
     let result = snapshot(doc, href(), expected);
     if (!result.ok) return result;
@@ -2037,7 +2144,7 @@ function sameBinding(actual, expected) {
     }
   }
 
- async function reconcile(doc, href, binding, item, wait) {
+async function reconcile(doc, href, binding, item, wait) {
     if (imageFormat(item)) await verifyIcons(doc.querySelector(paneSelector) || doc, wait);
     if (cleanFormat(item) && !['sending', 'uncertain'].includes(item.state)) return null;
     const current = cleanFormat(item) ? deliverySnapshot(doc, href, binding, item.boundary) : snapshot(doc, href, binding);
@@ -2061,7 +2168,7 @@ function sameBinding(actual, expected) {
     if (!item.id || !normalize(item.text).includes(item.id)) return null;
     return current.messages.find((message) => message.text.includes(item.id) && normalize(message.text) === normalize(item.text)) || null;
   }
- 
+
   function validDeliveryBoundary(boundary) {
     return !!boundary && Array.isArray(boundary.ids) && boundary.ids.length <= 500
       && boundary.ids.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 512 && !/[\x00-\x1f\x7f]/.test(id))
@@ -2070,7 +2177,7 @@ function sameBinding(actual, expected) {
       && (boundary.ids.length === 0 ? boundary.time === null : typeof boundary.time === 'string'
         && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(boundary.time) && Number.isFinite(Date.parse(boundary.time)));
   }
- 
+
   function hasRichDraft(composer, root, allowIcon = false) {
     if ([...composer.querySelectorAll('inlineimage')].some((node) => !allowIcon || !completeImageTree(node))) return true;
     if ([...composer.querySelectorAll('img')].some((image) => !allowIcon || !knownIcon(image))) return true;
@@ -2079,11 +2186,11 @@ function sameBinding(actual, expected) {
     const composeArea = composer.closest(composeAreaSelector) || root;
     return !!composeArea.querySelector('[data-tid*="attachment"], [data-attachment-id]');
   }
- 
+
   function hasDraft(composer, root) {
     return (composer.textContent || '').length > 0 || hasRichDraft(composer, root);
   }
- 
+
   function matchesPendingDraft(composer, root, item, overwriteText = false) {
     const owner = draftOwners.get(composer);
     return isClipboardEditor(composer) && item.state === 'pending' && (!cleanFormat(item)
@@ -2093,11 +2200,11 @@ function sameBinding(actual, expected) {
       && !hasRichDraft(composer, root, imageFormat(item))
       && !(composer.closest(composeAreaSelector) || root).querySelector('[data-tid*="attachment"], [data-attachment-id]');
   }
- 
+
   function isClipboardEditor(composer) {
     return composer.classList.contains('ck-editor__editable') || composer.classList.contains('ck-content');
   }
- 
+
   function composerTextMatches(composer, expected) {
     const actual = comparableText(composer.innerText || composer.textContent);
     const wanted = comparableText(expected);
@@ -2126,7 +2233,7 @@ function sameBinding(actual, expected) {
     return valid && lastLeaf === filler && comparableText(text) === wanted
       && (actual === wanted || (actual.endsWith('\n') && comparableText(actual.slice(0, -1)) === wanted));
   }
- 
+
   function clipboardText(doc, text, icon = false, binaryImage = false) {
     // CKEditor owns its model. Use its paste pipeline, never overwrite its rendered DOM.
     const paragraph = doc.createElement('p');
@@ -2154,7 +2261,7 @@ function sameBinding(actual, expected) {
     }
     return data;
   }
- 
+
   function clipboardImage() {
     const data = new DataTransfer();
     const bytes = Uint8Array.from(atob(BridgeCodexIcon.src.split(',')[1]), (character) => character.charCodeAt(0));
@@ -2164,7 +2271,7 @@ function sameBinding(actual, expected) {
 
 let failedPastes = new WeakMap();
   function resetDeliveryRetries() { failedPastes = new WeakMap(); }
- 
+
   function recordEditorComparison(composer, expected, edited) {
     const actual = deliveryText(composer.innerText || composer.textContent);
     const wanted = deliveryText(expected);
@@ -2183,7 +2290,7 @@ let failedPastes = new WeakMap();
       fillerNodeCount: composer.querySelectorAll('[data-cke-filler]').length,
       directChildTags: [...composer.children].slice(0, 12).map((node) => node.tagName.toLowerCase())});
   }
- 
+
   async function deliver(doc, binding, item, ack, options = {}) {
     const phase = (name) => options.phase?.(name);
     const href = options.url || (() => location.href);
@@ -2537,8 +2644,8 @@ let failedPastes = new WeakMap();
       return result(clicked ? 'uncertain' : 'not_sent', '訊息送出流程中斷');
     }
   }
- 
-  function imageFrameEligible(doc, binding, item) {
+
+function imageFrameEligible(doc, binding, item) {
     const context = inspect(doc, doc.location.href, binding);
     return context.ok && sameBinding(context.binding, binding) && item.state === 'pending'
       && (['image-test-v1', 'image-test-v2', 'output-image-v1'].includes(item.format)
@@ -2548,7 +2655,7 @@ let failedPastes = new WeakMap();
   }
   globalThis.BridgeAdapter = {version: '1.0.37', inspect, diagnostics, snapshot, sameBinding, hasContinuity, atLatest, followLatest, mergeMessages, eligibleMessages, catchUp, deliver, resetDeliveryRetries, normalize, refreshIdentity, identityState, accountEvidence, imageFrameEligible};
 })();
- 
+
 '@
         }
         'vendor/outbound-images.js' {
@@ -2661,7 +2768,7 @@ async function verifySingle(image,wait,expected) {
   }
   globalThis.BridgeOutgoingImages={prepare,verify,known,proof,clipboard,count:()=>active?.entries.length||0,dimensions:()=>active?.entries.map(e=>({width:e.width,height:e.height}))||[],diagnostics:()=>observations.map(row=>({...row}))};
 })();
- 
+
 '@
         }
         'discard-draft.js' {
@@ -2670,7 +2777,8 @@ async function verifySingle(image,wait,expected) {
   const expected=/*E3_BINDING*/null, checkFocus=/*E3_CHECK_FOCUS*/false;
   const fail=reason=>({ok:false,reason});
   const c=BridgeAdapter.inspect(document,location.href,expected);
-  if(!c.ok||!c.binding||['accountId','chatId','label'].some(k=>c.binding[k]!==expected[k]))return fail('收件帳號或對話不符');
+  if(!c.ok)return {ok:false,reason:c.error||'無法核對收件對話',accountProofLost:c.error==='GROUP_REPORT_ACCOUNT_NOT_VERIFIED'};
+  if(!c.binding||['accountId','chatId','label'].some(k=>c.binding[k]!==expected[k]))return fail('收件帳號或對話不符');
   const runtime=E3Cdp.status();
   if(!runtime||!['idle','finished'].includes(runtime.stage))return fail('舊工作仍在執行');
   const row='[data-message-id], [data-tid="chat-pane-message"], [data-tid="message-body"], [data-tid="chat-message-list"], [data-tid="message-pane-list-viewport"]';
@@ -2716,7 +2824,8 @@ async function verifySingle(image,wait,expected) {
 (() => {
   const expected=/*E3_BINDING*/null;
   const c=BridgeAdapter.inspect(document,location.href,expected);
-  if(!c.ok||!c.binding||['accountId','chatId','label'].some(k=>c.binding[k]!==expected[k]))return {ok:false};
+  if(!c.ok)return {ok:false,reason:c.error||'無法核對收件對話',accountProofLost:c.error==='GROUP_REPORT_ACCOUNT_NOT_VERIFIED'};
+  if(!c.binding||['accountId','chatId','label'].some(k=>c.binding[k]!==expected[k]))return {ok:false,reason:'收件帳號或對話不符'};
   const selector='[data-message-id], [data-tid="chat-pane-message"]';
   const pending='[data-tid*="sending"], [data-tid*="pending"], [data-message-status="pending"], [data-message-status="sending"], [aria-busy="true"], [role="progressbar"]';
   const rows=[...c.root.querySelectorAll(selector)].filter(n=>!n.parentElement?.closest(selector));
@@ -2829,7 +2938,7 @@ async function verifySingle(image,wait,expected) {
   }
   globalThis.E3Receipt={reset,arm,clicked,inspect,diagnostics:()=>({deliveryId,reason:state?.reason||'not_armed',counts:state?.counts||{},images:state?.images||[],textComparisons:state?.textComparisons||[]})};
 })();
- 
+
 '@
         }
         'runtime.js' {
@@ -2976,7 +3085,7 @@ async function verifySingle(image,wait,expected) {
   }
   globalThis.E3Cdp = {version:'2026-11-12-history1',supportsImageOnly:true,beginBinding,endBinding,bind,start,tick,status,reset,cancel,recover};
 })();
- 
+
 '@
         }
         'vendor/image-frame-bootstrap.js' {
@@ -3047,14 +3156,14 @@ async function verifySingle(image,wait,expected) {
     if (document.visibilityState === 'visible') stop();
   });
 })();
- 
+
 '@
         }
         'navigation.js' {
             return @'
 /* Navigation only. Final account/chat ID verification is performed by the delivery adapter. */
 (() => {
-  const label=/*E3_LABEL*/null, chatId=/*E3_CHAT_ID*/null;
+  const label=/*E3_LABEL*/null, chatId=/*E3_CHAT_ID*/null, requireAccount=/*E3_REQUIRE_ACCOUNT*/true;
   const clean=s=>String(s||'').replace(/[\u200B-\u200D\u2060\uFEFF]/g,'').replace(/\s+/g,' ').trim();
   const visible=n=>n?.isConnected&&n.getClientRects().length>0;
   const login=/(^|\.)login\.(microsoftonline|live|microsoft)\.com$|(^|\.)account\.live\.com$/i.test(location.hostname)
@@ -3068,7 +3177,14 @@ async function verifySingle(image,wait,expected) {
   const ids=[root?.getAttribute('data-chat-id'),header?.getAttribute('data-chat-id'),
     ...[...(root?.querySelectorAll('[data-track-thread-id]')||[])].map(n=>n.getAttribute('data-track-thread-id'))].filter(Boolean);
   const composer=root?.querySelector('[data-tid="ckeditor"][contenteditable="true"], [data-tid="message-composer"][contenteditable="true"], [data-tid="compose-box"] [role="textbox"][contenteditable="true"]');
-  if(composer&&ids.length&&ids.every(id=>id===chatId))return {ready:true};
+  if(composer&&ids.length&&ids.every(id=>id===chatId)){
+    // A rendered chat is not ready for identity verification until its account UI exists.
+    // Do not keep clicking/navigating an already matched chat while the shell loads.
+    const profileCount=document.querySelectorAll('[data-tid="me-control-avatar-trigger"]').length;
+    // The receiver reads with chat-only checks and verifies the account right before a reply.
+    if(!requireAccount)return {ready:true,profileCount};
+    return profileCount===1?{ready:true,profileCount}:{stage:'wait_account',profileCount};
+  }
   // Some Teams versions route self chats through the chat list instead of resolving a deep link.
   // Select only an exact saved label; duplicate names are blocked and IDs are verified afterwards.
   const s=globalThis.__e3HeadlessNav||(globalThis.__e3HeadlessNav={clicked:false,nav:false,top:false});
@@ -3089,7 +3205,7 @@ async function verifySingle(image,wait,expected) {
   }
   return {stage:composer?'locate_chat':'loading'};
 })()
- 
+
 '@
         }
         'model-ready.js' {
@@ -3112,13 +3228,11 @@ async function verifySingle(image,wait,expected) {
   const expectedCount = /*E3_IMAGE_COUNT*/1;
   return states.length===expectedCount && states.every(state=>state==='success');
 })()
- 
+
 '@
         }
         default { throw "未知的 CDP 網頁腳本：$file" }
     }
 }
- 
+
 #endregion
-
-

@@ -1,0 +1,6 @@
+# 執行時產生的狀態資料，不放進版本控制（本機保留）
+logs/
+captures/
+edge_profile/
+sample_images/annotated_*.png
+sample_images/tmp_*

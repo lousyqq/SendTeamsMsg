@@ -19,6 +19,15 @@ public static class E3WorkConsoleMode {
         if(-not [E3WorkConsoleMode]::SetConsoleMode($handle,$desired)){throw 'SetConsoleMode failed'}
     }catch{Write-Warning '無法停用快速編輯；若黑色視窗標題顯示「選取」，請按 Esc 恢復操作。'}
 }
+function Test-E3ProcessElevated {
+    # True when this process holds administrator rights (an elevated token, or UAC turned off for an
+    # administrator account). Read-only; $null when Windows does not say.
+    try {
+        $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+        try {return ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}
+        finally {$identity.Dispose()}
+    } catch {return $null}
+}
 function Get-E3WorkRoot {
     if($script:E3WorkControlRoot){return $script:E3WorkControlRoot}
     return Join-Path $PSScriptRoot 'logs\work_control'

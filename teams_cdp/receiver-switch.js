@@ -12,6 +12,8 @@
   if (!['teams.cloud.microsoft', 'teams.microsoft.com'].includes(location.hostname)) return {ok:false,reopen:true,error:'工作分頁目前不在 Teams'};
   const state = globalThis.__E3ReceiverSwitch || (globalThis.__E3ReceiverSwitch = {chatId:'',at:0});
   const current = BridgeAdapter.inspect(document, location.href, binding);
+  if (!current.ok && current.error === 'GROUP_REPORT_ACCOUNT_NOT_VERIFIED')
+    return {ok:false,reauth:true,error:current.error};
   if (current.ok && BridgeAdapter.sameBinding(current.binding, binding)) {
     state.chatId = '';
     if (current.binding.label !== binding.label) return {ok:false,fatal:true,error:'對話名稱與保存的綁定不同，請重新執行 setup_teams_receiver.bat 綁定'};

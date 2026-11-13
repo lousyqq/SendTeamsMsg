@@ -185,12 +185,37 @@ function Read-E3ReceiverSettled($target,[int]$context,[int]$TimeoutMs=8000){retu
 Reset-Tab $true;$src.reload=$false
 $null=Invoke-E3ReceiverVisit @($src) $src
 Check ($script:opened.Count -eq 1 -and -not $script:opened[0]) 'normal read does not reload the page'
+Check ($script:E3ReceiverReloadMinutes -eq 240) 'default idle reload interval is 4 hours'
 $script:E3ReceiverTab.loadedAt=[DateTimeOffset]::UtcNow.AddMinutes(-31);$script:opened=@()
 $null=Invoke-E3ReceiverVisit @($src) $src
-Check ($script:opened[0]) 'page older than 30 minutes is reloaded on the next read'
+Check (-not $script:opened[0]) 'default: a page 31 minutes old is not reloaded'
+$script:E3ReceiverTab.loadedAt=[DateTimeOffset]::UtcNow.AddMinutes(-241);$script:opened=@()
+$null=Invoke-E3ReceiverVisit @($src) $src
+Check ($script:opened[0]) 'default: a page older than 4 hours is reloaded on the next read'
+$script:E3ReceiverReloadMinutes=30
+$script:E3ReceiverTab.loadedAt=[DateTimeOffset]::UtcNow.AddMinutes(-31);$script:opened=@()
+$null=Invoke-E3ReceiverVisit @($src) $src
+Check ($script:opened[0]) '30-minute setting: page older than 30 minutes is reloaded'
+$script:E3ReceiverReloadMinutes=0
+$script:E3ReceiverTab.loadedAt=[DateTimeOffset]::UtcNow.AddDays(-3);$script:opened=@()
+$null=Invoke-E3ReceiverVisit @($src) $src
+Check (-not $script:opened[0]) 'only-on-failure setting: an old page is kept'
+$src.reload=$true;$script:opened=@()
+$null=Invoke-E3ReceiverVisit @($src) $src
+Check ($script:opened[0]) 'only-on-failure setting: a chat that failed last time is still reopened'
+$script:E3ReceiverReloadMinutes=240
 $script:E3ReceiverTab.loadedAt=[DateTimeOffset]::UtcNow;$src.reload=$true;$script:opened=@()
 $null=Invoke-E3ReceiverVisit @($src) $src
 Check ($script:opened[0]) 'a chat that failed last time is reopened by its link'
+# Reading the setting: valid values are used, anything else falls back to 4 hours.
+$realSettings=${function:Get-E3ReceiverTeamsSettings}
+foreach($case in @(@{v=30;want=30},@{v=0;want=0},@{v=1440;want=1440},@{v=10;want=240},@{v='30';want=240},@{v=30.5;want=240},@{v=$null;want=240})){
+    $script:fakeTeams=[pscustomobject]@{receiver_reload_minutes=$case.v}
+    function Get-E3ReceiverTeamsSettings{return $script:fakeTeams}
+    Check ((Get-E3ReceiverReloadMinutes) -eq $case.want) "setting $(ConvertTo-Json $case.v -Compress) -> $($case.want)"
+}
+Set-Item function:Get-E3ReceiverTeamsSettings $realSettings
+Check ((Get-E3ReceiverReloadText 240) -eq '閒置時每 4 小時重新載入' -and (Get-E3ReceiverReloadText 30) -eq '閒置時每 30 分鐘重新載入' -and (Get-E3ReceiverReloadText 0) -eq '只在讀取失敗時重新開啟') 'startup line describes the interval'
 $script:initError='專用 Edge 啟動失敗'
 $reason='';try{$null=Invoke-E3ReceiverVisit @($src) $src}catch{$reason=$_.Exception.Message}
 Check ($reason -match '^E3_RECEIVER_BROWSER') 'browser start failure is classed as a browser problem'

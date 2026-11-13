@@ -7,8 +7,6 @@
                           "time":  "08:00",
                           "days":  [
 
-
-
                                    ],
                           "pages":  [
                                         "page1",
@@ -19,8 +17,7 @@
                           "target_chat_name":  "",
                           "title":  "[MSD 日管index-測試]",
                           "target_chat_names":  [
-                                                    "Sariel Lin-林玉婷 (您)",
-                                                    ""
+                                                    "Sariel Lin-林玉婷 (您)"
                                                 ],
                           "messages":  {
                                            "default_message":  "測試是否可以正常傳送",
@@ -34,8 +31,6 @@
                           "name":  "ExecutionTime_3D",
                           "time":  "09:00",
                           "days":  [
-
-
 
                                    ],
                           "pages":  [
@@ -51,8 +46,7 @@
                                          "end_time":  "23:00"
                                      },
                           "target_chat_names":  [
-                                                    "Sariel Lin-林玉婷 (您)",
-                                                    ""
+                                                    "Sariel Lin-林玉婷 (您)"
                                                 ],
                           "messages":  {
                                            "default_message":  "測試是否可以抓到peak",
@@ -100,8 +94,6 @@
                                       },
                       "rules":  [
 
-
-
                                 ],
                       "capture_view":  {
                                            "width":  2390,
@@ -135,8 +127,6 @@
                                           "h":  895
                                       },
                       "rules":  [
-
-
 
                                 ],
                       "capture_view":  {
@@ -221,8 +211,6 @@
                                           "h":  922
                                       },
                       "rules":  [
-
-
 
                                 ],
                       "capture_view":  {
