@@ -954,6 +954,7 @@
           <button id="receiverRestartBtn" type="button" title="先停止，等接收端結束後再啟動；改了下方「接收端設定」後用這個套用">🔄 重新啟動</button>
           <button id="receiverRefreshBtn" type="button" title="重新讀取接收端狀態" aria-label="重新整理狀態">↻</button>
         </div>
+        <div id="receiverControlState" class="receiver-note" role="status" style="color:#fbbf24;"></div>
         <div id="receiverControlResult" class="receiver-note" role="status"></div>
         <div id="receiverStatus" class="receiver-status" aria-live="polite"></div>
         <details class="inner-fold" id="receiverSetupFold">
@@ -4173,7 +4174,7 @@ document.getElementById("pageUrlInput").oninput = e => {
       }catch(error){receiverState.error='無法讀取手機遙控狀態：'+(error.name==='AbortError'?'本機服務逾時':error.message);}
       finally{clearTimeout(timer);receiverState.loading=false;receiverState.loadedAt=Date.now();renderReceiverStatus();}
     }
-    document.getElementById('receiverRefreshBtn').onclick=()=>refreshReceiverStatus(true);
+    document.getElementById('receiverRefreshBtn').onclick=()=>{refreshReceiverStatus(true);refreshReceiverControl();};
     document.getElementById('receiverRegisterBtn').onclick=async()=>{
       const out=document.getElementById('receiverRegisterResult'), btn=document.getElementById('receiverRegisterBtn');
       if(!confirm('會在這台電腦建立兩個 Windows 工作排程：\n\n• E3 日管接收監看：每 10 分鐘檢查接收端，離線或恢復時通知預設 Teams 對話一次\n• E3 日管接收端：登入 Windows 1 分鐘後自動開啟接收視窗\n\n確定建立？'))return;
@@ -4188,18 +4189,24 @@ document.getElementById("pageUrlInput").oninput = e => {
       finally{clearTimeout(timer);btn.disabled=false;refreshReceiverStatus(true);}
     };
     // ===== 接收端啟動／停止／重新啟動／設定接收對話（與四個 bat 檔做同一件事） =====
-    const receiverControl={running:null,setupOpen:false,busy:false};
+    const receiverControl={running:null,setupOpen:false,busy:false,error:''};
     function renderReceiverControl(){
       const c=receiverControl, off=c.busy||c.running===null;
+      // 讀不到接收端狀態時按鈕全部停用，必須說出原因與替代做法，不能只是按不下去
+      const note=document.getElementById('receiverControlState');
+      note.textContent=!c.busy&&c.running===null&&c.error?c.error:'';
       document.getElementById('receiverStartBtn').disabled=off||c.running||c.setupOpen;
       document.getElementById('receiverStopBtn').disabled=off||!c.running;
-      document.getElementById('receiverRestartBtn').disabled=off||!c.running;
+      // 接收端已停止時「重新啟動」等於直接啟動（套用新設定的人常會按這顆）
+      document.getElementById('receiverRestartBtn').disabled=off||(!c.running&&c.setupOpen);
       document.getElementById('receiverSetupBtn').disabled=off||c.setupOpen;
     }
     async function receiverControlCall(method,action){
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
       try{
         const response=await fetch('/api/receiver-control',method==='GET'?{cache:'no-store',signal:controller.signal}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action}),signal:controller.signal});
+        // 更新程式檔後沒有重開設定工具：網頁是新的，背景服務仍是舊程式，沒有這個 API
+        if(response.status===404)throw new Error('設定工具的背景服務是更新前的程式，沒有啟動／停止接收端的功能。請關閉設定工具的黑色視窗，再雙擊 open_calibrator.bat 重新開啟。在那之前可直接雙擊 start_teams_receiver.bat／stop_teams_receiver.bat。');
         const data=await response.json().catch(()=>({}));
         if(!response.ok||!data.ok)throw new Error(data.error||'本機服務沒有回應');
         return data;
@@ -4208,8 +4215,11 @@ document.getElementById("pageUrlInput").oninput = e => {
     }
     async function refreshReceiverControl(){
       if(!location.protocol.startsWith('http'))return;
-      try{const d=await receiverControlCall('GET');receiverControl.running=!!d.running;receiverControl.setupOpen=!!d.setupOpen;}
-      catch{receiverControl.running=null;}
+      try{const d=await receiverControlCall('GET');receiverControl.running=!!d.running;receiverControl.setupOpen=!!d.setupOpen;receiverControl.error='';}
+      catch(error){
+        receiverControl.running=null;
+        receiverControl.error=/背景服務是更新前的程式/.test(error.message)?'⚠ '+error.message:'⚠ 無法確認接收端是否在執行（'+error.message+'），按鈕暫時停用。可按「↻」重試，或直接雙擊 start_teams_receiver.bat／stop_teams_receiver.bat。';
+      }
       renderReceiverControl();
     }
     const receiverSay=text=>{document.getElementById('receiverControlResult').textContent=text;};
@@ -4241,8 +4251,10 @@ document.getElementById("pageUrlInput").oninput = e => {
       runReceiverAction(async()=>{await stopReceiverAndWait();receiverSay('✅ 接收端已停止。要再接收請按「啟動接收端」。');});
     };
     document.getElementById('receiverRestartBtn').onclick=()=>{
-      if(!confirm('重新啟動接收端：先停止（正在處理的指令會先完成），結束後再啟動。期間手機指令要等重新啟動完成才會處理。\n\n確定重新啟動？'))return;
+      const running=receiverControl.running;
+      if(running&&!confirm('重新啟動接收端：先停止（正在處理的指令會先完成），結束後再啟動。期間手機指令要等重新啟動完成才會處理。\n\n確定重新啟動？'))return;
       runReceiverAction(async()=>{
+        if(!running){receiverSay('接收端目前沒有在執行，直接啟動…');receiverSay('✅ '+(await receiverControlCall('POST','start')).message+'。新的設定已套用，約 1 分鐘內開始接收。');return;}
         await stopReceiverAndWait();
         receiverSay('接收端已停止，正在重新啟動…');
         receiverSay('✅ '+(await receiverControlCall('POST','start')).message+'。新的設定已套用，約 1 分鐘內開始接收。');

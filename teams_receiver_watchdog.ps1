@@ -461,7 +461,7 @@ function Invoke-E3ReceiverWatchdog($cfg,[int]$ConfirmSeconds=60) {
             $history=@();try{$history=@((Read-E3WorkJson $paths.restart).attempts)}catch{}
             $plan=Get-E3ReceiverRestartPlan $health $history ([DateTimeOffset]::UtcNow)
             # stop_teams_receiver.bat leaves this request when no receiver was running to consume it.
-            if($plan.action -ne 'none' -and (Test-Path -LiteralPath (Join-Path $paths.root 'stop.request'))){$plan=@{action='none';reason='已用 stop_teams_receiver.bat 要求停止，不自動重新啟動'}}
+            if($plan.action -ne 'none' -and (Test-Path -LiteralPath (Join-Path $paths.root 'stop.request'))){$plan=@{action='none';reason='已要求停止（設定頁「⏹ 停止」或 stop_teams_receiver.bat），不自動重新啟動'}}
             if($plan.action -ne 'none'){
                 # Record the attempt first: an attempt whose outcome is unknown still counts.
                 try{Write-E3WorkJson $paths.restart @{attempts=@(@($plan.recent)+[DateTimeOffset]::UtcNow.ToString('O'));lastReason=[string]$health.reason}}catch{}

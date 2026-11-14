@@ -788,7 +788,7 @@ function Send-E3ReceiverAcknowledgement($sources,$source,$request,[string]$claim
 function Get-E3ReceiverStopPath {return (Join-Path $script:E3CdpLogRoot 'stop.request')}
 function Test-E3ReceiverStopRequest {
     if(-not(Test-Path -LiteralPath (Get-E3ReceiverStopPath))){return $false}
-    $script:E3ReceiverIntentional=$true;$script:E3ReceiverStopReason='已由 stop_teams_receiver.bat 要求停止'
+    $script:E3ReceiverIntentional=$true;$script:E3ReceiverStopReason='已依停止要求結束（設定頁「⏹ 停止」或 stop_teams_receiver.bat）'
     try{Remove-Item -LiteralPath (Get-E3ReceiverStopPath) -Force}catch{}
     Write-Host '⏹ 收到停止要求，接收端結束。' -ForegroundColor Cyan
     return $true
